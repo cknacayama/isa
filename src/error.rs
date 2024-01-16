@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{token::TokenData, types::TypeError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -29,7 +31,10 @@ pub enum ParseErrorData {
     ExpectedExpr,
     UnexpectedEof,
     ExpectedToken(TokenData<'static>),
+}
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum CompileErrorData {
     TypeError(TypeError),
 
     AlreadyDefinedProc(String),
@@ -48,7 +53,14 @@ pub struct ParseError {
     pub loc: Loc,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct CompileError {
+    pub data: CompileErrorData,
+    pub span: Span,
+}
+
 pub type ParseResult<T> = Result<T, ParseError>;
+pub type CompileResult<T> = Result<T, CompileError>;
 
 impl PartialOrd for Loc {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -94,7 +106,7 @@ impl ParseError {
     }
 }
 
-impl std::fmt::Display for Loc {
+impl Display for Loc {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if self.line == 0 {
             return write!(f, "eof");
@@ -104,15 +116,16 @@ impl std::fmt::Display for Loc {
     }
 }
 
-impl std::fmt::Display for Span {
+impl Display for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "({})..({})", self.start, self.end)
     }
 }
 
-impl std::fmt::Display for ParseError {
+impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         use ParseErrorData::*;
+
         match &self.data {
             InvalidEscape(c) => write!(f, "invalid escape character: {}", c),
             InvalidChar(c) => write!(f, "invalid character: {}", c),
@@ -124,6 +137,20 @@ impl std::fmt::Display for ParseError {
             ExpectedToken(token) => write!(f, "expected token: {:?}", token),
             ExpectedType => write!(f, "expected type"),
             ExpectedDecl => write!(f, "expected declaration"),
+        }?;
+
+        write!(f, " at {}", self.loc)
+    }
+}
+
+impl std::error::Error for ParseError {
+}
+
+impl Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use CompileErrorData::*;
+
+        match &self.data {
             AlreadyDefinedProc(name) => write!(f, "procedure already defined: {}", name),
             AlreadyDefinedLocal(name) => write!(f, "local already defined: {}", name),
             UndefinedLocal(name) => write!(f, "undefined local: {}", name),
@@ -136,9 +163,10 @@ impl std::fmt::Display for ParseError {
             ReturnOutsideProc => write!(f, "return outside procedure"),
             TypeError(err) => write!(f, "type error: {}", err),
         }?;
-        write!(f, " at {}", self.loc)
+
+        write!(f, " at {}", self.span)
     }
 }
 
-impl std::error::Error for ParseError {
+impl std::error::Error for CompileError {
 }

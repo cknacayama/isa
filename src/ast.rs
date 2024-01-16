@@ -68,13 +68,12 @@ pub enum AstData<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Ast<'a> {
     pub data: AstData<'a>,
-    pub ty: Type,
     pub span: Span,
 }
 
 impl<'a> Ast<'a> {
-    pub fn new(data: AstData<'a>, ty: Type, span: Span) -> Self {
-        Self { data, ty, span }
+    pub fn new(data: AstData<'a>, span: Span) -> Self {
+        Self { data, span }
     }
 }
 
