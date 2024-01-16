@@ -1,10 +1,10 @@
 proc foo(n: int) int {
-    return n;
+    {
+        let a: int = n;
+        return a;
+    }
 }
 
 proc main() {
     let f: int = foo(10);
-    if f == 10 {
-        println(f);
-    }
 } 

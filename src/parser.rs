@@ -3,7 +3,7 @@ use crate::{
     ctx::{Ctx, ProcSig},
     error::{Loc, ParseError, ParseErrorData, ParseResult, Span},
     token::{Token, TokenData},
-    types::{Type, TypeError},
+    types::{BinOp, Type, TypeError, UnOp},
 };
 
 #[derive(Debug)]
@@ -849,7 +849,6 @@ impl<'p, 'i> Parser<'p, 'i> {
             TokenData::KwFalse => (AstData::BoolExpr(false), Type::Bool),
             _ => return Err(self.make_err(ParseErrorData::ExpectedExpr)),
         };
-        r#"ag"#;
 
         Ok(Ast::new(data, ty, span))
     }
