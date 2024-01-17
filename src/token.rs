@@ -1,9 +1,10 @@
-use crate::error::{Span, Spanned};
+use crate::span::{Span, Spanned};
 
 use phf::{phf_map, Map};
 
 static KEYWORDS_MAP: Map<&'static str, TokenData<'static>> = phf_map! {
     "proc" => TokenData::KwProc,
+    "struct" => TokenData::KwStruct,
     "let" => TokenData::KwLet,
     "mut" => TokenData::KwMut,
     "if" => TokenData::KwIf,
@@ -71,6 +72,7 @@ pub enum TokenData<'a> {
     String(&'a str),
 
     KwProc,
+    KwStruct,
     KwLet,
     KwMut,
     KwIf,
@@ -109,81 +111,5 @@ impl<'a> Token<'a> {
 
     pub fn get_keyword(ident: &str) -> Option<TokenData<'static>> {
         KEYWORDS_MAP.get(ident).copied()
-    }
-}
-
-impl<'a> std::fmt::Display for TokenData<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use TokenData::*;
-        match self {
-            LParen => write!(f, "("),
-            RParen => write!(f, ")"),
-            LBrace => write!(f, "{{"),
-            RBrace => write!(f, "}}"),
-            LBracket => write!(f, "["),
-            RBracket => write!(f, "]"),
-
-            Comma => write!(f, ","),
-            Semicolon => write!(f, ";"),
-            Colon => write!(f, ":"),
-            Arrow => write!(f, "->"),
-            Dot => write!(f, "."),
-
-            Plus => write!(f, "+"),
-            Minus => write!(f, "-"),
-            Star => write!(f, "*"),
-            Slash => write!(f, "/"),
-            Percent => write!(f, "%"),
-            Caret => write!(f, "^"),
-            Amp => write!(f, "&"),
-            Pipe => write!(f, "|"),
-            Bang => write!(f, "!"),
-            Tilde => write!(f, "~"),
-            Question => write!(f, "?"),
-
-            Equal => write!(f, "="),
-            EqualEqual => write!(f, "=="),
-            BangEqual => write!(f, "!="),
-            Less => write!(f, "<"),
-            LessEqual => write!(f, "<="),
-            Greater => write!(f, ">"),
-            GreaterEqual => write!(f, ">="),
-
-            GreaterGreater => write!(f, ">>"),
-            LessLess => write!(f, "<<"),
-
-            AmpAmp => write!(f, "&&"),
-            PipePipe => write!(f, "||"),
-
-            Ident(ident) => write!(f, "{}", ident),
-            Int(int) => write!(f, "{}", int),
-            Float(float) => write!(f, "{}", float),
-            Char(char) => write!(f, "'{}'", char),
-            String(string) => write!(f, "\"{}\"", string),
-
-            KwProc => write!(f, "proc"),
-            KwLet => write!(f, "let"),
-            KwMut => write!(f, "mut"),
-            KwIf => write!(f, "if"),
-            KwElse => write!(f, "else"),
-            KwWhile => write!(f, "while"),
-            KwReturn => write!(f, "return"),
-
-            KwTrue => write!(f, "true"),
-            KwFalse => write!(f, "false"),
-
-            KwInt => write!(f, "int"),
-            KwFloat => write!(f, "float"),
-            KwChar => write!(f, "char"),
-            KwBool => write!(f, "bool"),
-            KwString => write!(f, "string"),
-            KwUnit => write!(f, "unit"),
-        }
-    }
-}
-
-impl std::fmt::Display for Token<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{} = {}", self.span, self.data)
     }
 }

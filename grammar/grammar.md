@@ -1,8 +1,11 @@
 ```
-program = proc_decl_list? ;
+program = decl_list? ;
 
-proc_decl_list = proc_decl+ ;
-proc_decl      = 'proc' ident '(' param_list? ')' block ;
+decl_list = decl+ ;
+decl      = proc_decl | struct_decl ;
+
+proc_decl   = 'proc' ident '(' param_list? ')' [ '->' type ] block ;
+struct_decl = 'struct' ident '{' param_list '}' ;
 
 param_list = param { ',' param } ;
 param      = ident ':' type ;
@@ -12,6 +15,7 @@ stmt_list = stmt+ ;
 
 stmt =
      | let_decl
+     | proc_decl
      | ret_stmt
      | if_stmt
      | while_stmt
@@ -19,7 +23,7 @@ stmt =
      | expr_stmt
      ;
 
-let_decl   = 'let' 'mut'? ident ':' type [ '=' expr ] ';' ;
+let_decl   = 'let' 'mut'? ident [ ':' type ] [ '=' expr ] ';' ;
 ret_stmt   = 'return' expr? ';' ;
 if_stmt    = 'if' expr block [ 'else' ( if_stmt | block ) ] ;
 while_stmt = 'while' expr block ;
@@ -60,5 +64,21 @@ ident     = / [a-zA-Z_][a-zA-z0-9_]*
 integer   = / [0-9][0-9]*
 character = / '(.|\\[nrt0"'])'
 string    = / "[^"]*"
+
+type = 
+     | 'unit'
+     | 'bool'
+     | 'char'
+     | 'int'
+     | 'float'
+     | 'string'
+     | proc_sig
+     | struct_sig
+     ;
+
+type_list = type { ',' type } ;
+
+proc_sig   = 'proc' '(' type_list? ')' [ '->' type ] ;
+struct_sig = 'struct' '{' type_list? '}' ;
 
 ```

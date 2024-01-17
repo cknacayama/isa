@@ -1,19 +1,37 @@
+use std::{collections::HashSet, rc::Rc};
+
 use crate::{
     ast::*,
-    error::{Loc, ParseError, ParseErrorData, ParseResult, Span},
+    error::{ParseError, ParseErrorData, ParseResult},
+    span::*,
     token::{Token, TokenData},
-    types::{BinOp, Type, UnOp},
+    types::*,
 };
 
 #[derive(Debug)]
 pub struct Parser<'p, 'i> {
     tokens: &'p [Token<'i>],
     cursor: usize,
+    proc_sigs: HashSet<Rc<ProcSig>>,
 }
 
 impl<'p, 'i> Parser<'p, 'i> {
     pub fn new(tokens: &'p [Token<'i>]) -> Self {
-        Self { tokens, cursor: 0 }
+        Self {
+            tokens,
+            cursor: 0,
+            proc_sigs: HashSet::new(),
+        }
+    }
+
+    #[inline]
+    fn add_proc_sig(&mut self, sig: Rc<ProcSig>) -> bool {
+        self.proc_sigs.insert(sig)
+    }
+
+    #[inline]
+    fn get_proc_sig(&self, sig: &ProcSig) -> Option<&Rc<ProcSig>> {
+        self.proc_sigs.get(sig)
     }
 
     #[inline]
@@ -162,6 +180,7 @@ impl<'p, 'i> Parser<'p, 'i> {
     fn stmt(&mut self) -> ParseResult<Ast<'i>> {
         match self.peek_or_eof()?.data {
             TokenData::KwLet => self.let_decl(),
+            TokenData::KwProc => self.proc_decl(),
             TokenData::KwIf => self.if_stmt(),
             TokenData::KwWhile => self.while_stmt(),
             TokenData::KwReturn => self.return_stmt(),
@@ -194,9 +213,11 @@ impl<'p, 'i> Parser<'p, 'i> {
         let mut span = self.advance().unwrap();
 
         let (name, _) = self.expect_ident()?;
-        self.expect(TokenData::LParen)?;
 
         let mut params = vec![];
+        let mut param_types = vec![];
+
+        self.expect(TokenData::LParen)?;
 
         if !self.check_cur(TokenData::RParen) {
             loop {
@@ -204,10 +225,8 @@ impl<'p, 'i> Parser<'p, 'i> {
                 self.expect(TokenData::Colon)?;
                 let (param_ty, _) = self.expect_type()?;
 
-                params.push(Param {
-                    name: param_name,
-                    ty: param_ty,
-                });
+                params.push(param_name);
+                param_types.push(param_ty);
 
                 if !self.match_cur(TokenData::Comma) {
                     break;
@@ -215,12 +234,25 @@ impl<'p, 'i> Parser<'p, 'i> {
             }
         }
 
-        self.expect(TokenData::RParen)?;
+        span = span.join(&self.expect(TokenData::RParen)?);
 
-        let ret = if self.check_cur(TokenData::LBrace) {
-            Type::Unit
-        } else {
+        let ret_ty = if !self.check_cur(TokenData::LBrace) {
             self.expect_type()?.0
+        } else {
+            Type::Unit
+        };
+
+        let sig = ProcSig {
+            params: param_types,
+            ret: ret_ty,
+        };
+
+        let sig = if let Some(sig) = self.get_proc_sig(&sig) {
+            sig.clone()
+        } else {
+            let sig = Rc::new(sig);
+            self.add_proc_sig(sig.clone());
+            sig
         };
 
         let (body, body_span) = self.block()?;
@@ -229,11 +261,12 @@ impl<'p, 'i> Parser<'p, 'i> {
 
         Ok(Ast::new(
             AstData::ProcDecl {
+                sig,
                 name,
-                ret,
                 params,
                 body,
             },
+            Type::Unit,
             span,
         ))
     }
@@ -241,11 +274,12 @@ impl<'p, 'i> Parser<'p, 'i> {
     fn let_decl(&mut self) -> ParseResult<Ast<'i>> {
         let mut span = self.advance().unwrap();
 
-        let is_mut = self.match_cur(TokenData::KwMut);
-
         let (name, _) = self.expect_ident()?;
-        self.expect(TokenData::Colon)?;
-        let (ty, _) = self.expect_type()?;
+        let (ty, _) = if self.match_cur(TokenData::Colon) {
+            self.expect_type()?
+        } else {
+            (Type::Unknown, Span::default())
+        };
 
         let value = if self.match_cur(TokenData::Equal) {
             Some(Box::new(self.expr()?))
@@ -256,12 +290,8 @@ impl<'p, 'i> Parser<'p, 'i> {
         span = span.join(&self.expect(TokenData::Semicolon)?);
 
         Ok(Ast::new(
-            AstData::LetDecl {
-                name,
-                ty,
-                is_mut,
-                value,
-            },
+            AstData::LetDecl { name, ty, value },
+            Type::Unit,
             span,
         ))
     }
@@ -269,7 +299,7 @@ impl<'p, 'i> Parser<'p, 'i> {
     fn block_stmt(&mut self) -> ParseResult<Ast<'i>> {
         let (stmts, span) = self.block()?;
 
-        Ok(Ast::new(AstData::BlockStmt(stmts), span))
+        Ok(Ast::new(AstData::BlockStmt(stmts), Type::Unit, span))
     }
 
     fn if_stmt(&mut self) -> ParseResult<Ast<'i>> {
@@ -300,6 +330,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                 then: Box::new(then),
                 else_,
             },
+            Type::Unit,
             span,
         ))
     }
@@ -317,6 +348,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                 cond: Box::new(cond),
                 body: Box::new(body),
             },
+            Type::Unit,
             span,
         ))
     }
@@ -324,15 +356,23 @@ impl<'p, 'i> Parser<'p, 'i> {
     fn return_stmt(&mut self) -> ParseResult<Ast<'i>> {
         let mut span = self.advance().unwrap();
 
-        let value = if !self.check_cur(TokenData::Semicolon) {
-            Some(Box::new(self.expr()?))
+        let mut value = if !self.check_cur(TokenData::Semicolon) {
+            self.expr()?
         } else {
-            None
+            Ast::new(AstData::UnitExpr, Type::Unit, Span::default())
         };
 
-        span = span.join(&self.expect(TokenData::Semicolon)?);
+        let semicolon = self.expect(TokenData::Semicolon)?;
+        if value.ty == Type::Unit {
+            value.span = semicolon;
+        }
+        span = span.join(&semicolon);
 
-        Ok(Ast::new(AstData::ReturnStmt(value), span))
+        Ok(Ast::new(
+            AstData::ReturnStmt(Box::new(value)),
+            Type::Unit,
+            span,
+        ))
     }
 
     fn expr_stmt(&mut self) -> ParseResult<Ast<'i>> {
@@ -342,7 +382,7 @@ impl<'p, 'i> Parser<'p, 'i> {
 
         span = span.join(&self.expect(TokenData::Semicolon)?);
 
-        Ok(Ast::new(expr.data, span))
+        Ok(Ast::new(expr.data, Type::Unit, span))
     }
 
     fn assign_expr(&mut self) -> ParseResult<Ast<'i>> {
@@ -358,6 +398,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                     lhs: Box::new(expr),
                     rhs: Box::new(rhs),
                 },
+                Type::Unknown,
                 span,
             );
         }
@@ -378,6 +419,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                     lhs: Box::new(expr),
                     rhs: Box::new(rhs),
                 },
+                Type::Unknown,
                 span,
             );
         }
@@ -398,6 +440,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                     lhs: Box::new(expr),
                     rhs: Box::new(rhs),
                 },
+                Type::Unknown,
                 span,
             );
         }
@@ -418,6 +461,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                     lhs: Box::new(expr),
                     rhs: Box::new(rhs),
                 },
+                Type::Unknown,
                 span,
             );
         }
@@ -438,6 +482,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                     lhs: Box::new(expr),
                     rhs: Box::new(rhs),
                 },
+                Type::Unknown,
                 span,
             );
         }
@@ -458,6 +503,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                     lhs: Box::new(expr),
                     rhs: Box::new(rhs),
                 },
+                Type::Unknown,
                 span,
             );
         }
@@ -481,6 +527,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                             lhs: Box::new(expr),
                             rhs: Box::new(rhs),
                         },
+                        Type::Unknown,
                         span,
                     );
                 }
@@ -507,6 +554,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                             lhs: Box::new(expr),
                             rhs: Box::new(rhs),
                         },
+                        Type::Unknown,
                         span,
                     );
                 }
@@ -533,6 +581,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                             lhs: Box::new(expr),
                             rhs: Box::new(rhs),
                         },
+                        Type::Unknown,
                         span,
                     );
                 }
@@ -559,6 +608,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                             lhs: Box::new(expr),
                             rhs: Box::new(rhs),
                         },
+                        Type::Unknown,
                         span,
                     );
                 }
@@ -585,6 +635,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                             lhs: Box::new(expr),
                             rhs: Box::new(rhs),
                         },
+                        Type::Unknown,
                         span,
                     );
                 }
@@ -607,6 +658,7 @@ impl<'p, 'i> Parser<'p, 'i> {
                     op,
                     expr: Box::new(expr),
                 },
+                Type::Unknown,
                 span,
             ))
         } else {
@@ -642,7 +694,11 @@ impl<'p, 'i> Parser<'p, 'i> {
 
         span = span.join(&self.expect(TokenData::RParen)?);
 
-        Ok(Ast::new(AstData::CallExpr { callee, args }, span))
+        Ok(Ast::new(
+            AstData::CallExpr { callee, args },
+            Type::Unknown,
+            span,
+        ))
     }
 
     fn primary_expr(&mut self) -> ParseResult<Ast<'i>> {
@@ -652,28 +708,28 @@ impl<'p, 'i> Parser<'p, 'i> {
 
         let mut span = token.span;
 
-        let data = match token.data {
+        let (data, ty) = match token.data {
             TokenData::LParen => {
                 if self.check_cur(TokenData::RParen) {
                     span = span.join(&self.advance().unwrap());
-                    AstData::UnitExpr
+                    (AstData::UnitExpr, Type::Unit)
                 } else {
                     let expr = self.expr()?;
                     span = span.join(&self.expect(TokenData::RParen)?);
-                    expr.data
+                    (expr.data, expr.ty)
                 }
             }
-            TokenData::Ident(ident) => AstData::IdentExpr(ident),
-            TokenData::Int(int) => AstData::IntExpr(int),
-            TokenData::Float(float) => AstData::FloatExpr(float),
-            TokenData::Char(char) => AstData::CharExpr(char),
-            TokenData::String(string) => AstData::StringExpr(string),
-            TokenData::KwTrue => AstData::BoolExpr(true),
-            TokenData::KwFalse => AstData::BoolExpr(false),
+            TokenData::Ident(ident) => (AstData::IdentExpr(ident), Type::Unknown),
+            TokenData::Int(int) => (AstData::IntExpr(int), Type::Int),
+            TokenData::Float(float) => (AstData::FloatExpr(float), Type::Float),
+            TokenData::Char(char) => (AstData::CharExpr(char), Type::Char),
+            TokenData::String(string) => (AstData::StringExpr(string), Type::String),
+            TokenData::KwTrue => (AstData::BoolExpr(true), Type::Bool),
+            TokenData::KwFalse => (AstData::BoolExpr(false), Type::Bool),
             _ => return Err(self.make_err(ParseErrorData::ExpectedExpr)),
         };
 
-        Ok(Ast::new(data, span))
+        Ok(Ast::new(data, ty, span))
     }
 
     pub fn parse(&mut self) -> ParseResult<Vec<Ast<'i>>> {

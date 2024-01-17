@@ -1,22 +1,6 @@
 use std::fmt::Display;
 
-use crate::{token::TokenData, types::TypeError};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Loc {
-    pub line: u32,
-    pub col: u32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Span {
-    pub start: Loc,
-    pub end: Loc,
-}
-
-pub trait Spanned {
-    fn span(&self) -> Span;
-}
+use crate::{span::*, token::TokenData, types::Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParseErrorData {
@@ -33,18 +17,14 @@ pub enum ParseErrorData {
     ExpectedToken(TokenData<'static>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum CompileErrorData {
-    TypeError(TypeError),
-
-    AlreadyDefinedProc(String),
-    AlreadyDefinedLocal(String),
-
-    UndefinedProc(String),
-    UndefinedLocal(String),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeError {
+    Mismatch(Type, Type),
+    Expected(Type, Type),
+    ExpectedOneOf(Vec<Type>, Type),
+    ExpectedNumeric(Type),
     WrongArgCount(usize, usize),
-
-    ReturnOutsideProc,
+    UnknownType,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,51 +34,24 @@ pub struct ParseError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct CompileError {
-    pub data: CompileErrorData,
+pub enum CheckErrorData {
+    TypeError(TypeError),
+    UndefinedSymbol(String),
+    AlreadyDefinedLocal(String),
+    AlreadyDefinedProc(String),
+    AlreadyDefinedStruct(String),
+    ExpectedLValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CheckError {
+    pub data: CheckErrorData,
     pub span: Span,
 }
 
 pub type ParseResult<T> = Result<T, ParseError>;
-pub type CompileResult<T> = Result<T, CompileError>;
-
-impl PartialOrd for Loc {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Loc {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        if self.line == other.line {
-            self.col.cmp(&other.col)
-        } else {
-            self.line.cmp(&other.line)
-        }
-    }
-}
-
-impl Spanned for Span {
-    #[inline]
-    fn span(&self) -> Span {
-        *self
-    }
-}
-
-impl Span {
-    #[inline]
-    pub fn new(start: Loc, end: Loc) -> Self {
-        Self { start, end }
-    }
-
-    #[inline]
-    pub fn join(&self, other: &Self) -> Self {
-        Self {
-            start: std::cmp::min(self.start, other.start),
-            end: std::cmp::max(self.end, other.end),
-        }
-    }
-}
+pub type TypeResult<T> = Result<T, TypeError>;
+pub type CheckResult<T> = Result<T, CheckError>;
 
 impl ParseError {
     pub fn new(data: ParseErrorData, loc: Loc) -> Self {
@@ -106,19 +59,19 @@ impl ParseError {
     }
 }
 
-impl Display for Loc {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        if self.line == 0 {
-            return write!(f, "eof");
-        }
-
-        write!(f, "{}:{}", self.line, self.col)
+impl TypeError {
+    pub fn into_check_error(self, span: Span) -> CheckError {
+        CheckError::new(CheckErrorData::TypeError(self), span)
     }
 }
 
-impl Display for Span {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "({})..({})", self.start, self.end)
+impl CheckError {
+    pub fn new(data: CheckErrorData, span: Span) -> Self {
+        Self { data, span }
+    }
+
+    pub fn type_error(ty: TypeError, span: Span) -> Self {
+        Self::new(CheckErrorData::TypeError(ty), span)
     }
 }
 
@@ -143,30 +96,59 @@ impl Display for ParseError {
     }
 }
 
-impl std::error::Error for ParseError {
+impl std::fmt::Display for TypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use TypeError::*;
+        match self {
+            Mismatch(t1, t2) => write!(f, "mismatch ({} != {})", t1, t2),
+            Expected(expected, actual) => write!(f, "expected {}, found {}", expected, actual),
+            WrongArgCount(expected, actual) => {
+                write!(f, "expected {} arguments, found {}", expected, actual)
+            }
+            ExpectedOneOf(expected, actual) => {
+                write!(f, "expected one of: ")?;
+                for (i, ty) in expected.iter().enumerate() {
+                    write!(f, "{}", ty)?;
+                    if i != expected.len() - 1 {
+                        write!(f, " | ")?;
+                    }
+                }
+                write!(f, ", found {}", actual)
+            }
+            ExpectedNumeric(actual) => write!(f, "expected numeric type, found {}", actual),
+            UnknownType => write!(f, "unknown type"),
+        }
+    }
 }
 
-impl Display for CompileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use CompileErrorData::*;
+impl std::fmt::Display for CheckError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use CheckErrorData::*;
 
         match &self.data {
-            AlreadyDefinedProc(name) => write!(f, "procedure already defined: {}", name),
-            AlreadyDefinedLocal(name) => write!(f, "local already defined: {}", name),
-            UndefinedLocal(name) => write!(f, "undefined local: {}", name),
-            UndefinedProc(name) => write!(f, "undefined procedure: {}", name),
-            WrongArgCount(expected, actual) => write!(
-                f,
-                "wrong number of arguments: expected {}, found {}",
-                expected, actual
-            ),
-            ReturnOutsideProc => write!(f, "return outside procedure"),
-            TypeError(err) => write!(f, "type error: {}", err),
+            TypeError(err) => write!(f, "{}", err),
+            UndefinedSymbol(name) => write!(f, "undefined symbol: {}", name),
+            AlreadyDefinedLocal(name) => write!(f, "already defined local: {}", name),
+            AlreadyDefinedProc(name) => write!(f, "already defined proc: {}", name),
+            AlreadyDefinedStruct(name) => write!(f, "already defined struct: {}", name),
+            ExpectedLValue => write!(f, "expected lvalue"),
         }?;
 
         write!(f, " at {}", self.span)
     }
 }
 
-impl std::error::Error for CompileError {
+impl std::error::Error for ParseError {
+}
+
+impl std::error::Error for TypeError {
+}
+
+impl std::error::Error for CheckError {
+}
+
+impl From<TypeError> for CheckErrorData {
+    fn from(err: TypeError) -> Self {
+        Self::TypeError(err)
+    }
 }

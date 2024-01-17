@@ -1,13 +1,26 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+use std::rc::Rc;
+
+use crate::error::{TypeError, TypeResult};
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Hash)]
 pub enum Type {
     #[default]
-    Unit,
+    Unknown,
 
+    Unit,
     Int,
     Float,
     Char,
     Bool,
     String,
+
+    Proc(Rc<ProcSig>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ProcSig {
+    pub params: Vec<Type>,
+    pub ret: Type,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,7 +46,7 @@ pub enum BinOp {
     BoolOr,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnOp {
     Neg,
     BitNot,
@@ -41,26 +54,19 @@ pub enum UnOp {
     Cast(Type),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TypeError {
-    Mismatch(Type, Type),
-    Expected(Type, Type),
-    ExpectedOneOf(Vec<Type>, Type),
-    ExpectedNumeric(Type),
-}
-
 impl Type {
-    pub fn is_numeric(self) -> bool {
+    pub fn is_numeric(&self) -> bool {
         use Type::*;
-        match self {
-            Int | Float | Char => true,
-            _ => false,
-        }
+        matches!(self, Int | Float | Char)
+    }
+
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Type::Unknown)
     }
 }
 
 impl BinOp {
-    pub fn type_of(self, lhs: Type, rhs: Type) -> Result<Type, TypeError> {
+    pub fn type_of(&self, lhs: Type, rhs: Type) -> TypeResult<Type> {
         use BinOp::*;
 
         match self {
@@ -100,12 +106,12 @@ impl BinOp {
                     Err(TypeError::Mismatch(lhs, rhs))
                 }
             }
-            BitAnd | BitOr | BitXor | BitShl | BitShr => match (lhs, rhs) {
+            BitAnd | BitOr | BitXor | BitShl | BitShr => match (&lhs, &rhs) {
                 (Type::Int, Type::Int) => Ok(Type::Int),
                 (_, _) if lhs == rhs => Err(TypeError::Expected(Type::Int, lhs)),
                 _ => Err(TypeError::Mismatch(lhs, rhs)),
             },
-            BoolAnd | BoolOr => match (lhs, rhs) {
+            BoolAnd | BoolOr => match (&lhs, &rhs) {
                 (Type::Bool, Type::Bool) => Ok(Type::Bool),
                 (_, _) if lhs == rhs => Err(TypeError::Expected(Type::Bool, lhs)),
                 _ => Err(TypeError::Mismatch(lhs, rhs)),
@@ -115,7 +121,7 @@ impl BinOp {
 }
 
 impl UnOp {
-    pub fn type_of(self, ty: Type) -> Result<Type, TypeError> {
+    pub fn type_of(&self, ty: Type) -> TypeResult<Type> {
         use UnOp::*;
 
         match self {
@@ -140,13 +146,7 @@ impl UnOp {
                     Err(TypeError::Expected(Type::Bool, ty))
                 }
             }
-            Cast(to) => {
-                if ty.is_numeric() && (to.is_numeric() || to == Type::Bool) {
-                    Ok(to)
-                } else {
-                    Err(TypeError::ExpectedNumeric(ty))
-                }
-            }
+            Cast(to) => Ok(to.clone()),
         }
     }
 }
@@ -155,36 +155,23 @@ impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use Type::*;
         match self {
+            Unknown => write!(f, "unknown"),
             Unit => write!(f, "unit"),
             Int => write!(f, "int"),
             Float => write!(f, "float"),
             Char => write!(f, "char"),
             Bool => write!(f, "bool"),
             String => write!(f, "string"),
-        }
-    }
-}
-
-impl std::fmt::Display for TypeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use TypeError::*;
-        match self {
-            Mismatch(t1, t2) => write!(f, "mismatch ({} != {})", t1, t2),
-            Expected(expected, actual) => write!(f, "expected {}, found {}", expected, actual),
-            ExpectedOneOf(expected, actual) => {
-                write!(f, "expected one of: ")?;
-                for (i, ty) in expected.iter().enumerate() {
-                    write!(f, "{}", ty)?;
-                    if i != expected.len() - 1 {
-                        write!(f, " | ")?;
+            Proc(sig) => {
+                write!(f, "proc(")?;
+                for (i, param) in sig.params.iter().enumerate() {
+                    write!(f, "{}", param)?;
+                    if i != sig.params.len() - 1 {
+                        write!(f, ", ")?;
                     }
                 }
-                write!(f, ", found {}", actual)
+                write!(f, ") -> {}", sig.ret)
             }
-            ExpectedNumeric(actual) => write!(f, "expected numeric type, found {}", actual),
         }
     }
-}
-
-impl std::error::Error for TypeError {
 }

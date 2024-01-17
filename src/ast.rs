@@ -1,13 +1,8 @@
-use crate::{
-    error::{Span, Spanned},
-    types::{BinOp, Type, UnOp},
-};
+use std::rc::Rc;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Param<'a> {
-    pub name: &'a str,
-    pub ty: Type,
-}
+use derivative::Derivative;
+
+use crate::{span::*, types::*};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstData<'a> {
@@ -35,7 +30,7 @@ pub enum AstData<'a> {
         args: Vec<Ast<'a>>,
     },
 
-    ReturnStmt(Option<Box<Ast<'a>>>),
+    ReturnStmt(Box<Ast<'a>>),
 
     IfStmt {
         cond: Box<Ast<'a>>,
@@ -53,27 +48,60 @@ pub enum AstData<'a> {
     LetDecl {
         name: &'a str,
         ty: Type,
-        is_mut: bool,
         value: Option<Box<Ast<'a>>>,
     },
 
     ProcDecl {
+        sig: Rc<ProcSig>,
         name: &'a str,
-        ret: Type,
-        params: Vec<Param<'a>>,
+        params: Vec<&'a str>,
         body: Vec<Ast<'a>>,
     },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Derivative, Clone, PartialEq)]
+#[derivative(Debug)]
 pub struct Ast<'a> {
     pub data: AstData<'a>,
+    pub ty: Type,
+
+    #[derivative(Debug = "ignore")]
     pub span: Span,
 }
 
 impl<'a> Ast<'a> {
-    pub fn new(data: AstData<'a>, span: Span) -> Self {
-        Self { data, span }
+    pub fn new(data: AstData<'a>, ty: Type, span: Span) -> Self {
+        Self { data, ty, span }
+    }
+
+    pub fn is_expr(&self) -> bool {
+        use AstData::*;
+        matches!(
+            self.data,
+            UnitExpr
+                | BoolExpr(_)
+                | IntExpr(_)
+                | FloatExpr(_)
+                | StringExpr(_)
+                | CharExpr(_)
+                | IdentExpr(_)
+                | BinExpr { .. }
+                | UnExpr { .. }
+                | CallExpr { .. }
+        )
+    }
+
+    pub fn is_stmt(&self) -> bool {
+        use AstData::*;
+        matches!(
+            self.data,
+            ReturnStmt(_) | IfStmt { .. } | WhileStmt { .. } | BlockStmt(_)
+        )
+    }
+
+    pub fn is_decl(&self) -> bool {
+        use AstData::*;
+        matches!(self.data, LetDecl { .. } | ProcDecl { .. })
     }
 }
 

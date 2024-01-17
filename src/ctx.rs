@@ -1,17 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
-use crate::types::Type;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProcSig {
-    pub params: Vec<Type>,
-    pub ret: Type,
-}
+use crate::types::*;
 
 #[derive(Debug, Clone)]
 pub struct Ctx<'a> {
     pub locals: HashMap<&'a str, Type>,
-    pub procs: HashMap<&'a str, ProcSig>,
+    pub procs: HashMap<&'a str, Rc<ProcSig>>,
 }
 
 impl<'a> Ctx<'a> {
@@ -28,7 +22,7 @@ impl<'a> Ctx<'a> {
     }
 
     #[inline]
-    pub fn add_proc(&mut self, name: &'a str, sig: ProcSig) -> Option<ProcSig> {
+    pub fn add_proc(&mut self, name: &'a str, sig: Rc<ProcSig>) -> Option<Rc<ProcSig>> {
         self.procs.insert(name, sig)
     }
 
@@ -38,7 +32,13 @@ impl<'a> Ctx<'a> {
     }
 
     #[inline]
-    pub fn get_proc(&self, name: &'a str) -> Option<&ProcSig> {
+    pub fn get_proc(&self, name: &'a str) -> Option<&Rc<ProcSig>> {
         self.procs.get(name)
+    }
+}
+
+impl<'a> Default for Ctx<'a> {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -1,5 +1,6 @@
 use crate::{
-    error::{Loc, ParseError, ParseErrorData, ParseResult, Span},
+    error::{ParseError, ParseErrorData, ParseResult},
+    span::*,
     token::*,
 };
 
@@ -94,7 +95,7 @@ impl<'i> Lexer<'i> {
                     self.line_start = self.cursor;
                 }
                 b'/' => {
-                    if self.match_cur(b'/') {
+                    if self.peek_next() == Some(b'/') {
                         self.advance_while(|c| c != b'\n');
                         self.line += 1;
                         self.line_start = self.cursor;
