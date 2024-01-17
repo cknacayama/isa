@@ -164,8 +164,49 @@ impl<'p, 'i> Parser<'p, 'i> {
             TokenData::KwBool => Ok((Type::Bool, self.advance().unwrap())),
             TokenData::KwString => Ok((Type::String, self.advance().unwrap())),
             TokenData::KwUnit => Ok((Type::Unit, self.advance().unwrap())),
+            TokenData::KwProc => self.proc_type(),
             _ => Err(self.make_err(ParseErrorData::ExpectedType)),
         }
+    }
+
+    #[inline]
+    fn proc_type(&mut self) -> ParseResult<(Type, Span)> {
+        let mut span = self.advance().unwrap();
+
+        let mut params = vec![];
+
+        self.expect(TokenData::LParen)?;
+
+        if !self.check_cur(TokenData::RParen) {
+            loop {
+                let (param_ty, _) = self.expect_type()?;
+                params.push(param_ty);
+
+                if !self.match_cur(TokenData::Comma) {
+                    break;
+                }
+            }
+        }
+
+        span = span.join(&self.expect(TokenData::RParen)?);
+
+        let ret = if self.match_cur(TokenData::Arrow) {
+            self.expect_type()?.0
+        } else {
+            Type::Unit
+        };
+
+        let sig = ProcSig { params, ret };
+
+        let sig = if let Some(sig) = self.get_proc_sig(&sig) {
+            sig.clone()
+        } else {
+            let sig = Rc::new(sig);
+            self.add_proc_sig(sig.clone());
+            sig
+        };
+
+        Ok((Type::Proc(sig), span))
     }
 
     #[inline]
@@ -236,7 +277,7 @@ impl<'p, 'i> Parser<'p, 'i> {
 
         span = span.join(&self.expect(TokenData::RParen)?);
 
-        let ret_ty = if !self.check_cur(TokenData::LBrace) {
+        let ret_ty = if self.match_cur(TokenData::Arrow) {
             self.expect_type()?.0
         } else {
             Type::Unit

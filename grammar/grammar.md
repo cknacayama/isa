@@ -2,10 +2,9 @@
 program = decl_list? ;
 
 decl_list = decl+ ;
-decl      = proc_decl | struct_decl ;
+decl      = proc_decl ;
 
 proc_decl   = 'proc' ident '(' param_list? ')' [ '->' type ] block ;
-struct_decl = 'struct' ident '{' param_list '}' ;
 
 param_list = param { ',' param } ;
 param      = ident ':' type ;
@@ -73,12 +72,10 @@ type =
      | 'float'
      | 'string'
      | proc_sig
-     | struct_sig
      ;
 
 type_list = type { ',' type } ;
 
 proc_sig   = 'proc' '(' type_list? ')' [ '->' type ] ;
-struct_sig = 'struct' '{' type_list? '}' ;
 
 ```

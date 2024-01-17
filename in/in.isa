@@ -1,4 +1,4 @@
-proc fib(n: int) int {
+proc fib(n: int) -> int {
     let a = 0;
     let b = 1;
 
@@ -13,3 +13,10 @@ proc fib(n: int) int {
     return a;
 }
 
+proc add(a: int) -> proc(int) -> int {
+    proc add_a(b: int) -> int {
+        return a + b;
+    }
+
+    return add_a;
+}
