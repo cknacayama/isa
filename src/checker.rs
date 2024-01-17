@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::{collections::HashSet, rc::Rc};
 
 use crate::{
     ast::*,
@@ -12,13 +12,17 @@ use crate::{
 pub struct Checker<'a> {
     ctx_stack: Vec<Ctx<'a>>,
     ret_stack: Vec<Type>,
+    arr_sigs: HashSet<Rc<ArrSig>>,
+    proc_sigs: HashSet<Rc<ProcSig>>,
 }
 
 impl<'i> Checker<'i> {
-    pub fn new() -> Self {
+    pub fn new(arr_sigs: HashSet<Rc<ArrSig>>, proc_sigs: HashSet<Rc<ProcSig>>) -> Self {
         Self {
             ctx_stack: vec![Ctx::new()],
             ret_stack: vec![],
+            arr_sigs,
+            proc_sigs,
         }
     }
 
@@ -28,6 +32,14 @@ impl<'i> Checker<'i> {
 
     fn add_proc(&mut self, name: &'i str, sig: Rc<ProcSig>) -> Option<Rc<ProcSig>> {
         self.ctx_stack.last_mut().unwrap().add_proc(name, sig)
+    }
+
+    fn add_proc_sig(&mut self, sig: Rc<ProcSig>) -> bool {
+        self.proc_sigs.insert(sig)
+    }
+
+    fn add_arr_sig(&mut self, sig: Rc<ArrSig>) -> bool {
+        self.arr_sigs.insert(sig)
     }
 
     fn get_local(&self, name: &'i str) -> Option<&Type> {
@@ -42,6 +54,14 @@ impl<'i> Checker<'i> {
             .iter()
             .rev()
             .find_map(|ctx| ctx.get_proc(name))
+    }
+
+    fn get_proc_sig(&self, sig: &ProcSig) -> Option<&Rc<ProcSig>> {
+        self.proc_sigs.get(sig)
+    }
+
+    fn get_arr_sig(&self, sig: &ArrSig) -> Option<&Rc<ArrSig>> {
+        self.arr_sigs.get(sig)
     }
 
     fn begin_scope(&mut self) {
@@ -106,17 +126,21 @@ impl<'i> Checker<'i> {
 
     fn call_expr(
         &mut self,
-        callee: &'i str,
+        callee: Ast<'i>,
         args: Vec<Ast<'i>>,
         span: Span,
     ) -> CheckResult<Ast<'i>> {
-        let callee_sig = self
-            .get_proc(callee)
-            .ok_or(CheckError::new(
-                CheckErrorData::UndefinedSymbol(callee.to_string()),
-                span,
-            ))?
-            .clone();
+        let callee = self.ast(callee)?;
+
+        let callee_sig = match &callee.ty {
+            Type::Proc(sig) => sig.clone(),
+            _ => {
+                return Err(CheckError::new(
+                    CheckErrorData::TypeError(TypeError::ExpectedProc(callee.ty)),
+                    span,
+                ))
+            }
+        };
 
         if callee_sig.params.len() != args.len() {
             return Err(CheckError::new(
@@ -143,8 +167,42 @@ impl<'i> Checker<'i> {
         }
 
         Ok(Ast {
-            data: AstData::CallExpr { callee, args },
+            data: AstData::CallExpr {
+                callee: Box::new(callee),
+                args,
+            },
             ty: callee_sig.ret.clone(),
+            span,
+        })
+    }
+
+    fn index_expr(&mut self, array: Ast<'i>, index: Ast<'i>, span: Span) -> CheckResult<Ast<'i>> {
+        let array = self.ast(array)?;
+        let index = self.ast(index)?;
+
+        let elem_ty = match &array.ty {
+            Type::Array(sig) => sig.elem.clone(),
+            _ => {
+                return Err(CheckError::new(
+                    CheckErrorData::TypeError(TypeError::ExpectedArray(array.ty)),
+                    span,
+                ))
+            }
+        };
+
+        if index.ty != Type::Int {
+            return Err(CheckError::new(
+                CheckErrorData::TypeError(TypeError::Expected(Type::Int, index.ty)),
+                span,
+            ));
+        }
+
+        Ok(Ast {
+            data: AstData::IndexExpr {
+                array: Box::new(array),
+                index: Box::new(index),
+            },
+            ty: elem_ty,
             span,
         })
     }
@@ -168,6 +226,86 @@ impl<'i> Checker<'i> {
         Ok(Ast {
             data: AstData::IdentExpr(ident),
             ty,
+            span,
+        })
+    }
+
+    fn proc_expr(
+        &mut self,
+        sig: Rc<ProcSig>,
+        params: Vec<&'i str>,
+        body: Vec<Ast<'i>>,
+        span: Span,
+    ) -> CheckResult<Ast<'i>> {
+        if self.get_proc_sig(&sig).is_none() {
+            self.add_proc_sig(sig.clone());
+        }
+
+        self.begin_proc_scope(sig.ret.clone());
+
+        for (param, ty) in params.iter().zip(sig.params.iter()) {
+            self.add_local(param, ty.clone());
+        }
+
+        let body = body
+            .into_iter()
+            .map(|expr| self.ast(expr))
+            .collect::<CheckResult<Vec<_>>>()?;
+
+        self.end_proc_scope();
+
+        Ok(Ast {
+            data: AstData::ProcExpr {
+                sig: sig.clone(),
+                params,
+                body,
+            },
+            ty: Type::Proc(sig),
+            span,
+        })
+    }
+
+    fn array_expr(&mut self, arr: Vec<Ast<'i>>, span: Span) -> CheckResult<Ast<'i>> {
+        let arr = arr
+            .into_iter()
+            .map(|expr| self.ast(expr))
+            .collect::<CheckResult<Vec<_>>>()?;
+
+        let elem_ty = arr.first().unwrap().ty.clone();
+        let elem_ty = arr.iter().skip(1).fold(Ok(elem_ty), |acc, expr| {
+            let acc = acc?;
+
+            if expr.ty != acc {
+                return Err(CheckError::new(
+                    CheckErrorData::TypeError(TypeError::Mismatch(expr.ty.clone(), acc)),
+                    span,
+                ));
+            }
+
+            Ok(acc)
+        })?;
+
+        if elem_ty == Type::Unknown {
+            return Err(CheckError::new(
+                CheckErrorData::TypeError(TypeError::UnknownType),
+                span,
+            ));
+        }
+
+        let len = arr.len();
+
+        let sig = ArrSig { elem: elem_ty, len };
+        let sig = if let Some(sig) = self.get_arr_sig(&sig) {
+            sig.clone()
+        } else {
+            let sig = Rc::new(sig);
+            self.add_arr_sig(sig.clone());
+            sig
+        };
+
+        Ok(Ast {
+            data: AstData::ArrayExpr(arr),
+            ty: Type::Array(sig),
             span,
         })
     }
@@ -205,6 +343,7 @@ impl<'i> Checker<'i> {
                 span,
             ));
         }
+        self.add_proc_sig(sig.clone());
 
         self.begin_proc_scope(sig.ret.clone());
 
@@ -238,6 +377,12 @@ impl<'i> Checker<'i> {
         value: Option<Box<Ast<'i>>>,
         span: Span,
     ) -> CheckResult<Ast<'i>> {
+        if let Type::Array(sig) = &ty {
+            if self.get_arr_sig(sig).is_none() {
+                self.add_arr_sig(sig.clone());
+            }
+        }
+
         let (value, ty) = if let Some(value) = value {
             let value = self.ast(*value)?;
 
@@ -358,7 +503,10 @@ impl<'i> Checker<'i> {
         match expr.data {
             BinExpr { op, lhs, rhs } => self.binary_expr(op, *lhs, *rhs, span),
             UnExpr { op, expr } => self.unary_expr(op, *expr, span),
-            CallExpr { callee, args } => self.call_expr(callee, args, span),
+            CallExpr { callee, args } => self.call_expr(*callee, args, span),
+            IndexExpr { array, index } => self.index_expr(*array, *index, span),
+            ProcExpr { sig, params, body } => self.proc_expr(sig, params, body, span),
+            ArrayExpr(arr) => self.array_expr(arr, span),
 
             UnitExpr => Ok(Ast {
                 data: AstData::UnitExpr,
@@ -417,7 +565,7 @@ impl<'i> Checker<'i> {
         }
     }
 
-    pub fn check(&mut self, program: Vec<Ast<'i>>) -> CheckResult<Vec<Ast<'i>>> {
+    pub fn run(&mut self, program: Vec<Ast<'i>>) -> CheckResult<Vec<Ast<'i>>> {
         let program = program
             .into_iter()
             .map(|expr| self.ast(expr))
@@ -425,4 +573,13 @@ impl<'i> Checker<'i> {
 
         Ok(program)
     }
+}
+
+pub fn check<'i>(
+    program: Vec<Ast<'i>>,
+    arr_sigs: HashSet<Rc<ArrSig>>,
+    proc_sigs: HashSet<Rc<ProcSig>>,
+) -> CheckResult<Vec<Ast<'i>>> {
+    let mut checker = Checker::new(arr_sigs, proc_sigs);
+    checker.run(program)
 }

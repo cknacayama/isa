@@ -8,41 +8,20 @@ pub mod span;
 pub mod token;
 pub mod types;
 
-use checker::Checker;
-use lexer::Lexer;
-use parser::Parser;
+use checker::check;
+use lexer::lex;
+use parser::parse;
 
-fn main() {
-    let input = std::fs::read("in/in.isa").unwrap();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let input = std::fs::read("in/in.isa")?;
 
-    let mut lexer = Lexer::new(&input);
-    let tokens = match lexer.lex() {
-        Ok(tokens) => tokens,
-        Err(e) => {
-            eprintln!("{}", e);
-            return;
-        }
-    };
+    let tokens = lex(&input)?;
 
-    let mut parser = Parser::new(&tokens);
+    let (program, arr_sigs, proc_sigs) = parse(&tokens)?;
 
-    let program = match parser.parse() {
-        Ok(program) => program,
-        Err(e) => {
-            eprintln!("{}", e);
-            return;
-        }
-    };
-
-    let mut checker = Checker::new();
-
-    let program = match checker.check(program) {
-        Ok(program) => program,
-        Err(e) => {
-            eprintln!("{}", e);
-            return;
-        }
-    };
+    let program = check(program, arr_sigs, proc_sigs)?;
 
     println!("{:#?}", program);
+
+    Ok(())
 }

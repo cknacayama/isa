@@ -12,6 +12,7 @@ pub enum ParseErrorData {
     ExpectedDecl,
     ExpectedIdent,
     ExpectedType,
+    ExpectedInt,
     ExpectedExpr,
     UnexpectedEof,
     ExpectedToken(TokenData<'static>),
@@ -23,6 +24,8 @@ pub enum TypeError {
     Expected(Type, Type),
     ExpectedOneOf(Vec<Type>, Type),
     ExpectedNumeric(Type),
+    ExpectedProc(Type),
+    ExpectedArray(Type),
     WrongArgCount(usize, usize),
     UnknownType,
 }
@@ -86,6 +89,7 @@ impl Display for ParseError {
             UnterminatedChar => write!(f, "unterminated char"),
             ExpectedIdent => write!(f, "expected identifier"),
             ExpectedExpr => write!(f, "expected expression"),
+            ExpectedInt => write!(f, "expected integer"),
             UnexpectedEof => write!(f, "unexpected end of file"),
             ExpectedToken(token) => write!(f, "expected token: {:?}", token),
             ExpectedType => write!(f, "expected type"),
@@ -116,6 +120,8 @@ impl std::fmt::Display for TypeError {
                 write!(f, ", found {}", actual)
             }
             ExpectedNumeric(actual) => write!(f, "expected numeric type, found {}", actual),
+            ExpectedProc(actual) => write!(f, "expected proc type, found {}", actual),
+            ExpectedArray(actual) => write!(f, "expected array type, found {}", actual),
             UnknownType => write!(f, "unknown type"),
         }
     }

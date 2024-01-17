@@ -14,6 +14,8 @@ pub enum Type {
     Bool,
     String,
 
+    Array(Rc<ArrSig>),
+
     Proc(Rc<ProcSig>),
 }
 
@@ -21,6 +23,12 @@ pub enum Type {
 pub struct ProcSig {
     pub params: Vec<Type>,
     pub ret: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ArrSig {
+    pub elem: Type,
+    pub len: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,6 +170,7 @@ impl std::fmt::Display for Type {
             Char => write!(f, "char"),
             Bool => write!(f, "bool"),
             String => write!(f, "string"),
+            Array(sig) => write!(f, "[{}; {}]", sig.elem, sig.len),
             Proc(sig) => {
                 write!(f, "proc(")?;
                 for (i, param) in sig.params.iter().enumerate() {

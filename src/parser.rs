@@ -12,6 +12,7 @@ use crate::{
 pub struct Parser<'p, 'i> {
     tokens: &'p [Token<'i>],
     cursor: usize,
+    arr_sigs: HashSet<Rc<ArrSig>>,
     proc_sigs: HashSet<Rc<ProcSig>>,
 }
 
@@ -21,6 +22,7 @@ impl<'p, 'i> Parser<'p, 'i> {
             tokens,
             cursor: 0,
             proc_sigs: HashSet::new(),
+            arr_sigs: HashSet::new(),
         }
     }
 
@@ -35,6 +37,16 @@ impl<'p, 'i> Parser<'p, 'i> {
     }
 
     #[inline]
+    fn add_arr_sig(&mut self, sig: Rc<ArrSig>) -> bool {
+        self.arr_sigs.insert(sig)
+    }
+
+    #[inline]
+    fn get_arr_sig(&self, sig: &ArrSig) -> Option<&Rc<ArrSig>> {
+        self.arr_sigs.get(sig)
+    }
+
+    #[inline]
     fn peek(&self) -> Option<&Token<'i>> {
         self.tokens.get(self.cursor)
     }
@@ -43,11 +55,6 @@ impl<'p, 'i> Parser<'p, 'i> {
     fn peek_or_eof(&self) -> ParseResult<&Token<'i>> {
         self.peek()
             .ok_or(self.make_err(ParseErrorData::UnexpectedEof))
-    }
-
-    #[inline]
-    fn peek_next(&self) -> Option<&Token<'i>> {
-        self.tokens.get(self.cursor + 1)
     }
 
     #[inline]
@@ -156,6 +163,14 @@ impl<'p, 'i> Parser<'p, 'i> {
     }
 
     #[inline]
+    fn expect_int(&mut self) -> ParseResult<(u64, Span)> {
+        match self.peek_or_eof()?.data {
+            TokenData::Int(int) => Ok((int, self.advance().unwrap())),
+            _ => Err(self.make_err(ParseErrorData::ExpectedInt)),
+        }
+    }
+
+    #[inline]
     fn expect_type(&mut self) -> ParseResult<(Type, Span)> {
         match self.peek_or_eof()?.data {
             TokenData::KwInt => Ok((Type::Int, self.advance().unwrap())),
@@ -165,8 +180,35 @@ impl<'p, 'i> Parser<'p, 'i> {
             TokenData::KwString => Ok((Type::String, self.advance().unwrap())),
             TokenData::KwUnit => Ok((Type::Unit, self.advance().unwrap())),
             TokenData::KwProc => self.proc_type(),
+            TokenData::LBracket => self.array_type(),
             _ => Err(self.make_err(ParseErrorData::ExpectedType)),
         }
+    }
+
+    #[inline]
+    fn array_type(&mut self) -> ParseResult<(Type, Span)> {
+        let mut span = self.advance().unwrap();
+
+        let (elem_ty, _) = self.expect_type()?;
+        self.expect(TokenData::Semicolon)?;
+        let (len, _) = self.expect_int()?;
+
+        span = span.join(&self.expect(TokenData::RBracket)?);
+
+        let sig = ArrSig {
+            elem: elem_ty,
+            len: len as usize,
+        };
+
+        let sig = if let Some(sig) = self.get_arr_sig(&sig) {
+            sig.clone()
+        } else {
+            let sig = Rc::new(sig);
+            self.add_arr_sig(sig.clone());
+            sig
+        };
+
+        Ok((Type::Array(sig), span))
     }
 
     #[inline]
@@ -220,8 +262,8 @@ impl<'p, 'i> Parser<'p, 'i> {
     #[inline]
     fn stmt(&mut self) -> ParseResult<Ast<'i>> {
         match self.peek_or_eof()?.data {
-            TokenData::KwLet => self.let_decl(),
             TokenData::KwProc => self.proc_decl(),
+            TokenData::KwLet => self.let_decl(),
             TokenData::KwIf => self.if_stmt(),
             TokenData::KwWhile => self.while_stmt(),
             TokenData::KwReturn => self.return_stmt(),
@@ -252,7 +294,6 @@ impl<'p, 'i> Parser<'p, 'i> {
 
     fn proc_decl(&mut self) -> ParseResult<Ast<'i>> {
         let mut span = self.advance().unwrap();
-
         let (name, _) = self.expect_ident()?;
 
         let mut params = vec![];
@@ -708,24 +749,76 @@ impl<'p, 'i> Parser<'p, 'i> {
     }
 
     fn postfix_expr(&mut self) -> ParseResult<Ast<'i>> {
-        match self.peek_or_eof()?.data {
-            TokenData::Ident(_) if self.peek_next().map(|t| t.data) == Some(TokenData::LParen) => {
-                self.call_expr()
+        let mut expr = self.primary_expr()?;
+
+        while let Some(token) = self.peek() {
+            match token.data {
+                TokenData::LParen => {
+                    let mut span = expr.span;
+
+                    let mut args = vec![];
+
+                    self.expect(TokenData::LParen)?;
+
+                    if !self.check_cur(TokenData::RParen) {
+                        loop {
+                            args.push(self.expr()?);
+
+                            if !self.match_cur(TokenData::Comma) {
+                                break;
+                            }
+                        }
+                    }
+
+                    span = span.join(&self.expect(TokenData::RParen)?);
+
+                    expr = Ast::new(
+                        AstData::CallExpr {
+                            callee: Box::new(expr),
+                            args,
+                        },
+                        Type::Unknown,
+                        span,
+                    );
+                }
+                TokenData::LBracket => {
+                    let mut span = expr.span;
+
+                    self.expect(TokenData::LBracket)?;
+                    let index = self.expr()?;
+
+                    span = span.join(&self.expect(TokenData::RBracket)?);
+
+                    expr = Ast::new(
+                        AstData::IndexExpr {
+                            array: Box::new(expr),
+                            index: Box::new(index),
+                        },
+                        Type::Unknown,
+                        span,
+                    );
+                }
+                _ => break,
             }
-            _ => self.primary_expr(),
         }
+
+        Ok(expr)
     }
 
-    fn call_expr(&mut self) -> ParseResult<Ast<'i>> {
-        let (callee, mut span) = self.expect_ident()?;
-
-        let mut args = vec![];
+    fn proc_expr(&mut self, span: Span) -> ParseResult<Ast<'i>> {
+        let mut params = vec![];
+        let mut param_types = vec![];
 
         self.expect(TokenData::LParen)?;
 
         if !self.check_cur(TokenData::RParen) {
             loop {
-                args.push(self.expr()?);
+                let (param_name, _) = self.expect_ident()?;
+                self.expect(TokenData::Colon)?;
+                let (param_ty, _) = self.expect_type()?;
+
+                params.push(param_name);
+                param_types.push(param_ty);
 
                 if !self.match_cur(TokenData::Comma) {
                     break;
@@ -733,11 +826,38 @@ impl<'p, 'i> Parser<'p, 'i> {
             }
         }
 
-        span = span.join(&self.expect(TokenData::RParen)?);
+        self.expect(TokenData::RParen)?;
+
+        let ret_ty = if self.match_cur(TokenData::Arrow) {
+            self.expect_type()?.0
+        } else {
+            Type::Unit
+        };
+
+        let sig = ProcSig {
+            params: param_types,
+            ret: ret_ty,
+        };
+
+        let sig = if let Some(sig) = self.get_proc_sig(&sig) {
+            sig.clone()
+        } else {
+            let sig = Rc::new(sig);
+            self.add_proc_sig(sig.clone());
+            sig
+        };
+
+        let (body, body_span) = self.block()?;
+
+        let span = span.join(&body_span);
 
         Ok(Ast::new(
-            AstData::CallExpr { callee, args },
-            Type::Unknown,
+            AstData::ProcExpr {
+                sig: sig.clone(),
+                params,
+                body,
+            },
+            Type::Proc(sig),
             span,
         ))
     }
@@ -749,8 +869,9 @@ impl<'p, 'i> Parser<'p, 'i> {
 
         let mut span = token.span;
 
+        use TokenData::*;
         let (data, ty) = match token.data {
-            TokenData::LParen => {
+            LParen => {
                 if self.check_cur(TokenData::RParen) {
                     span = span.join(&self.advance().unwrap());
                     (AstData::UnitExpr, Type::Unit)
@@ -760,20 +881,38 @@ impl<'p, 'i> Parser<'p, 'i> {
                     (expr.data, expr.ty)
                 }
             }
-            TokenData::Ident(ident) => (AstData::IdentExpr(ident), Type::Unknown),
-            TokenData::Int(int) => (AstData::IntExpr(int), Type::Int),
-            TokenData::Float(float) => (AstData::FloatExpr(float), Type::Float),
-            TokenData::Char(char) => (AstData::CharExpr(char), Type::Char),
-            TokenData::String(string) => (AstData::StringExpr(string), Type::String),
-            TokenData::KwTrue => (AstData::BoolExpr(true), Type::Bool),
-            TokenData::KwFalse => (AstData::BoolExpr(false), Type::Bool),
+            LBracket => {
+                let mut elems = vec![];
+
+                if !self.check_cur(TokenData::RBracket) {
+                    loop {
+                        elems.push(self.expr()?);
+
+                        if !self.match_cur(TokenData::Comma) {
+                            break;
+                        }
+                    }
+                }
+
+                span = span.join(&self.expect(TokenData::RBracket)?);
+
+                (AstData::ArrayExpr(elems), Type::Unknown)
+            }
+            Ident(ident) => (AstData::IdentExpr(ident), Type::Unknown),
+            Int(int) => (AstData::IntExpr(int), Type::Int),
+            Float(float) => (AstData::FloatExpr(float), Type::Float),
+            Char(char) => (AstData::CharExpr(char), Type::Char),
+            String(string) => (AstData::StringExpr(string), Type::String),
+            KwTrue => (AstData::BoolExpr(true), Type::Bool),
+            KwFalse => (AstData::BoolExpr(false), Type::Bool),
+            KwProc => return self.proc_expr(span),
             _ => return Err(self.make_err(ParseErrorData::ExpectedExpr)),
         };
 
         Ok(Ast::new(data, ty, span))
     }
 
-    pub fn parse(&mut self) -> ParseResult<Vec<Ast<'i>>> {
+    pub fn run(&mut self) -> ParseResult<Vec<Ast<'i>>> {
         let mut ast = vec![];
 
         while self.cursor < self.tokens.len() {
@@ -782,6 +921,18 @@ impl<'p, 'i> Parser<'p, 'i> {
 
         Ok(ast)
     }
+}
+
+pub fn parse<'i>(
+    tokens: &[Token<'i>],
+) -> ParseResult<(Vec<Ast<'i>>, HashSet<Rc<ArrSig>>, HashSet<Rc<ProcSig>>)> {
+    let mut parser = Parser::new(tokens);
+
+    let ast = parser.run()?;
+    let proc_sigs = parser.proc_sigs;
+    let arr_sigs = parser.arr_sigs;
+
+    Ok((ast, arr_sigs, proc_sigs))
 }
 
 impl<'p, 'i> Iterator for Parser<'p, 'i> {

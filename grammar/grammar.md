@@ -45,8 +45,9 @@ un_expr       =
               | postfix_expr
               ;
 postfix_expr  =
-              | ident '(' arg_list? ')'
               | primary_expr
+              | postfix_expr '(' expr_list? ')'
+              | postfix_expr '[' expr ']'
               ;
 primary_expr  =
               | '(' expr ')'
@@ -55,12 +56,19 @@ primary_expr  =
               | float
               | character
               | string
+              | array
+              | proc_lit
               | 'true'
               | 'false'
               ;
 
+expr_list = expr { ',' expr } ;
+array     = '[' expr_list ']' ;
+proc_lit  = 'proc' '(' param_list? ')' [ '->' type ] block ;
+
 ident     = / [a-zA-Z_][a-zA-z0-9_]*
 integer   = / [0-9][0-9]*
+float     = / integer\.integer
 character = / '(.|\\[nrt0"'])'
 string    = / "[^"]*"
 
@@ -72,10 +80,12 @@ type =
      | 'float'
      | 'string'
      | proc_sig
+     | array_sig
      ;
 
 type_list = type { ',' type } ;
 
+array_sig  = '[' type ';' integer ']' ;
 proc_sig   = 'proc' '(' type_list? ')' [ '->' type ] ;
 
 ```

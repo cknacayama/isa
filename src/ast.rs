@@ -13,6 +13,12 @@ pub enum AstData<'a> {
     StringExpr(&'a str),
     CharExpr(char),
     IdentExpr(&'a str),
+    ArrayExpr(Vec<Ast<'a>>),
+    ProcExpr {
+        sig: Rc<ProcSig>,
+        params: Vec<&'a str>,
+        body: Vec<Ast<'a>>,
+    },
 
     BinExpr {
         op: BinOp,
@@ -26,8 +32,13 @@ pub enum AstData<'a> {
     },
 
     CallExpr {
-        callee: &'a str,
+        callee: Box<Ast<'a>>,
         args: Vec<Ast<'a>>,
+    },
+
+    IndexExpr {
+        array: Box<Ast<'a>>,
+        index: Box<Ast<'a>>,
     },
 
     ReturnStmt(Box<Ast<'a>>),
@@ -72,36 +83,6 @@ pub struct Ast<'a> {
 impl<'a> Ast<'a> {
     pub fn new(data: AstData<'a>, ty: Type, span: Span) -> Self {
         Self { data, ty, span }
-    }
-
-    pub fn is_expr(&self) -> bool {
-        use AstData::*;
-        matches!(
-            self.data,
-            UnitExpr
-                | BoolExpr(_)
-                | IntExpr(_)
-                | FloatExpr(_)
-                | StringExpr(_)
-                | CharExpr(_)
-                | IdentExpr(_)
-                | BinExpr { .. }
-                | UnExpr { .. }
-                | CallExpr { .. }
-        )
-    }
-
-    pub fn is_stmt(&self) -> bool {
-        use AstData::*;
-        matches!(
-            self.data,
-            ReturnStmt(_) | IfStmt { .. } | WhileStmt { .. } | BlockStmt(_)
-        )
-    }
-
-    pub fn is_decl(&self) -> bool {
-        use AstData::*;
-        matches!(self.data, LetDecl { .. } | ProcDecl { .. })
     }
 }
 

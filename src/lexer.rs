@@ -294,7 +294,7 @@ impl<'i> Lexer<'i> {
         }
     }
 
-    pub fn lex(&mut self) -> ParseResult<Vec<Token<'i>>> {
+    pub fn run(&mut self) -> ParseResult<Vec<Token<'i>>> {
         let mut tokens = vec![];
 
         for token in self {
@@ -303,6 +303,10 @@ impl<'i> Lexer<'i> {
 
         Ok(tokens)
     }
+}
+
+pub fn lex<'i>(input: &'i [u8]) -> ParseResult<Vec<Token<'i>>> {
+    Lexer::new(input).run()
 }
 
 impl<'i> Iterator for Lexer<'i> {
