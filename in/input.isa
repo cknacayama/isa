@@ -1,0 +1,1 @@
+let id = fn x -> x in (let a = id 0 in id true)
