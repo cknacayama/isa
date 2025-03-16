@@ -159,6 +159,7 @@ impl<'a> Lexer<'a> {
         match c {
             '(' => token!(LParen),
             ')' => token!(RParen),
+            ';' => token!(Semicolon),
             '*' => token!(Star),
             '/' => token!(Slash),
             '%' => token!(Percent),

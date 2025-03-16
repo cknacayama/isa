@@ -84,6 +84,8 @@ impl Debug for Expr<'_> {
 
 #[derive(Debug, Clone)]
 pub enum ExprKind<'a> {
+    Unit,
+
     Int(i64),
 
     Bool(bool),
@@ -94,10 +96,13 @@ pub enum ExprKind<'a> {
 
     UnOp(UnOp),
 
+    Semi(Box<Expr<'a>>),
+
     Let {
+        rec:  bool,
         id:   &'a str,
         expr: Box<Expr<'a>>,
-        body: Box<Expr<'a>>,
+        body: Option<Box<Expr<'a>>>,
     },
 
     Fn {
@@ -170,7 +175,7 @@ impl<'a> TypedExpr<'a> {
         match &mut self.kind {
             TypedExprKind::Let { expr, body, .. } => {
                 expr.visit(f);
-                body.visit(f);
+                body.as_mut().map(|body| body.visit(f));
             }
             TypedExprKind::Fn { expr, .. } => {
                 expr.visit(f);
@@ -196,6 +201,8 @@ impl<'a> TypedExpr<'a> {
 
 #[derive(Debug, Clone)]
 pub enum TypedExprKind<'a> {
+    Unit,
+
     Int(i64),
 
     Bool(bool),
@@ -206,10 +213,13 @@ pub enum TypedExprKind<'a> {
 
     UnOp(UnOp),
 
+    Semi(Box<TypedExpr<'a>>),
+
     Let {
+        rec:  bool,
         id:   &'a str,
         expr: Box<TypedExpr<'a>>,
-        body: Box<TypedExpr<'a>>,
+        body: Option<Box<TypedExpr<'a>>>,
     },
 
     Fn {
@@ -233,8 +243,7 @@ impl<'a> TokenKind<'a> {
     pub fn can_start_expr(&self) -> bool {
         matches!(
             self,
-            TokenKind::Minus
-                | TokenKind::LParen
+            TokenKind::LParen
                 | TokenKind::Integer(_)
                 | TokenKind::Ident(_)
                 | TokenKind::KwTrue
@@ -280,13 +289,41 @@ impl Display for UnOp {
 impl Display for TypedExpr<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
+            TypedExprKind::Semi(expr) => write!(f, "{};", expr),
+            TypedExprKind::Unit => write!(f, "()"),
             TypedExprKind::Int(i) => write!(f, "{}", i),
             TypedExprKind::Bool(b) => write!(f, "{}", b),
             TypedExprKind::Ident(id) => write!(f, "{}", id),
             TypedExprKind::BinOp(op) => write!(f, "{}", op),
             TypedExprKind::UnOp(op) => write!(f, "{}", op),
-            TypedExprKind::Let { id, expr, body } => {
-                write!(f, "(let {} = {} in {})", id, expr, body)
+            TypedExprKind::Let {
+                rec,
+                id,
+                expr,
+                body: None,
+            } => {
+                write!(
+                    f,
+                    "(let {} {} = {})",
+                    if *rec { "rec" } else { "" },
+                    id,
+                    expr
+                )
+            }
+            TypedExprKind::Let {
+                rec,
+                id,
+                expr,
+                body: Some(body),
+            } => {
+                write!(
+                    f,
+                    "(let {} {} = {} in {})",
+                    if *rec { "rec" } else { "" },
+                    id,
+                    expr,
+                    body
+                )
             }
             TypedExprKind::Fn { param, expr } => {
                 write!(f, "(fn {} -> {})", param, expr)

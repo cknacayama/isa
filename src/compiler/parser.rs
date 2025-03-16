@@ -84,11 +84,27 @@ impl<'a> Parser<'a> {
         })
     }
 
+    pub fn parse_all(&mut self) -> ParseResult<Vec<Expr<'a>>> {
+        self.collect()
+    }
+
     pub fn parse(&mut self) -> Option<ParseResult<Expr<'a>>> {
         if self.peek().is_some() {
-            Some(self.parse_expr())
+            Some(self.parse_semi_expr())
         } else {
             None
+        }
+    }
+
+    fn parse_semi_expr(&mut self) -> ParseResult<Expr<'a>> {
+        let expr = self.parse_expr()?;
+
+        if self.next_if_match(TokenKind::Semicolon).is_some() {
+            let span = expr.span;
+            let kind = ExprKind::Semi(Box::new(expr));
+            Ok(Expr::new(kind, span))
+        } else {
+            Ok(expr)
         }
     }
 
@@ -251,18 +267,25 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_let(&mut self, span: Span) -> ParseResult<Expr<'a>> {
+    fn parse_let(&mut self, mut span: Span) -> ParseResult<Expr<'a>> {
+        let rec = self.next_if_match(TokenKind::KwRec).is_some();
         let Spanned { data: id, .. } = self.expect_id()?;
         self.expect(TokenKind::Eq)?;
         let expr = self.parse_expr()?;
-        self.expect(TokenKind::KwIn)?;
-        let body = self.parse_expr()?;
-        let span = span.union(body.span);
+        let body = if self.next_if_match(TokenKind::KwIn).is_some() {
+            let body = self.parse_expr()?;
+            span = span.union(body.span);
+            Some(body)
+        } else {
+            None
+        };
+
         Ok(Expr::new(
             ExprKind::Let {
+                rec,
                 id,
                 expr: Box::new(expr),
-                body: Box::new(body),
+                body: body.map(Box::new),
             },
             span,
         ))
@@ -284,5 +307,13 @@ impl<'a> Parser<'a> {
             },
             span,
         ))
+    }
+}
+
+impl<'a> Iterator for Parser<'a> {
+    type Item = ParseResult<Expr<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.parse()
     }
 }

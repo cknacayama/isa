@@ -19,7 +19,7 @@ pub struct TypeEnv {
 
 impl Default for TypeEnv {
     fn default() -> Self {
-        let types = HashSet::from([Rc::new(Type::Int), Rc::new(Type::Bool)]);
+        let types = HashSet::from([Rc::new(Type::Unit), Rc::new(Type::Int), Rc::new(Type::Bool)]);
 
         Self { types }
     }
@@ -39,6 +39,10 @@ impl TypeEnv {
 
     pub fn iter(&self) -> impl Iterator<Item = &Rc<Type>> {
         self.types.iter()
+    }
+
+    pub fn get_unit(&self) -> Rc<Type> {
+        self.types.get(&Type::Unit).unwrap().clone()
     }
 
     pub fn get_int(&self) -> Rc<Type> {
@@ -80,6 +84,10 @@ impl<'a> Env<'a> {
             .is_some()
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (&'a str, &Rc<Type>)> {
+        self.env.iter().map(|(k, v)| (*k, v))
+    }
+
     fn gen_helper(&self, ty: &Type) -> Vec<u64> {
         match ty {
             Type::Fn(Fn { param, ret }) => {
@@ -118,12 +126,12 @@ impl<'a> Env<'a> {
             Type::Generic { quant, ty } => {
                 quantifiers.extend_from_slice(quant);
                 Type::Generic {
-                    quant: quantifiers,
+                    quant: quantifiers.into_boxed_slice(),
                     ty:    ty.clone(),
                 }
             }
             _ => Type::Generic {
-                quant: quantifiers,
+                quant: quantifiers.into_boxed_slice(),
                 ty,
             },
         };

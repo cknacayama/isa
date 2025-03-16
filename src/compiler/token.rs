@@ -25,6 +25,7 @@ pub enum TokenKind<'a> {
     RParen,
 
     Arrow,
+    Semicolon,
 
     Integer(&'a str),
     Ident(&'a str),
@@ -33,6 +34,7 @@ pub enum TokenKind<'a> {
     KwFalse,
 
     KwLet,
+    KwRec,
     KwIn,
     KwFn,
 
@@ -51,6 +53,7 @@ impl TokenKind<'_> {
             "true" => Some(TokenKind::KwTrue),
             "false" => Some(TokenKind::KwFalse),
             "let" => Some(TokenKind::KwLet),
+            "rec" => Some(TokenKind::KwRec),
             "fn" => Some(TokenKind::KwFn),
             "and" => Some(TokenKind::KwAnd),
             "or" => Some(TokenKind::KwOr),
@@ -83,12 +86,14 @@ impl Display for TokenKind<'_> {
             TokenKind::Le => write!(f, "<="),
             TokenKind::LParen => write!(f, "("),
             TokenKind::RParen => write!(f, ")"),
+            TokenKind::Semicolon => write!(f, ";"),
             TokenKind::Arrow => write!(f, "->"),
             TokenKind::Integer(v) => write!(f, "{v}"),
             TokenKind::Ident(v) => write!(f, "{v}"),
             TokenKind::KwTrue => write!(f, "true"),
             TokenKind::KwFalse => write!(f, "false"),
             TokenKind::KwLet => write!(f, "let"),
+            TokenKind::KwRec => write!(f, "rec"),
             TokenKind::KwIn => write!(f, "in"),
             TokenKind::KwFn => write!(f, "fn"),
             TokenKind::KwAnd => write!(f, "and"),

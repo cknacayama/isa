@@ -22,21 +22,23 @@ impl Fn {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
+    Unit,
     Int,
     Bool,
     Fn(Fn),
     Var(u64),
-    Generic { quant: Vec<u64>, ty: Rc<Type> },
+    Generic { quant: Box<[u64]>, ty: Rc<Type> },
 }
 
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Int => write!(f, "int"),
-            Type::Bool => write!(f, "bool"),
-            Type::Fn(fun) => write!(f, "{} -> {}", fun.param, fun.ret),
-            Type::Var(var) => write!(f, "'{}", var),
-            Type::Generic { quant, ty } => {
+            Self::Unit => write!(f, "()"),
+            Self::Int => write!(f, "int"),
+            Self::Bool => write!(f, "bool"),
+            Self::Fn(Fn { param, ret }) => write!(f, "{} -> {}", param, ret),
+            Self::Var(var) => write!(f, "'{}", var),
+            Self::Generic { quant, ty } => {
                 for n in quant {
                     write!(f, "'{} ", n)?;
                 }
@@ -48,16 +50,15 @@ impl Display for Type {
 
 impl Type {
     pub fn is_simple(&self) -> bool {
-        matches!(self, Self::Int | Self::Bool | Self::Var(_))
+        matches!(self, Self::Int | Self::Bool | Self::Unit | Self::Var(_))
     }
 
     pub fn occurs(&self, var: u64) -> bool {
         match self {
-            Type::Int => false,
-            Type::Bool => false,
-            Type::Fn(f) => f.param().occurs(var) || f.ret().occurs(var),
-            Type::Var(n) => *n == var,
-            Type::Generic { ty, .. } => ty.occurs(var),
+            Self::Unit | Self::Int | Self::Bool => false,
+            Self::Fn(f) => f.param().occurs(var) || f.ret().occurs(var),
+            Self::Var(n) => *n == var,
+            Self::Generic { ty, .. } => ty.occurs(var),
         }
     }
 
