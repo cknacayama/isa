@@ -22,6 +22,10 @@ impl<'a> Checker<'a> {
         Self::default()
     }
 
+    pub fn type_env(&self) -> &TypeEnv {
+        &self.type_env
+    }
+
     pub fn type_env_mut(&mut self) -> &mut TypeEnv {
         &mut self.type_env
     }

@@ -1,1 +1,3 @@
-let id = fn x -> x in (let a = id 0 in id true)
+let id = fn x -> x in (let a = id 0 in id true);
+
+let f = fn a -> fn b -> fn c -> if c then a else b in let a = f false true false in f 1 2 a

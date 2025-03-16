@@ -37,6 +37,10 @@ impl TypeEnv {
         }
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = &Rc<Type>> {
+        self.types.iter()
+    }
+
     pub fn get_int(&self) -> Rc<Type> {
         self.types.get(&Type::Int).unwrap().clone()
     }

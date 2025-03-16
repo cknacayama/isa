@@ -162,6 +162,36 @@ impl<'a> TypedExpr<'a> {
     pub fn new(kind: TypedExprKind<'a>, span: Span, ty: Rc<Type>) -> Self {
         Self { kind, span, ty }
     }
+
+    pub fn visit<F>(&mut self, f: &mut F)
+    where
+        F: FnMut(&mut Self),
+    {
+        match &mut self.kind {
+            TypedExprKind::Let { expr, body, .. } => {
+                expr.visit(f);
+                body.visit(f);
+            }
+            TypedExprKind::Fn { expr, .. } => {
+                expr.visit(f);
+            }
+            TypedExprKind::If {
+                cond,
+                then,
+                otherwise,
+            } => {
+                cond.visit(f);
+                then.visit(f);
+                otherwise.visit(f);
+            }
+            TypedExprKind::Call { callee, arg } => {
+                callee.visit(f);
+                arg.visit(f);
+            }
+            _ => (),
+        }
+        f(self)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -256,29 +286,22 @@ impl Display for TypedExpr<'_> {
             TypedExprKind::BinOp(op) => write!(f, "{}", op),
             TypedExprKind::UnOp(op) => write!(f, "{}", op),
             TypedExprKind::Let { id, expr, body } => {
-                write!(
-                    f,
-                    "(let {}: {} = {} in {}: {})",
-                    id, expr.ty, expr, body, &self.ty
-                )
+                write!(f, "(let {} = {} in {})", id, expr, body)
             }
             TypedExprKind::Fn { param, expr } => {
-                write!(f, "(fn {} -> {}: {})", param, expr, &self.ty)
+                write!(f, "(fn {} -> {})", param, expr)
             }
             TypedExprKind::If {
                 cond,
                 then,
                 otherwise,
             } => {
-                write!(
-                    f,
-                    "(if {} then {} else {}: {})",
-                    cond, then, otherwise, &self.ty
-                )
+                write!(f, "(if {} then {} else {})", cond, then, otherwise)
             }
             TypedExprKind::Call { callee, arg } => {
-                write!(f, "({} {}: {})", callee, arg, &self.ty)
+                write!(f, "({} {})", callee, arg)
             }
         }
+        .and_then(|()| write!(f, ": {}", self.ty))
     }
 }

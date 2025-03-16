@@ -1,6 +1,7 @@
 use std::{fmt::Display, rc::Rc};
 
 use super::{
+    ast::TypedExpr,
     env::TypeEnv,
     error::InferError,
     types::{Fn, Type},
@@ -29,6 +30,13 @@ pub trait Substitute {
         S: IntoIterator<Item = &'a Subs>,
     {
         subs.into_iter().fold(self, |ty, s| ty.substitute(s, env))
+    }
+}
+
+impl Substitute for &mut TypedExpr<'_> {
+    fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
+        self.visit(&mut |e| e.ty = e.ty.clone().substitute(subs, env));
+        self
     }
 }
 
@@ -151,7 +159,7 @@ impl ConstrSet {
 
 impl Display for Subs {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} / '{}", self.ty, self.var)
+        write!(f, "'{} |-> ({})", self.var, self.ty)
     }
 }
 

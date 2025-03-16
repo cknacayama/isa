@@ -194,7 +194,7 @@ impl<'a> Parser<'a> {
             .map(Spanned::data)
             .is_some_and(TokenKind::can_start_expr)
         {
-            let arg = self.parse_expr()?;
+            let arg = self.parse_prim()?;
             let span = expr.span.union(arg.span);
             expr = Expr::new(
                 ExprKind::Call {

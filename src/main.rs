@@ -1,46 +1,50 @@
+use std::io::Write;
+
 use isa::compiler::{checker::Checker, infer::Substitute, parser::Parser};
 
 fn main() {
-    let file_name = "in/input.isa";
+    print!(">> ");
+    std::io::stdout().flush().unwrap();
+    for line in std::io::stdin().lines().map(Result::unwrap) {
+        let mut parser = Parser::from_input(&line);
 
-    let input = std::fs::read_to_string(file_name).expect("should be a valid file");
+        let expr = match parser.parse() {
+            Some(Ok(expr)) => expr,
+            Some(Err(err)) => {
+                eprintln!("{}: {}", err.span.start_loc(&line), err.data);
+                return;
+            }
+            None => return,
+        };
 
-    let mut parser = Parser::from_input(&input);
+        let mut checker = Checker::new();
+        let (mut expr, c) = match checker.check(expr) {
+            Ok(ok) => ok,
+            Err(err) => {
+                eprintln!("{}", err);
+                return;
+            }
+        };
 
-    let expr = match parser.parse() {
-        Some(Ok(expr)) => expr,
-        Some(Err(err)) => {
-            eprintln!("{}: {}", err.span.start_loc(&input), err.data);
-            return;
+        let subs = match checker.unify(c) {
+            Ok(subs) => subs,
+            Err(err) => {
+                eprintln!("{}", err);
+                return;
+            }
+        };
+
+        for s in subs.iter() {
+            print!("{}, ", s);
+            expr.substitute(&s, checker.type_env_mut());
         }
-        None => return,
-    };
-
-    let mut checker = Checker::new();
-    let (expr, mut c) = match checker.check(expr) {
-        Ok(ok) => ok,
-        Err(err) => {
-            eprintln!("{}", err);
-            return;
+        if !subs.is_empty() {
+            println!()
         }
-    };
 
-    println!("{}", expr);
-    println!("{}", c);
+        println!("{}", expr);
 
-    let subs = match checker.unify(c.clone()) {
-        Ok(subs) => subs,
-        Err(err) => {
-            eprintln!("{}", err);
-            return;
-        }
-    };
-
-    for s in subs {
-        print!("{{{}}}, ", s);
-        c = c.substitute(&s, checker.type_env_mut());
+        print!(">> ");
+        std::io::stdout().flush().unwrap();
     }
-    println!();
-
-    println!("{}", c);
 }
