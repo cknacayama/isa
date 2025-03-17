@@ -2,4 +2,5 @@ let id = fn x -> x;
 
 let f = fn a -> fn b -> fn c -> if c then a else b;
 
-let rec fib = fn n -> if n < 2 then n else fib (n - 1) + fib (n - 2) in fib 40
+
+f (id (+ 1 2)) 20 (id not false)

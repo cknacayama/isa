@@ -229,13 +229,25 @@ impl<'a> Parser<'a> {
         if let Some(op) = UnOp::from_token(data) {
             return Ok(Expr::new(ExprKind::UnOp(op), span));
         }
+        if let Some(op) = BinOp::from_token(data) {
+            return Ok(Expr::new(ExprKind::BinOp(op), span));
+        }
 
         match data {
-            TokenKind::LParen => {
-                let mut expr = self.parse_expr()?;
-                expr.span = span.union(expr.span).union(self.expect(TokenKind::RParen)?);
-                Ok(expr)
-            }
+            TokenKind::LParen => match self.next_if_match(TokenKind::RParen) {
+                Some(rparen) => {
+                    let span = span.union(rparen.span);
+                    let kind = ExprKind::Unit;
+
+                    Ok(Expr::new(kind, span))
+                }
+                _ => {
+                    let mut expr = self.parse_expr()?;
+                    expr.span = span.union(expr.span).union(self.expect(TokenKind::RParen)?);
+
+                    Ok(expr)
+                }
+            },
             TokenKind::Integer(lit) => Ok(Expr::new(ExprKind::Int(lit.parse().unwrap()), span)),
             TokenKind::Ident(id) => Ok(Expr::new(ExprKind::Ident(id), span)),
             TokenKind::KwTrue => Ok(Expr::new(ExprKind::Bool(true), span)),
