@@ -1,6 +1,6 @@
 use super::{
     infer::{Subs, Substitute},
-    types::{Fn, Type},
+    types::Type,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -8,8 +8,8 @@ use std::{
 };
 
 #[derive(Debug, Clone, Default)]
-pub struct Env<'a> {
-    env: HashMap<&'a str, Rc<Type>>,
+pub struct Env {
+    env: HashMap<Rc<str>, Rc<Type>>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,7 +54,7 @@ impl TypeEnv {
     }
 }
 
-impl Substitute for Env<'_> {
+impl Substitute for Env {
     fn substitute(mut self, subs: &Subs, env: &mut TypeEnv) -> Self {
         for t in self.env.values_mut() {
             *t = t.clone().substitute(subs, env);
@@ -63,34 +63,30 @@ impl Substitute for Env<'_> {
     }
 }
 
-impl<'a> Env<'a> {
-    pub fn get(&self, id: &'a str) -> Option<&Rc<Type>> {
+impl Env {
+    pub fn get(&self, id: &str) -> Option<&Rc<Type>> {
         self.env.get(id)
     }
 
-    pub fn insert(&mut self, id: &'a str, ty: Rc<Type>) -> Option<Rc<Type>> {
+    pub fn insert(&mut self, id: Rc<str>, ty: Rc<Type>) -> Option<Rc<Type>> {
         self.env.insert(id, ty)
     }
 
-    pub fn remove(&mut self, id: &'a str) -> Option<Rc<Type>> {
+    pub fn remove(&mut self, id: &str) -> Option<Rc<Type>> {
         self.env.remove(id)
     }
 
     pub fn contains_type(&self, ty: &Type) -> bool {
-        self.env
-            .values()
-            .into_iter()
-            .find(|t| t.as_ref() == ty)
-            .is_some()
+        self.env.values().any(|t| t.as_ref() == ty)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&'a str, &Rc<Type>)> {
-        self.env.iter().map(|(k, v)| (*k, v))
+    pub fn iter(&self) -> impl Iterator<Item = (&Rc<str>, &Rc<Type>)> {
+        self.env.iter()
     }
 
     fn gen_helper(&self, ty: &Type) -> Vec<u64> {
         match ty {
-            Type::Fn(Fn { param, ret }) => {
+            Type::Fn { param, ret } => {
                 let mut res = self.gen_helper(param);
                 for n in self.gen_helper(ret) {
                     if !res.contains(&n) {
@@ -99,7 +95,7 @@ impl<'a> Env<'a> {
                 }
                 res
             }
-            ty @ Type::Var(n) if !&self.contains_type(&ty) => {
+            ty @ Type::Var(n) if !&self.contains_type(ty) => {
                 vec![*n]
             }
             Type::Generic { quant, ty } => {
@@ -111,6 +107,14 @@ impl<'a> Env<'a> {
                 }
                 res
             }
+            Type::Named { args, .. } => args
+                .iter()
+                .map(|t| self.gen_helper(t))
+                .reduce(|mut acc, mut e| {
+                    acc.append(&mut e);
+                    acc
+                })
+                .unwrap_or_else(Vec::new),
             _ => Vec::new(),
         }
     }

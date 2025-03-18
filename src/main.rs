@@ -14,7 +14,7 @@ fn main() {
         _ => return,
     };
 
-    let mut checker = Checker::new();
+    let mut checker = Checker::with_types(parser.types());
 
     let (mut expr, c) = match checker.check_many(expr) {
         Ok(ok) => ok,

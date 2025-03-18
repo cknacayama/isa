@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use thiserror::Error;
 
 use crate::compiler::token::TokenKind;
@@ -22,12 +24,14 @@ pub enum ParseError {
     ExpectedExpr,
     #[error("expected identifier")]
     ExpectedId,
+    #[error("expected type")]
+    ExpectedType,
 }
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-pub enum InferError<'a> {
+pub enum InferError {
     #[error("uninferable: {0}")]
     Uninferable(Constr),
     #[error("unbound identifier")]
-    Unbound(&'a str),
+    Unbound(Rc<str>),
 }

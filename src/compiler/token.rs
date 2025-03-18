@@ -24,6 +24,8 @@ pub enum TokenKind<'a> {
     LParen,
     RParen,
 
+    Pipe,
+
     Arrow,
     Semicolon,
 
@@ -33,10 +35,14 @@ pub enum TokenKind<'a> {
     KwTrue,
     KwFalse,
 
+    KwType,
     KwLet,
     KwRec,
     KwIn,
     KwFn,
+
+    KwInt,
+    KwBool,
 
     KwAnd,
     KwOr,
@@ -52,6 +58,7 @@ impl TokenKind<'_> {
         match s {
             "true" => Some(TokenKind::KwTrue),
             "false" => Some(TokenKind::KwFalse),
+            "type" => Some(TokenKind::KwType),
             "let" => Some(TokenKind::KwLet),
             "rec" => Some(TokenKind::KwRec),
             "fn" => Some(TokenKind::KwFn),
@@ -62,6 +69,8 @@ impl TokenKind<'_> {
             "then" => Some(TokenKind::KwThen),
             "else" => Some(TokenKind::KwElse),
             "in" => Some(TokenKind::KwIn),
+            "int" => Some(TokenKind::KwInt),
+            "bool" => Some(TokenKind::KwBool),
             _ => None,
         }
     }
@@ -86,16 +95,20 @@ impl Display for TokenKind<'_> {
             TokenKind::Le => write!(f, "<="),
             TokenKind::LParen => write!(f, "("),
             TokenKind::RParen => write!(f, ")"),
+            TokenKind::Pipe => write!(f, "|"),
             TokenKind::Semicolon => write!(f, ";"),
             TokenKind::Arrow => write!(f, "->"),
             TokenKind::Integer(v) => write!(f, "{v}"),
             TokenKind::Ident(v) => write!(f, "{v}"),
             TokenKind::KwTrue => write!(f, "true"),
             TokenKind::KwFalse => write!(f, "false"),
+            TokenKind::KwType => write!(f, "type"),
             TokenKind::KwLet => write!(f, "let"),
             TokenKind::KwRec => write!(f, "rec"),
             TokenKind::KwIn => write!(f, "in"),
             TokenKind::KwFn => write!(f, "fn"),
+            TokenKind::KwInt => write!(f, "int"),
+            TokenKind::KwBool => write!(f, "bool"),
             TokenKind::KwAnd => write!(f, "and"),
             TokenKind::KwOr => write!(f, "or"),
             TokenKind::KwNot => write!(f, "not"),

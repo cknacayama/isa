@@ -1,13 +1,8 @@
 use std::{fmt::Display, rc::Rc};
 
-use super::{
-    ast::TypedExpr,
-    env::TypeEnv,
-    error::InferError,
-    types::{Fn, Type},
-};
+use super::{ast::TypedExpr, env::TypeEnv, error::InferError, types::Type};
 
-pub type InferResult<'a, T> = Result<T, InferError<'a>>;
+pub type InferResult<T> = Result<T, InferError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subs {
@@ -33,7 +28,7 @@ pub trait Substitute {
     }
 }
 
-impl Substitute for &mut TypedExpr<'_> {
+impl Substitute for &mut TypedExpr {
     fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
         self.visit(&mut |e| e.ty = e.ty.clone().substitute(subs, env));
         self
@@ -43,11 +38,11 @@ impl Substitute for &mut TypedExpr<'_> {
 impl Substitute for Rc<Type> {
     fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
         match self.as_ref() {
-            Type::Fn(f) => {
-                let ty = Type::Fn(Fn::new(
-                    f.param.clone().substitute(subs, env),
-                    f.ret.clone().substitute(subs, env),
-                ));
+            Type::Fn { param, ret } => {
+                let ty = Type::Fn {
+                    param: param.clone().substitute(subs, env),
+                    ret:   ret.clone().substitute(subs, env),
+                };
                 env.get_type(ty)
             }
             Type::Var(n) if subs.var == *n => subs.ty.clone(),
@@ -117,7 +112,7 @@ impl ConstrSet {
         self.constrs.push(c)
     }
 
-    pub fn unify(mut self, env: &mut TypeEnv) -> InferResult<'static, Vec<Subs>> {
+    pub fn unify(mut self, env: &mut TypeEnv) -> InferResult<Vec<Subs>> {
         let mut subs = Vec::new();
 
         while let Some(c) = self.constrs.pop() {
@@ -137,14 +132,9 @@ impl ConstrSet {
 
                     subs.push(s);
                 }
-                (Type::Fn(f1), Type::Fn(f2)) => {
-                    let i1 = f1.param.clone();
-                    let i2 = f2.param.clone();
-                    let o1 = f1.ret.clone();
-                    let o2 = f2.ret.clone();
-
-                    let c1 = Constr::new(i1, i2);
-                    let c2 = Constr::new(o1, o2);
+                (Type::Fn { param: i1, ret: o1 }, Type::Fn { param: i2, ret: o2 }) => {
+                    let c1 = Constr::new(i1.clone(), i2.clone());
+                    let c2 = Constr::new(o1.clone(), o2.clone());
 
                     self.push(c1);
                     self.push(c2);

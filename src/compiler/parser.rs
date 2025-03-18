@@ -1,4 +1,4 @@
-use std::iter::Peekable;
+use std::{collections::HashSet, iter::Peekable, rc::Rc};
 
 use crate::{
     compiler::{
@@ -10,11 +10,15 @@ use crate::{
     span::{Span, Spanned},
 };
 
+use super::{ast::Constructor, env::TypeEnv, types::Type};
+
 pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
 
 #[derive(Debug)]
 pub struct Parser<'a> {
-    lexer: Peekable<Lexer<'a>>,
+    lexer:   Peekable<Lexer<'a>>,
+    strings: HashSet<Rc<str>>,
+    types:   TypeEnv,
 }
 
 impl<'a> Parser<'a> {
@@ -24,8 +28,25 @@ impl<'a> Parser<'a> {
 
     pub fn new(lexer: Lexer<'a>) -> Self {
         Self {
-            lexer: lexer.peekable(),
+            lexer:   lexer.peekable(),
+            strings: HashSet::default(),
+            types:   TypeEnv::default(),
         }
+    }
+
+    fn get_string(&mut self, s: &str) -> Rc<str> {
+        match self.strings.get(s) {
+            Some(s) => s.clone(),
+            None => {
+                let s: Rc<str> = Rc::from(s);
+                self.strings.insert(s.clone());
+                s
+            }
+        }
+    }
+
+    pub fn types(self) -> TypeEnv {
+        self.types
     }
 
     fn check(&mut self, t: TokenKind<'static>) -> bool {
@@ -84,11 +105,11 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn parse_all(&mut self) -> ParseResult<Vec<Expr<'a>>> {
+    pub fn parse_all(&mut self) -> ParseResult<Vec<Expr>> {
         self.collect()
     }
 
-    pub fn parse(&mut self) -> Option<ParseResult<Expr<'a>>> {
+    pub fn parse(&mut self) -> Option<ParseResult<Expr>> {
         if self.peek().is_some() {
             Some(self.parse_semi_expr())
         } else {
@@ -96,7 +117,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_semi_expr(&mut self) -> ParseResult<Expr<'a>> {
+    fn get_type(&mut self, ty: Type) -> Rc<Type> {
+        self.types.get_type(ty)
+    }
+
+    fn parse_semi_expr(&mut self) -> ParseResult<Expr> {
         let expr = self.parse_expr()?;
 
         if self.next_if_match(TokenKind::Semicolon).is_some() {
@@ -108,11 +133,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_expr(&mut self) -> ParseResult<Expr<'a>> {
+    fn parse_expr(&mut self) -> ParseResult<Expr> {
         self.parse_or()
     }
 
-    fn parse_or(&mut self) -> ParseResult<Expr<'a>> {
+    fn parse_or(&mut self) -> ParseResult<Expr> {
         let mut lhs = self.parse_and()?;
 
         while self.next_if_match(TokenKind::KwOr).is_some() {
@@ -124,7 +149,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_and(&mut self) -> ParseResult<Expr<'a>> {
+    fn parse_and(&mut self) -> ParseResult<Expr> {
         let mut lhs = self.parse_cmp()?;
 
         while self.next_if_match(TokenKind::KwAnd).is_some() {
@@ -136,7 +161,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_cmp(&mut self) -> ParseResult<Expr<'a>> {
+    fn parse_cmp(&mut self) -> ParseResult<Expr> {
         let mut lhs = self.parse_add()?;
 
         while let Some(op) = self.next_if_map(|tk| match tk.data {
@@ -156,7 +181,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_add(&mut self) -> ParseResult<Expr<'a>> {
+    fn parse_add(&mut self) -> ParseResult<Expr> {
         let mut lhs = self.parse_mul()?;
 
         while let Some(op) = self.next_if_map(|tk| match tk.data {
@@ -172,8 +197,8 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_mul(&mut self) -> ParseResult<Expr<'a>> {
-        let mut lhs = self.parse_pow()?;
+    fn parse_mul(&mut self) -> ParseResult<Expr> {
+        let mut lhs = self.parse_call()?;
 
         while let Some(op) = self.next_if_map(|tk| match tk.data {
             TokenKind::Star => Some(BinOp::Mul),
@@ -181,7 +206,7 @@ impl<'a> Parser<'a> {
             TokenKind::Percent => Some(BinOp::Rem),
             _ => None,
         }) {
-            let rhs = self.parse_pow()?;
+            let rhs = self.parse_call()?;
             let span = lhs.span.union(rhs.span);
             lhs = Expr::bin_expr(op, lhs, rhs, span);
         }
@@ -189,19 +214,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    fn parse_pow(&mut self) -> ParseResult<Expr<'a>> {
-        let mut lhs = self.parse_call()?;
-
-        while self.next_if_match(TokenKind::Caret).is_some() {
-            let rhs = self.parse_call()?;
-            let span = lhs.span.union(rhs.span);
-            lhs = Expr::bin_expr(BinOp::Pow, lhs, rhs, span);
-        }
-
-        Ok(lhs)
-    }
-
-    fn parse_call(&mut self) -> ParseResult<Expr<'a>> {
+    fn parse_call(&mut self) -> ParseResult<Expr> {
         let mut expr = self.parse_prim()?;
 
         while self
@@ -223,7 +236,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn parse_prim(&mut self) -> ParseResult<Expr<'a>> {
+    fn parse_prim(&mut self) -> ParseResult<Expr> {
         let Token { data, span } = self.next_or_eof()?;
 
         if let Some(op) = UnOp::from_token(data) {
@@ -249,18 +262,130 @@ impl<'a> Parser<'a> {
                 }
             },
             TokenKind::Integer(lit) => Ok(Expr::new(ExprKind::Int(lit.parse().unwrap()), span)),
-            TokenKind::Ident(id) => Ok(Expr::new(ExprKind::Ident(id), span)),
+            TokenKind::Ident(id) => Ok(Expr::new(ExprKind::Ident(self.get_string(id)), span)),
             TokenKind::KwTrue => Ok(Expr::new(ExprKind::Bool(true), span)),
             TokenKind::KwFalse => Ok(Expr::new(ExprKind::Bool(false), span)),
             TokenKind::KwLet => self.parse_let(span),
             TokenKind::KwFn => self.parse_fn(span),
             TokenKind::KwIf => self.parse_if(span),
+            TokenKind::KwType => self.parse_type_decl(span),
 
             _ => Err(Spanned::new(ParseError::ExpectedExpr, span)),
         }
     }
 
-    fn parse_if(&mut self, span: Span) -> ParseResult<Expr<'a>> {
+    fn parse_simple_type(&mut self) -> ParseResult<Spanned<Type>> {
+        let tk = self.next_or_eof()?;
+        match tk.data {
+            TokenKind::LParen => match self.next_if_match(TokenKind::RParen) {
+                Some(Spanned { span, .. }) => Ok(Spanned::new(Type::Unit, tk.span.union(span))),
+                None => {
+                    let t = self.parse_type()?;
+                    let span = tk.span.union(self.expect(TokenKind::RParen)?);
+                    Ok(Spanned::new(t.data, span))
+                }
+            },
+            TokenKind::KwInt => Ok(Spanned::new(Type::Int, tk.span)),
+            TokenKind::KwBool => Ok(Spanned::new(Type::Bool, tk.span)),
+            TokenKind::Ident(id) => Ok(Spanned::new(
+                Type::Named {
+                    name: self.get_string(id),
+                    args: Box::from([]),
+                },
+                tk.span,
+            )),
+
+            _ => Err(Spanned::new(ParseError::ExpectedType, tk.span)),
+        }
+    }
+
+    fn parse_type(&mut self) -> ParseResult<Spanned<Type>> {
+        let simple = self.parse_simple_type()?;
+
+        if self.next_if_match(TokenKind::Arrow).is_some() {
+            let ret = self.parse_type()?;
+            let span = simple.span.union(ret.span);
+
+            Ok(Spanned::new(
+                Type::Fn {
+                    param: self.get_type(simple.data),
+                    ret:   self.get_type(ret.data),
+                },
+                span,
+            ))
+        } else {
+            let mut simple = simple;
+            let mut s = simple.span;
+            let mut params = Vec::new();
+
+            while let Ok(Spanned { data, span }) = self.parse_simple_type() {
+                s = span.union(span);
+                params.push(self.get_type(data));
+            }
+
+            match &mut simple.data {
+                Type::Named { args, .. } => {
+                    *args = params.into_boxed_slice();
+                }
+                _ if !params.is_empty() => return Err(Spanned::new(ParseError::ExpectedType, s)),
+                _ => (),
+            }
+            Ok(simple)
+        }
+    }
+
+    fn parse_constructor(&mut self) -> ParseResult<Spanned<Constructor>> {
+        let Spanned { data: id, mut span } = self.expect_id()?;
+
+        let mut params = Vec::new();
+        while let Ok(ty) = self.parse_type() {
+            span = span.union(ty.span);
+            params.push(self.get_type(ty.data));
+        }
+
+        Ok(Spanned::new(
+            Constructor {
+                id:     self.get_string(id),
+                params: params.into_boxed_slice(),
+            },
+            span,
+        ))
+    }
+
+    fn parse_type_decl(&mut self, span: Span) -> ParseResult<Expr> {
+        let Spanned { data: id, .. } = self.expect_id()?;
+
+        let mut params = Vec::new();
+
+        while !self.check(TokenKind::Eq) {
+            let Spanned { data, .. } = self.expect_id()?;
+            params.push(self.get_string(data));
+        }
+
+        self.expect(TokenKind::Eq)?;
+
+        let mut constructors = Vec::new();
+        let mut span = span;
+        loop {
+            let c = self.parse_constructor()?;
+            constructors.push(c.data);
+            span = span.union(c.span);
+            if self.next_if_match(TokenKind::Pipe).is_none() {
+                break;
+            }
+        }
+
+        Ok(Expr::new(
+            ExprKind::Type {
+                id:           self.get_string(id),
+                params:       params.into_boxed_slice(),
+                constructors: constructors.into_boxed_slice(),
+            },
+            span,
+        ))
+    }
+
+    fn parse_if(&mut self, span: Span) -> ParseResult<Expr> {
         let cond = self.parse_expr()?;
 
         self.expect(TokenKind::KwThen)?;
@@ -279,7 +404,7 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_let(&mut self, mut span: Span) -> ParseResult<Expr<'a>> {
+    fn parse_let(&mut self, mut span: Span) -> ParseResult<Expr> {
         let rec = self.next_if_match(TokenKind::KwRec).is_some();
         let Spanned { data: id, .. } = self.expect_id()?;
         self.expect(TokenKind::Eq)?;
@@ -295,7 +420,7 @@ impl<'a> Parser<'a> {
         Ok(Expr::new(
             ExprKind::Let {
                 rec,
-                id,
+                id: self.get_string(id),
                 expr: Box::new(expr),
                 body: body.map(Box::new),
             },
@@ -303,7 +428,7 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_fn(&mut self, span: Span) -> ParseResult<Expr<'a>> {
+    fn parse_fn(&mut self, span: Span) -> ParseResult<Expr> {
         let Spanned { data: param, .. } = self.expect_id()?;
 
         self.expect(TokenKind::Arrow)?;
@@ -314,8 +439,8 @@ impl<'a> Parser<'a> {
 
         Ok(Expr::new(
             ExprKind::Fn {
-                param,
-                expr: Box::new(expr),
+                param: self.get_string(param),
+                expr:  Box::new(expr),
             },
             span,
         ))
@@ -323,7 +448,7 @@ impl<'a> Parser<'a> {
 }
 
 impl<'a> Iterator for Parser<'a> {
-    type Item = ParseResult<Expr<'a>>;
+    type Item = ParseResult<Expr>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.parse()

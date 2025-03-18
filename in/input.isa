@@ -1,6 +1,7 @@
+type Option a = None | Some a;
+
 let id = fn x -> x;
 
 let f = fn a -> fn b -> fn c -> if c then a else b;
-
 
 f (id (+ 1 2)) 20 (id not false)

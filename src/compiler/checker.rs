@@ -7,19 +7,27 @@ use super::{
     env::{Env, TypeEnv},
     error::InferError,
     infer::{Constr, ConstrSet, InferResult, Subs, Substitute},
-    types::{Fn, Type},
+    types::Type,
 };
 
 #[derive(Debug, Default)]
-pub struct Checker<'a> {
-    env:      Env<'a>,
+pub struct Checker {
+    env:      Env,
     type_env: TypeEnv,
     cur_var:  u64,
 }
 
-impl<'a> Checker<'a> {
+impl Checker {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn with_types(type_env: TypeEnv) -> Self {
+        Self {
+            env: Env::default(),
+            type_env,
+            cur_var: 0,
+        }
     }
 
     pub fn env(&self) -> &Env {
@@ -34,7 +42,7 @@ impl<'a> Checker<'a> {
         &mut self.type_env
     }
 
-    pub fn unify(&mut self, constr: ConstrSet) -> InferResult<'static, Vec<Subs>> {
+    pub fn unify(&mut self, constr: ConstrSet) -> InferResult<Vec<Subs>> {
         constr.unify(&mut self.type_env)
     }
 
@@ -62,11 +70,11 @@ impl<'a> Checker<'a> {
 
     fn check_if(
         &mut self,
-        cond: Expr<'a>,
-        then: Expr<'a>,
-        otherwise: Expr<'a>,
+        cond: Expr,
+        then: Expr,
+        otherwise: Expr,
         span: Span,
-    ) -> InferResult<'a, (TypedExpr<'a>, ConstrSet)> {
+    ) -> InferResult<(TypedExpr, ConstrSet)> {
         let (cond, mut c1) = self.check(cond)?;
         let (then, c2) = self.check(then)?;
         let (otherwise, c3) = self.check(otherwise)?;
@@ -92,19 +100,22 @@ impl<'a> Checker<'a> {
 
     fn check_fn(
         &mut self,
-        param: &'a str,
-        expr: Expr<'a>,
+        param: Rc<str>,
+        expr: Expr,
         span: Span,
-    ) -> InferResult<'a, (TypedExpr<'a>, ConstrSet)> {
+    ) -> InferResult<(TypedExpr, ConstrSet)> {
         let var = self.new_type_variable();
-        let old = self.env.insert(param, var);
+        let old = self.env.insert(param.clone(), var);
         let (expr, c) = self.check(expr)?;
         let var = match old {
-            Some(old) => self.env.insert(param, old).unwrap(),
-            None => self.env.remove(param).unwrap(),
+            Some(old) => self.env.insert(param.clone(), old).unwrap(),
+            None => self.env.remove(&param).unwrap(),
         };
 
-        let ty = Type::Fn(Fn::new(var, expr.ty.clone()));
+        let ty = Type::Fn {
+            param: var,
+            ret:   expr.ty.clone(),
+        };
         let ty = self.get_type(ty);
         let kind = TypedExprKind::Fn {
             param,
@@ -116,14 +127,17 @@ impl<'a> Checker<'a> {
 
     fn check_call(
         &mut self,
-        callee: Expr<'a>,
-        arg: Expr<'a>,
+        callee: Expr,
+        arg: Expr,
         span: Span,
-    ) -> InferResult<'a, (TypedExpr<'a>, ConstrSet)> {
+    ) -> InferResult<(TypedExpr, ConstrSet)> {
         let (callee, mut c1) = self.check(callee)?;
         let (arg, c2) = self.check(arg)?;
         let var = self.new_type_variable();
-        let fn_ty = Type::Fn(Fn::new(arg.ty.clone(), var.clone()));
+        let fn_ty = Type::Fn {
+            param: arg.ty.clone(),
+            ret:   var.clone(),
+        };
         let fn_ty = self.get_type(fn_ty);
         let constr = Constr::new(callee.ty.clone(), fn_ty);
 
@@ -141,18 +155,18 @@ impl<'a> Checker<'a> {
     fn check_let(
         &mut self,
         rec: bool,
-        id: &'a str,
-        expr: Expr<'a>,
-        body: Option<Expr<'a>>,
+        id: Rc<str>,
+        expr: Expr,
+        body: Option<Expr>,
         span: Span,
-    ) -> InferResult<'a, (TypedExpr<'a>, ConstrSet)> {
+    ) -> InferResult<(TypedExpr, ConstrSet)> {
         let (expr, mut c1) = if rec {
             let var = self.new_type_variable();
-            let old = self.env.insert(id, var);
+            let old = self.env.insert(id.clone(), var);
             let (expr, mut c1) = self.check(expr)?;
             let var = match old {
-                Some(old) => self.env.insert(id, old).unwrap(),
-                None => self.env.remove(id).unwrap(),
+                Some(old) => self.env.insert(id.clone(), old).unwrap(),
+                None => self.env.remove(&id).unwrap(),
             };
             let constr = Constr::new(expr.ty.clone(), var);
             c1.push(constr);
@@ -160,6 +174,7 @@ impl<'a> Checker<'a> {
         } else {
             self.check(expr)?
         };
+
         let s = self.unify(c1.clone())?;
         let u1 = expr
             .ty
@@ -172,7 +187,7 @@ impl<'a> Checker<'a> {
         let u1 = env1.generalize(u1, &mut self.type_env);
 
         std::mem::swap(&mut self.env, &mut env1);
-        self.env.insert(id, u1);
+        self.env.insert(id.clone(), u1);
 
         let (body, ty) = match body {
             Some(body) => {
@@ -207,14 +222,17 @@ impl<'a> Checker<'a> {
     }
 
     fn bin_op(&mut self, lhs: Rc<Type>, rhs: Rc<Type>, ret: Rc<Type>) -> Rc<Type> {
-        let f2 = Type::Fn(Fn::new(rhs, ret));
-        let f1 = Type::Fn(Fn::new(lhs, self.get_type(f2)));
+        let f2 = Type::Fn { param: lhs, ret };
+        let f1 = Type::Fn {
+            param: rhs,
+            ret:   self.get_type(f2),
+        };
         self.get_type(f1)
     }
 
-    pub fn check_many<I>(&mut self, expr: I) -> InferResult<'a, (Vec<TypedExpr<'a>>, ConstrSet)>
+    pub fn check_many<I>(&mut self, expr: I) -> InferResult<(Vec<TypedExpr>, ConstrSet)>
     where
-        I: IntoIterator<Item = Expr<'a>>,
+        I: IntoIterator<Item = Expr>,
     {
         let mut exprs = Vec::new();
         let mut cset = ConstrSet::new();
@@ -228,7 +246,7 @@ impl<'a> Checker<'a> {
         Ok((exprs, cset))
     }
 
-    pub fn check(&mut self, expr: Expr<'a>) -> InferResult<'a, (TypedExpr<'a>, ConstrSet)> {
+    pub fn check(&mut self, expr: Expr) -> InferResult<(TypedExpr, ConstrSet)> {
         let span = expr.span;
         match expr.kind {
             ExprKind::Unit => Ok((
@@ -244,7 +262,11 @@ impl<'a> Checker<'a> {
                 ConstrSet::new(),
             )),
             ExprKind::Ident(id) => {
-                let t = self.env.get(id).ok_or(InferError::Unbound(id))?.clone();
+                let t = self
+                    .env
+                    .get(&id)
+                    .ok_or_else(|| InferError::Unbound(id.clone()))?
+                    .clone();
                 Ok((
                     TypedExpr::new(TypedExprKind::Ident(id), span, self.instantiate(t)),
                     ConstrSet::new(),
@@ -255,12 +277,10 @@ impl<'a> Checker<'a> {
                 let int = self.get_int();
                 let bol = self.get_bool();
                 match bin_op {
-                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::Pow => {
-                        Ok((
-                            TypedExpr::new(kind, span, self.bin_op(int.clone(), int.clone(), int)),
-                            ConstrSet::new(),
-                        ))
-                    }
+                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => Ok((
+                        TypedExpr::new(kind, span, self.bin_op(int.clone(), int.clone(), int)),
+                        ConstrSet::new(),
+                    )),
                     BinOp::Eq | BinOp::Ne | BinOp::Gt | BinOp::Ge | BinOp::Lt | BinOp::Le => Ok((
                         TypedExpr::new(kind, span, self.bin_op(int.clone(), int, bol)),
                         ConstrSet::new(),
@@ -277,7 +297,10 @@ impl<'a> Checker<'a> {
                     UnOp::Not => self.get_bool(),
                     UnOp::Neg => self.get_int(),
                 };
-                let ty = self.get_type(Type::Fn(Fn::new(ty.clone(), ty)));
+                let ty = self.get_type(Type::Fn {
+                    param: ty.clone(),
+                    ret:   ty,
+                });
                 Ok((TypedExpr::new(kind, span, ty), ConstrSet::new()))
             }
             ExprKind::If {
@@ -287,19 +310,18 @@ impl<'a> Checker<'a> {
             } => self.check_if(*cond, *then, *otherwise, span),
             ExprKind::Fn { param, expr } => self.check_fn(param, *expr, span),
             ExprKind::Call { callee, arg } => self.check_call(*callee, *arg, span),
-
             ExprKind::Let {
                 rec,
                 id,
                 expr,
                 body,
             } => self.check_let(rec, id, *expr, body.map(|body| *body), span),
-
             ExprKind::Semi(expr) => {
                 let (mut expr, cset) = self.check(*expr)?;
                 expr.ty = self.get_unit();
                 Ok((expr, cset))
             }
+            ExprKind::Type { .. } => todo!(),
         }
     }
 }
