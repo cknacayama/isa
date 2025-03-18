@@ -25,6 +25,7 @@ pub enum BinOp {
 }
 
 impl BinOp {
+    #[must_use]
     pub fn from_token(tk: TokenKind<'_>) -> Option<Self> {
         match tk {
             TokenKind::Plus => Some(BinOp::Add),
@@ -53,6 +54,7 @@ pub enum UnOp {
 }
 
 impl UnOp {
+    #[must_use]
     pub fn from_token(tk: TokenKind<'_>) -> Option<Self> {
         match tk {
             TokenKind::KwNot => Some(UnOp::Not),
@@ -76,7 +78,9 @@ impl From<Spanned<ExprKind>> for Expr {
 
 impl Debug for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Expr").field("kind", &self.kind).finish()
+        f.debug_struct("Expr")
+            .field("kind", &self.kind)
+            .finish_non_exhaustive()
     }
 }
 
@@ -87,6 +91,7 @@ pub struct Constructor {
 }
 
 impl Constructor {
+    #[must_use]
     pub fn new(id: Rc<str>, params: Box<[Rc<Type>]>) -> Self {
         Self { id, params }
     }
@@ -117,7 +122,7 @@ pub enum ExprKind {
 
     Type {
         id:           Rc<str>,
-        params:       Box<[Rc<str>]>,
+        parameters:   Box<[Rc<str>]>,
         constructors: Box<[Constructor]>,
     },
 
@@ -139,10 +144,12 @@ pub enum ExprKind {
 }
 
 impl Expr {
+    #[must_use]
     pub fn new(kind: ExprKind, span: Span) -> Self {
         Self { kind, span }
     }
 
+    #[must_use]
     pub fn bin_expr(op: BinOp, lhs: Expr, rhs: Expr, span: Span) -> Self {
         let op = Self::new(ExprKind::BinOp(op), span);
         let lhs_span = lhs.span;
@@ -175,11 +182,12 @@ impl Debug for TypedExpr {
         f.debug_struct("Expr")
             .field("kind", &self.kind)
             .field("ty", &self.ty)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl TypedExpr {
+    #[must_use]
     pub fn new(kind: TypedExprKind, span: Span, ty: Rc<Type>) -> Self {
         Self { kind, span, ty }
     }
@@ -192,7 +200,7 @@ impl TypedExpr {
             TypedExprKind::Let { expr, body, .. } => {
                 expr.visit(f);
                 if let Some(body) = body.as_mut() {
-                    body.visit(f)
+                    body.visit(f);
                 }
             }
             TypedExprKind::Fn { expr, .. } => {
@@ -213,7 +221,7 @@ impl TypedExpr {
             }
             _ => (),
         }
-        f(self)
+        f(self);
     }
 }
 
@@ -242,7 +250,7 @@ pub enum TypedExprKind {
 
     Type {
         id:           Rc<str>,
-        params:       Box<[Rc<str>]>,
+        parameters:   Box<[Rc<str>]>,
         constructors: Box<[Constructor]>,
     },
 
@@ -263,7 +271,8 @@ pub enum TypedExprKind {
     },
 }
 
-impl<'a> TokenKind<'a> {
+impl TokenKind<'_> {
+    #[must_use]
     pub fn can_start_expr(&self) -> bool {
         matches!(
             self,
@@ -312,20 +321,20 @@ impl Display for UnOp {
 impl Display for Constructor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.id)?;
-        self.params.iter().try_for_each(|p| write!(f, " {}", p))
+        self.params.iter().try_for_each(|p| write!(f, " {p}"))
     }
 }
 
 impl Display for TypedExpr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            TypedExprKind::Semi(expr) => write!(f, "{};", expr),
+            TypedExprKind::Semi(expr) => write!(f, "{expr};"),
             TypedExprKind::Unit => write!(f, "()"),
-            TypedExprKind::Int(i) => write!(f, "{}", i),
-            TypedExprKind::Bool(b) => write!(f, "{}", b),
-            TypedExprKind::Ident(id) => write!(f, "{}", id),
-            TypedExprKind::BinOp(op) => write!(f, "{}", op),
-            TypedExprKind::UnOp(op) => write!(f, "{}", op),
+            TypedExprKind::Int(i) => write!(f, "{i}"),
+            TypedExprKind::Bool(b) => write!(f, "{b}"),
+            TypedExprKind::Ident(id) => write!(f, "{id}"),
+            TypedExprKind::BinOp(op) => write!(f, "{op}"),
+            TypedExprKind::UnOp(op) => write!(f, "{op}"),
             TypedExprKind::Let {
                 rec,
                 id,
@@ -357,28 +366,31 @@ impl Display for TypedExpr {
             }
             TypedExprKind::Type {
                 id,
-                params,
+                parameters: params,
                 constructors,
             } => {
-                write!(f, "(type {}", id)?;
+                write!(f, "(type {id}")?;
                 for p in params {
-                    write!(f, " {}", p)?;
+                    write!(f, " {p}")?;
                 }
                 write!(f, " =")?;
-                constructors.iter().try_for_each(|c| write!(f, " | {}", c))
+                for c in constructors {
+                    write!(f, " | {c}")?;
+                }
+                write!(f, ")")
             }
             TypedExprKind::Fn { param, expr } => {
-                write!(f, "(fn {} -> {})", param, expr)
+                write!(f, "(fn {param} -> {expr})")
             }
             TypedExprKind::If {
                 cond,
                 then,
                 otherwise,
             } => {
-                write!(f, "(if {} then {} else {})", cond, then, otherwise)
+                write!(f, "(if {cond} then {then} else {otherwise})")
             }
             TypedExprKind::Call { callee, arg } => {
-                write!(f, "({} {})", callee, arg)
+                write!(f, "({callee} {arg})")
             }
         }
         .and_then(|()| write!(f, ": {}", self.ty))

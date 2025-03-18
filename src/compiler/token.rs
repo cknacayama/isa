@@ -54,6 +54,7 @@ pub enum TokenKind<'a> {
 }
 
 impl TokenKind<'_> {
+    #[must_use]
     pub fn keyword(s: &str) -> Option<TokenKind<'static>> {
         match s {
             "true" => Some(TokenKind::KwTrue),
@@ -98,8 +99,7 @@ impl Display for TokenKind<'_> {
             TokenKind::Pipe => write!(f, "|"),
             TokenKind::Semicolon => write!(f, ";"),
             TokenKind::Arrow => write!(f, "->"),
-            TokenKind::Integer(v) => write!(f, "{v}"),
-            TokenKind::Ident(v) => write!(f, "{v}"),
+            TokenKind::Integer(v) | TokenKind::Ident(v) => write!(f, "{v}"),
             TokenKind::KwTrue => write!(f, "true"),
             TokenKind::KwFalse => write!(f, "false"),
             TokenKind::KwType => write!(f, "type"),

@@ -14,6 +14,7 @@ pub struct Loc {
 }
 
 impl Span {
+    #[must_use]
     pub fn new(start: u32, end: u32) -> Option<Self> {
         if start <= end {
             Some(Self { start, end })
@@ -22,6 +23,7 @@ impl Span {
         }
     }
 
+    #[must_use]
     pub fn union(self, other: Self) -> Self {
         Self {
             start: self.start.min(other.start),
@@ -29,6 +31,7 @@ impl Span {
         }
     }
 
+    #[must_use]
     pub fn start_loc(self, input: &str) -> Loc {
         let mut line = 1;
         let mut col = 1;
@@ -37,7 +40,7 @@ impl Span {
             match c {
                 '\n' => {
                     line += 1;
-                    col = 1
+                    col = 1;
                 }
                 _ => col += 1,
             }

@@ -22,10 +22,12 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
+    #[must_use]
     pub fn from_input(input: &'a str) -> Self {
         Self::new(Lexer::new(input))
     }
 
+    #[must_use]
     pub fn new(lexer: Lexer<'a>) -> Self {
         Self {
             lexer:   lexer.peekable(),
@@ -35,16 +37,16 @@ impl<'a> Parser<'a> {
     }
 
     fn get_string(&mut self, s: &str) -> Rc<str> {
-        match self.strings.get(s) {
-            Some(s) => s.clone(),
-            None => {
-                let s: Rc<str> = Rc::from(s);
-                self.strings.insert(s.clone());
-                s
-            }
+        if let Some(s) = self.strings.get(s) {
+            s.clone()
+        } else {
+            let s: Rc<str> = Rc::from(s);
+            self.strings.insert(s.clone());
+            s
         }
     }
 
+    #[must_use]
     pub fn types(self) -> TypeEnv {
         self.types
     }
@@ -247,20 +249,19 @@ impl<'a> Parser<'a> {
         }
 
         match data {
-            TokenKind::LParen => match self.next_if_match(TokenKind::RParen) {
-                Some(rparen) => {
+            TokenKind::LParen => {
+                if let Some(rparen) = self.next_if_match(TokenKind::RParen) {
                     let span = span.union(rparen.span);
                     let kind = ExprKind::Unit;
 
                     Ok(Expr::new(kind, span))
-                }
-                _ => {
+                } else {
                     let mut expr = self.parse_expr()?;
                     expr.span = span.union(expr.span).union(self.expect(TokenKind::RParen)?);
 
                     Ok(expr)
                 }
-            },
+            }
             TokenKind::Integer(lit) => Ok(Expr::new(ExprKind::Int(lit.parse().unwrap()), span)),
             TokenKind::Ident(id) => Ok(Expr::new(ExprKind::Ident(self.get_string(id)), span)),
             TokenKind::KwTrue => Ok(Expr::new(ExprKind::Bool(true), span)),
@@ -275,25 +276,39 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_simple_type(&mut self) -> ParseResult<Spanned<Type>> {
-        let tk = self.next_or_eof()?;
+        let Some(tk) = self.peek().transpose()?.copied() else {
+            return Err(Spanned::new(ParseError::ExpectedType, Span::default()));
+        };
+
         match tk.data {
-            TokenKind::LParen => match self.next_if_match(TokenKind::RParen) {
-                Some(Spanned { span, .. }) => Ok(Spanned::new(Type::Unit, tk.span.union(span))),
-                None => {
+            TokenKind::LParen => {
+                self.next().unwrap().unwrap();
+                if let Some(Spanned { span, .. }) = self.next_if_match(TokenKind::RParen) {
+                    Ok(Spanned::new(Type::Unit, tk.span.union(span)))
+                } else {
                     let t = self.parse_type()?;
                     let span = tk.span.union(self.expect(TokenKind::RParen)?);
                     Ok(Spanned::new(t.data, span))
                 }
-            },
-            TokenKind::KwInt => Ok(Spanned::new(Type::Int, tk.span)),
-            TokenKind::KwBool => Ok(Spanned::new(Type::Bool, tk.span)),
-            TokenKind::Ident(id) => Ok(Spanned::new(
-                Type::Named {
-                    name: self.get_string(id),
-                    args: Box::from([]),
-                },
-                tk.span,
-            )),
+            }
+            TokenKind::KwInt => {
+                self.next().unwrap().unwrap();
+                Ok(Spanned::new(Type::Int, tk.span))
+            }
+            TokenKind::KwBool => {
+                self.next().unwrap().unwrap();
+                Ok(Spanned::new(Type::Bool, tk.span))
+            }
+            TokenKind::Ident(id) => {
+                self.next().unwrap().unwrap();
+                Ok(Spanned::new(
+                    Type::Named {
+                        name: self.get_string(id),
+                        args: Box::from([]),
+                    },
+                    tk.span,
+                ))
+            }
 
             _ => Err(Spanned::new(ParseError::ExpectedType, tk.span)),
         }
@@ -338,7 +353,7 @@ impl<'a> Parser<'a> {
         let Spanned { data: id, mut span } = self.expect_id()?;
 
         let mut params = Vec::new();
-        while let Ok(ty) = self.parse_type() {
+        while let Ok(ty) = self.parse_simple_type() {
             span = span.union(ty.span);
             params.push(self.get_type(ty.data));
         }
@@ -378,7 +393,7 @@ impl<'a> Parser<'a> {
         Ok(Expr::new(
             ExprKind::Type {
                 id:           self.get_string(id),
-                params:       params.into_boxed_slice(),
+                parameters:   params.into_boxed_slice(),
                 constructors: constructors.into_boxed_slice(),
             },
             span,
@@ -447,7 +462,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-impl<'a> Iterator for Parser<'a> {
+impl Iterator for Parser<'_> {
     type Item = ParseResult<Expr>;
 
     fn next(&mut self) -> Option<Self::Item> {

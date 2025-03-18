@@ -11,6 +11,7 @@ pub struct Subs {
 }
 
 impl Subs {
+    #[must_use]
     pub fn new(var: u64, ty: Rc<Type>) -> Self {
         Self { var, ty }
     }
@@ -52,6 +53,17 @@ impl Substitute for Rc<Type> {
                 let ty = Type::Generic { quant, ty };
                 env.get_type(ty)
             }
+            Type::Named { name, args } => {
+                let ty = Type::Named {
+                    name: name.clone(),
+                    args: args
+                        .into_iter()
+                        .cloned()
+                        .map(|arg| arg.substitute(subs, env))
+                        .collect(),
+                };
+                env.get_type(ty)
+            }
             _ => self,
         }
     }
@@ -80,6 +92,7 @@ impl Substitute for Constr {
 }
 
 impl Constr {
+    #[must_use]
     pub fn new(lhs: Rc<Type>, rhs: Rc<Type>) -> Self {
         Self { lhs, rhs }
     }
@@ -92,7 +105,7 @@ pub struct ConstrSet {
 
 impl Substitute for ConstrSet {
     fn substitute(mut self, subs: &Subs, env: &mut TypeEnv) -> Self {
-        for c in self.constrs.iter_mut() {
+        for c in &mut self.constrs {
             *c = c.clone().substitute(subs, env);
         }
         self
@@ -100,16 +113,17 @@ impl Substitute for ConstrSet {
 }
 
 impl ConstrSet {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn append(&mut self, mut other: Self) {
-        self.constrs.append(&mut other.constrs)
+        self.constrs.append(&mut other.constrs);
     }
 
     pub fn push(&mut self, c: Constr) {
-        self.constrs.push(c)
+        self.constrs.push(c);
     }
 
     pub fn unify(mut self, env: &mut TypeEnv) -> InferResult<Vec<Subs>> {
@@ -118,8 +132,8 @@ impl ConstrSet {
         while let Some(c) = self.constrs.pop() {
             match (c.lhs.as_ref(), c.rhs.as_ref()) {
                 (
-                    lhs @ (Type::Int | Type::Bool | Type::Var(_)),
-                    rhs @ (Type::Int | Type::Bool | Type::Var(_)),
+                    lhs @ (Type::Int | Type::Bool | Type::Var(_) | Type::Named { .. }),
+                    rhs @ (Type::Int | Type::Bool | Type::Var(_) | Type::Named { .. }),
                 ) if lhs == rhs => {}
                 (Type::Var(var), other) | (other, Type::Var(var)) if !other.occurs(*var) => {
                     let other = env.get_type(other.clone());
@@ -138,6 +152,21 @@ impl ConstrSet {
 
                     self.push(c1);
                     self.push(c2);
+                }
+                (
+                    Type::Named {
+                        name: n1,
+                        args: args1,
+                    },
+                    Type::Named {
+                        name: n2,
+                        args: args2,
+                    },
+                ) if n1 == n2 && args1.len() == args2.len() => {
+                    for (a1, a2) in args1.iter().zip(args2) {
+                        let c = Constr::new(a1.clone(), a2.clone());
+                        self.push(c);
+                    }
                 }
                 _ => return Err(InferError::Uninferable(c)),
             }
@@ -161,6 +190,6 @@ impl Display for Constr {
 
 impl Display for ConstrSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.constrs.iter().try_for_each(|c| write!(f, "{}, ", c))
+        self.constrs.iter().try_for_each(|c| write!(f, "{c}, "))
     }
 }

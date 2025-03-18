@@ -3,7 +3,7 @@ use std::rc::Rc;
 use crate::span::Span;
 
 use super::{
-    ast::{BinOp, Expr, ExprKind, TypedExpr, TypedExprKind, UnOp},
+    ast::{BinOp, Constructor, Expr, ExprKind, TypedExpr, TypedExprKind, UnOp},
     env::{Env, TypeEnv},
     error::InferError,
     infer::{Constr, ConstrSet, InferResult, Subs, Substitute},
@@ -18,10 +18,12 @@ pub struct Checker {
 }
 
 impl Checker {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn with_types(type_env: TypeEnv) -> Self {
         Self {
             env: Env::default(),
@@ -30,10 +32,12 @@ impl Checker {
         }
     }
 
+    #[must_use]
     pub fn env(&self) -> &Env {
         &self.env
     }
 
+    #[must_use]
     pub fn type_env(&self) -> &TypeEnv {
         &self.type_env
     }
@@ -50,10 +54,15 @@ impl Checker {
         self.type_env.get_type(ty)
     }
 
-    fn new_type_variable(&mut self) -> Rc<Type> {
+    fn new_type_variable_id(&mut self) -> u64 {
         let cur = self.cur_var;
         self.cur_var += 1;
-        self.get_type(Type::Var(cur))
+        cur
+    }
+
+    fn new_type_variable(&mut self) -> Rc<Type> {
+        let id = self.new_type_variable_id();
+        self.get_type(Type::Var(id))
     }
 
     fn get_int(&self) -> Rc<Type> {
@@ -81,7 +90,7 @@ impl Checker {
         let c_cond = Constr::new(cond.ty.clone(), self.get_bool());
         let var = self.new_type_variable();
         let c_then = Constr::new(var.clone(), then.ty.clone());
-        let c_otherwise = Constr::new(var.clone(), then.ty.clone());
+        let c_otherwise = Constr::new(var.clone(), otherwise.ty.clone());
 
         c1.append(c2);
         c1.append(c3);
@@ -210,6 +219,74 @@ impl Checker {
         Ok((TypedExpr::new(kind, span, ty), c1))
     }
 
+    fn check_constructor(
+        &mut self,
+        constructor: &Constructor,
+        parameters: &[Rc<str>],
+        parameters_id: &[Rc<Type>],
+        quant: Box<[u64]>,
+        mut ret: Rc<Type>,
+    ) {
+        for param in constructor
+            .params
+            .iter()
+            .rev()
+            .map(|param| match param.as_ref() {
+                Type::Named { name, args } if args.is_empty() => {
+                    if let Some(pos) = parameters.iter().position(|p| p == name) {
+                        parameters_id[pos].clone()
+                    } else {
+                        param.clone()
+                    }
+                }
+                _ => param.clone(),
+            })
+        {
+            ret = self.get_type(Type::Fn { param, ret });
+        }
+        if !quant.is_empty() {
+            ret = self.get_type(Type::Generic { quant, ty: ret });
+        }
+        self.env.insert(constructor.id.clone(), ret);
+    }
+
+    fn check_type(
+        &mut self,
+        name: Rc<str>,
+        parameters: Box<[Rc<str>]>,
+        constructors: Box<[Constructor]>,
+        span: Span,
+    ) -> InferResult<(TypedExpr, ConstrSet)> {
+        let mut args = Vec::new();
+        let mut quant = Vec::new();
+
+        for _ in parameters.iter() {
+            let id = self.new_type_variable_id();
+            args.push(self.get_type(Type::Var(id)));
+            quant.push(id);
+        }
+
+        let quant = quant.into_boxed_slice();
+
+        let ty = self.get_type(Type::Named {
+            name: name.clone(),
+            args: args.clone().into_boxed_slice(),
+        });
+
+        for c in constructors.iter() {
+            self.check_constructor(c, &parameters, &args, quant.clone(), ty.clone());
+        }
+
+        let kind = TypedExprKind::Type {
+            id: name,
+            parameters,
+            constructors,
+        };
+        let expr = TypedExpr::new(kind, span, self.get_unit());
+
+        Ok((expr, ConstrSet::new()))
+    }
+
     fn instantiate(&mut self, ty: Rc<Type>) -> Rc<Type> {
         match ty.as_ref() {
             Type::Generic { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
@@ -321,7 +398,11 @@ impl Checker {
                 expr.ty = self.get_unit();
                 Ok((expr, cset))
             }
-            ExprKind::Type { .. } => todo!(),
+            ExprKind::Type {
+                id,
+                parameters,
+                constructors,
+            } => self.check_type(id, parameters, constructors, span),
         }
     }
 }

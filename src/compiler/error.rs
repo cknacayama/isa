@@ -32,6 +32,6 @@ pub enum ParseError {
 pub enum InferError {
     #[error("uninferable: {0}")]
     Uninferable(Constr),
-    #[error("unbound identifier")]
+    #[error("unbound identifier: {0}")]
     Unbound(Rc<str>),
 }

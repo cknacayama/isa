@@ -27,13 +27,12 @@ impl Default for TypeEnv {
 
 impl TypeEnv {
     pub fn get_type(&mut self, ty: Type) -> Rc<Type> {
-        match self.types.get(&ty) {
-            Some(ty) => ty.clone(),
-            None => {
-                let ty = Rc::new(ty);
-                self.types.insert(ty.clone());
-                ty
-            }
+        if let Some(ty) = self.types.get(&ty) {
+            ty.clone()
+        } else {
+            let ty = Rc::new(ty);
+            self.types.insert(ty.clone());
+            ty
         }
     }
 
@@ -41,14 +40,17 @@ impl TypeEnv {
         self.types.iter()
     }
 
+    #[must_use]
     pub fn get_unit(&self) -> Rc<Type> {
         self.types.get(&Type::Unit).unwrap().clone()
     }
 
+    #[must_use]
     pub fn get_int(&self) -> Rc<Type> {
         self.types.get(&Type::Int).unwrap().clone()
     }
 
+    #[must_use]
     pub fn get_bool(&self) -> Rc<Type> {
         self.types.get(&Type::Bool).unwrap().clone()
     }
@@ -64,6 +66,7 @@ impl Substitute for Env {
 }
 
 impl Env {
+    #[must_use]
     pub fn get(&self, id: &str) -> Option<&Rc<Type>> {
         self.env.get(id)
     }
@@ -76,6 +79,7 @@ impl Env {
         self.env.remove(id)
     }
 
+    #[must_use]
     pub fn contains_type(&self, ty: &Type) -> bool {
         self.env.values().any(|t| t.as_ref() == ty)
     }

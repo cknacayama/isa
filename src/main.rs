@@ -19,7 +19,7 @@ fn main() {
     let (mut expr, c) = match checker.check_many(expr) {
         Ok(ok) => ok,
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("{err}");
             return;
         }
     };
@@ -27,26 +27,26 @@ fn main() {
     let subs = match checker.unify(c) {
         Ok(subs) => subs,
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("{err}");
             return;
         }
     };
 
-    for s in subs.iter() {
-        print!("{}, ", s);
+    for s in &subs {
+        print!("{s}, ");
     }
-    for e in expr.iter_mut() {
+    for e in &mut expr {
         e.substitute_many(&subs, checker.type_env_mut());
     }
     if !subs.is_empty() {
-        println!()
+        println!();
     }
 
     for expr in expr {
-        println!("{}", expr);
+        println!("{expr}");
     }
 
     for (id, ty) in checker.env().iter() {
-        println!("{}: {}", id, ty);
+        println!("{id}: {ty}");
     }
 }
