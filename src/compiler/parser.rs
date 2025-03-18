@@ -10,7 +10,11 @@ use crate::{
     span::{Span, Spanned},
 };
 
-use super::{ast::Constructor, env::TypeEnv, types::Type};
+use super::{
+    ast::{Constructor, Pat, PatKind},
+    env::TypeEnv,
+    types::Type,
+};
 
 pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
 
@@ -60,6 +64,13 @@ impl<'a> Parser<'a> {
         self.lexer
             .peek()
             .map(|res| res.as_ref().map_err(|&err| Spanned::from(err)))
+    }
+
+    fn peek_and<P>(&mut self, p: P) -> ParseResult<bool>
+    where
+        P: FnOnce(&TokenKind<'a>) -> bool,
+    {
+        Ok(self.peek().transpose()?.map(Spanned::data).is_some_and(p))
     }
 
     fn next(&mut self) -> Option<ParseResult<Token<'a>>> {
@@ -219,12 +230,7 @@ impl<'a> Parser<'a> {
     fn parse_call(&mut self) -> ParseResult<Expr> {
         let mut expr = self.parse_prim()?;
 
-        while self
-            .peek()
-            .transpose()?
-            .map(Spanned::data)
-            .is_some_and(TokenKind::can_start_expr)
-        {
+        while self.peek_and(TokenKind::can_start_expr)? {
             let arg = self.parse_prim()?;
             let span = expr.span.union(arg.span);
             expr = Expr::new(
@@ -270,19 +276,17 @@ impl<'a> Parser<'a> {
             TokenKind::KwFn => self.parse_fn(span),
             TokenKind::KwIf => self.parse_if(span),
             TokenKind::KwType => self.parse_type_decl(span),
+            TokenKind::KwMatch => self.parse_match(span),
 
             _ => Err(Spanned::new(ParseError::ExpectedExpr, span)),
         }
     }
 
     fn parse_simple_type(&mut self) -> ParseResult<Spanned<Type>> {
-        let Some(tk) = self.peek().transpose()?.copied() else {
-            return Err(Spanned::new(ParseError::ExpectedType, Span::default()));
-        };
+        let tk = self.next_or_eof()?;
 
         match tk.data {
             TokenKind::LParen => {
-                self.next().unwrap().unwrap();
                 if let Some(Spanned { span, .. }) = self.next_if_match(TokenKind::RParen) {
                     Ok(Spanned::new(Type::Unit, tk.span.union(span)))
                 } else {
@@ -291,24 +295,15 @@ impl<'a> Parser<'a> {
                     Ok(Spanned::new(t.data, span))
                 }
             }
-            TokenKind::KwInt => {
-                self.next().unwrap().unwrap();
-                Ok(Spanned::new(Type::Int, tk.span))
-            }
-            TokenKind::KwBool => {
-                self.next().unwrap().unwrap();
-                Ok(Spanned::new(Type::Bool, tk.span))
-            }
-            TokenKind::Ident(id) => {
-                self.next().unwrap().unwrap();
-                Ok(Spanned::new(
-                    Type::Named {
-                        name: self.get_string(id),
-                        args: Box::from([]),
-                    },
-                    tk.span,
-                ))
-            }
+            TokenKind::KwInt => Ok(Spanned::new(Type::Int, tk.span)),
+            TokenKind::KwBool => Ok(Spanned::new(Type::Bool, tk.span)),
+            TokenKind::Ident(id) => Ok(Spanned::new(
+                Type::Named {
+                    name: self.get_string(id),
+                    args: Box::from([]),
+                },
+                tk.span,
+            )),
 
             _ => Err(Spanned::new(ParseError::ExpectedType, tk.span)),
         }
@@ -328,23 +323,19 @@ impl<'a> Parser<'a> {
                 },
                 span,
             ))
-        } else {
-            let mut simple = simple;
-            let mut s = simple.span;
+        } else if let Type::Named { name, .. } = simple.data {
+            let mut span = simple.span;
             let mut params = Vec::new();
 
-            while let Ok(Spanned { data, span }) = self.parse_simple_type() {
-                s = span.union(span);
-                params.push(self.get_type(data));
+            while self.peek_and(TokenKind::can_start_type)? {
+                let ty = self.parse_simple_type()?;
+                span = span.union(ty.span);
+                params.push(self.get_type(ty.data));
             }
 
-            match &mut simple.data {
-                Type::Named { args, .. } => {
-                    *args = params.into_boxed_slice();
-                }
-                _ if !params.is_empty() => return Err(Spanned::new(ParseError::ExpectedType, s)),
-                _ => (),
-            }
+            let args = params.into_boxed_slice();
+            Ok(Spanned::new(Type::Named { name, args }, span))
+        } else {
             Ok(simple)
         }
     }
@@ -353,7 +344,9 @@ impl<'a> Parser<'a> {
         let Spanned { data: id, mut span } = self.expect_id()?;
 
         let mut params = Vec::new();
-        while let Ok(ty) = self.parse_simple_type() {
+
+        while self.peek_and(TokenKind::can_start_type)? {
+            let ty = self.parse_simple_type()?;
             span = span.union(ty.span);
             params.push(self.get_type(ty.data));
         }
@@ -400,6 +393,41 @@ impl<'a> Parser<'a> {
         ))
     }
 
+    fn parse_match_arm(&mut self) -> ParseResult<Spanned<(Pat, Expr)>> {
+        let pat = self.parse_if_pat()?;
+        self.expect(TokenKind::Arrow)?;
+        let expr = self.parse_expr()?;
+        let span = pat.span.union(expr.span);
+
+        Ok(Spanned::new((pat, expr), span))
+    }
+
+    fn parse_match(&mut self, mut span: Span) -> ParseResult<Expr> {
+        let expr = self.parse_expr()?;
+        self.expect(TokenKind::KwIn)?;
+
+        let mut arms = Vec::new();
+
+        while self.peek_and(TokenKind::can_start_pat)? {
+            let arm = self.parse_match_arm()?;
+            arms.push(arm.data);
+            span = span.union(arm.span);
+            if let Some(tk) = self.next_if_match(TokenKind::Comma) {
+                span = span.union(tk.span);
+            } else {
+                break;
+            }
+        }
+
+        Ok(Expr::new(
+            ExprKind::Match {
+                expr: Box::new(expr),
+                arms: arms.into_boxed_slice(),
+            },
+            span,
+        ))
+    }
+
     fn parse_if(&mut self, span: Span) -> ParseResult<Expr> {
         let cond = self.parse_expr()?;
 
@@ -417,6 +445,93 @@ impl<'a> Parser<'a> {
             },
             span,
         ))
+    }
+
+    fn parse_simple_pat(&mut self) -> ParseResult<Pat> {
+        let Token { data, span } = self.next_or_eof()?;
+
+        match data {
+            TokenKind::Integer(int) => Ok(Pat::new(PatKind::Int(int.parse().unwrap()), span)),
+            TokenKind::KwTrue => Ok(Pat::new(PatKind::Bool(true), span)),
+            TokenKind::KwFalse => Ok(Pat::new(PatKind::Bool(false), span)),
+            TokenKind::LParen => {
+                if let Some(Spanned { span: rspan, .. }) = self.next_if_match(TokenKind::RParen) {
+                    Ok(Pat::new(PatKind::Unit, span.union(rspan)))
+                } else {
+                    let t = self.parse_pat()?;
+                    let span = span.union(self.expect(TokenKind::RParen)?);
+                    Ok(Pat::new(t.data, span))
+                }
+            }
+            TokenKind::Ident(id) => {
+                let name = self.get_string(id);
+                Ok(Pat::new(PatKind::Ident(name), span))
+            }
+            TokenKind::Underscore => Ok(Pat::new(PatKind::Wild, span)),
+            _ => Err(Spanned::new(ParseError::ExpectedPattern, span)),
+        }
+    }
+
+    fn parse_type_pat(&mut self) -> ParseResult<Pat> {
+        let simple = self.parse_simple_pat()?;
+
+        if let PatKind::Ident(name) = simple.data {
+            let mut span = simple.span;
+            let mut args = Vec::new();
+
+            while self.peek_and(TokenKind::can_start_pat)? {
+                let pat = self.parse_simple_pat()?;
+                span = span.union(pat.span);
+                args.push(pat);
+            }
+
+            let args = args.into_boxed_slice();
+            Ok(Pat::new(PatKind::Type { name, args }, span))
+        } else {
+            Ok(simple)
+        }
+    }
+
+    fn parse_pat(&mut self) -> ParseResult<Pat> {
+        let mut pat = self.parse_type_pat()?;
+
+        if self.next_if_match(TokenKind::Pipe).is_some() {
+            let mut span = pat.span;
+            let mut pats = vec![pat];
+
+            loop {
+                let pat = self.parse_type_pat()?;
+                pats.push(pat);
+                if self.next_if_match(TokenKind::Pipe).is_none() {
+                    break;
+                }
+            }
+
+            span = span.union(pats.last().unwrap().span);
+
+            pat = Pat::new(PatKind::Or(pats.into_boxed_slice()), span);
+        }
+
+        Ok(pat)
+    }
+
+    fn parse_if_pat(&mut self) -> ParseResult<Pat> {
+        let pat = self.parse_pat()?;
+
+        if self.next_if_match(TokenKind::KwIf).is_some() {
+            let guard = self.parse_expr()?;
+            let span = pat.span.union(guard.span);
+
+            Ok(Pat::new(
+                PatKind::Guard {
+                    pat: Box::new(pat),
+                    guard,
+                },
+                span,
+            ))
+        } else {
+            Ok(pat)
+        }
     }
 
     fn parse_let(&mut self, mut span: Span) -> ParseResult<Expr> {

@@ -13,6 +13,7 @@ fn main() {
         }
         _ => return,
     };
+    dbg!(&expr);
 
     let mut checker = Checker::with_types(parser.types());
 

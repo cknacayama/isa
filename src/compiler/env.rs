@@ -14,14 +14,18 @@ pub struct Env {
 
 #[derive(Debug, Clone)]
 pub struct TypeEnv {
-    types: HashSet<Rc<Type>>,
+    types:        HashSet<Rc<Type>>,
+    constructors: HashMap<Rc<str>, Rc<Type>>,
 }
 
 impl Default for TypeEnv {
     fn default() -> Self {
         let types = HashSet::from([Rc::new(Type::Unit), Rc::new(Type::Int), Rc::new(Type::Bool)]);
 
-        Self { types }
+        Self {
+            types,
+            constructors: HashMap::default(),
+        }
     }
 }
 
@@ -34,6 +38,14 @@ impl TypeEnv {
             self.types.insert(ty.clone());
             ty
         }
+    }
+
+    pub fn get_constructor(&mut self, name: &str) -> Option<&Rc<Type>> {
+        self.constructors.get(name)
+    }
+
+    pub fn insert_constructor(&mut self, name: Rc<str>, ty: Rc<Type>) {
+        self.constructors.insert(name, ty.clone());
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Rc<Type>> {

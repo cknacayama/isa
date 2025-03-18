@@ -247,7 +247,9 @@ impl Checker {
         if !quant.is_empty() {
             ret = self.get_type(Type::Generic { quant, ty: ret });
         }
-        self.env.insert(constructor.id.clone(), ret);
+        self.env.insert(constructor.id.clone(), ret.clone());
+        self.type_env
+            .insert_constructor(constructor.id.clone(), ret);
     }
 
     fn check_type(
@@ -403,6 +405,8 @@ impl Checker {
                 parameters,
                 constructors,
             } => self.check_type(id, parameters, constructors, span),
+
+            ExprKind::Match { expr, arms } => todo!(),
         }
     }
 }

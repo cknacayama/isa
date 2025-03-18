@@ -26,6 +26,8 @@ pub enum ParseError {
     ExpectedId,
     #[error("expected type")]
     ExpectedType,
+    #[error("expected pattern")]
+    ExpectedPattern,
 }
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]

@@ -161,6 +161,7 @@ impl<'a> Lexer<'a> {
             '(' => token!(LParen),
             ')' => token!(RParen),
             '|' => token!(Pipe),
+            ',' => token!(Comma),
             ';' => token!(Semicolon),
             '*' => token!(Star),
             '/' => token!(Slash),

@@ -1,3 +1,10 @@
 type Option a = None | Some a;
+type Result a e = Ok a | Err e;
 
-if true then Some 10 else None
+let fmap = fn f -> fn opt ->
+    match opt in
+        Some ok -> f ok,
+        None -> None,
+;
+
+fmap (fn x -> if x > 5 then Some (x + 5) else None) (if true then Some 10 else None)

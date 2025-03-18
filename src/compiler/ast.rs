@@ -98,6 +98,27 @@ impl Constructor {
 }
 
 #[derive(Debug, Clone)]
+pub enum PatKind {
+    Wild,
+
+    Ident(Rc<str>),
+
+    Or(Box<[Pat]>),
+
+    Unit,
+
+    Int(i64),
+
+    Bool(bool),
+
+    Type { name: Rc<str>, args: Box<[Pat]> },
+
+    Guard { pat: Box<Pat>, guard: Expr },
+}
+
+pub type Pat = Spanned<PatKind>;
+
+#[derive(Debug, Clone)]
 pub enum ExprKind {
     Unit,
 
@@ -129,6 +150,11 @@ pub enum ExprKind {
     Fn {
         param: Rc<str>,
         expr:  Box<Expr>,
+    },
+
+    Match {
+        expr: Box<Expr>,
+        arms: Box<[(Pat, Expr)]>,
     },
 
     If {
@@ -284,7 +310,31 @@ impl TokenKind<'_> {
                 | TokenKind::KwLet
                 | TokenKind::KwFn
                 | TokenKind::KwNot
+                | TokenKind::KwType
+                | TokenKind::KwMatch
                 | TokenKind::KwIf
+        )
+    }
+
+    #[must_use]
+    pub fn can_start_type(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::LParen | TokenKind::Ident(_) | TokenKind::KwInt | TokenKind::KwBool
+        )
+    }
+    #[must_use]
+    pub fn can_start_pat(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::LParen
+                | TokenKind::Underscore
+                | TokenKind::Ident(_)
+                | TokenKind::Integer(_)
+                | TokenKind::KwTrue
+                | TokenKind::KwFalse
+                | TokenKind::KwNot
+                | TokenKind::Minus
         )
     }
 }

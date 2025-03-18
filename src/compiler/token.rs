@@ -21,12 +21,15 @@ pub enum TokenKind<'a> {
     Lt,
     Le,
 
+    Underscore,
+
     LParen,
     RParen,
 
     Pipe,
 
     Arrow,
+    Comma,
     Semicolon,
 
     Integer(&'a str),
@@ -48,6 +51,7 @@ pub enum TokenKind<'a> {
     KwOr,
     KwNot,
 
+    KwMatch,
     KwIf,
     KwThen,
     KwElse,
@@ -66,12 +70,14 @@ impl TokenKind<'_> {
             "and" => Some(TokenKind::KwAnd),
             "or" => Some(TokenKind::KwOr),
             "not" => Some(TokenKind::KwNot),
+            "match" => Some(TokenKind::KwMatch),
             "if" => Some(TokenKind::KwIf),
             "then" => Some(TokenKind::KwThen),
             "else" => Some(TokenKind::KwElse),
             "in" => Some(TokenKind::KwIn),
             "int" => Some(TokenKind::KwInt),
             "bool" => Some(TokenKind::KwBool),
+            "_" => Some(TokenKind::Underscore),
             _ => None,
         }
     }
@@ -94,9 +100,11 @@ impl Display for TokenKind<'_> {
             TokenKind::Ge => write!(f, ">="),
             TokenKind::Lt => write!(f, "<"),
             TokenKind::Le => write!(f, "<="),
+            TokenKind::Underscore => write!(f, "_"),
             TokenKind::LParen => write!(f, "("),
             TokenKind::RParen => write!(f, ")"),
             TokenKind::Pipe => write!(f, "|"),
+            TokenKind::Comma => write!(f, ","),
             TokenKind::Semicolon => write!(f, ";"),
             TokenKind::Arrow => write!(f, "->"),
             TokenKind::Integer(v) | TokenKind::Ident(v) => write!(f, "{v}"),
@@ -112,6 +120,7 @@ impl Display for TokenKind<'_> {
             TokenKind::KwAnd => write!(f, "and"),
             TokenKind::KwOr => write!(f, "or"),
             TokenKind::KwNot => write!(f, "not"),
+            TokenKind::KwMatch => write!(f, "match"),
             TokenKind::KwIf => write!(f, "if"),
             TokenKind::KwThen => write!(f, "then"),
             TokenKind::KwElse => write!(f, "else"),
