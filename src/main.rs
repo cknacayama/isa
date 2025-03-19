@@ -13,7 +13,6 @@ fn main() {
         }
         _ => return,
     };
-    dbg!(&expr);
 
     let mut checker = Checker::with_types(parser.types());
 
@@ -33,21 +32,14 @@ fn main() {
         }
     };
 
-    for s in &subs {
-        print!("{s}, ");
-    }
     for e in &mut expr {
         e.substitute_many(&subs, checker.type_env_mut());
-    }
-    if !subs.is_empty() {
-        println!();
     }
 
     for expr in expr {
         println!("{}", expr.format());
     }
-
     for (id, ty) in checker.env().iter() {
-        println!("{id}: {ty}");
+        println!("val {id}: {ty};");
     }
 }

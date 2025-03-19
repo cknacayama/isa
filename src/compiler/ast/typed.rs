@@ -129,7 +129,7 @@ pub enum TypedExprKind {
 
     Type {
         id:           Rc<str>,
-        parameters:   Box<[Rc<str>]>,
+        parameters:   Box<[Rc<Type>]>,
         constructors: Box<[Constructor]>,
     },
 

@@ -4,8 +4,8 @@ use crate::span::Span;
 
 use super::{
     ast::{
-        ast::{Expr, ExprKind, Pat, PatKind},
         typed::{TypedExpr, TypedExprKind, TypedPat, TypedPatKind},
+        untyped::{Expr, ExprKind, Pat, PatKind},
         BinOp, Constructor, UnOp,
     },
     env::{Env, TypeEnv},
@@ -171,9 +171,7 @@ impl Checker {
         body: Option<Expr>,
         span: Span,
     ) -> InferResult<(TypedExpr, ConstrSet)> {
-        let (expr, mut c1) = if !rec {
-            self.check(expr)?
-        } else {
+        let (expr, mut c1) = if rec {
             self.env.push_scope();
             let var = self.new_type_variable();
             self.env.insert(id.clone(), var.clone());
@@ -182,6 +180,8 @@ impl Checker {
             let constr = Constr::new(expr.ty.clone(), var);
             c1.push(constr);
             (expr, c1)
+        } else {
+            self.check(expr)?
         };
 
         let s = self.unify(c1.clone())?;
@@ -258,7 +258,7 @@ impl Checker {
         parameters: Box<[Rc<str>]>,
         constructors: Box<[Constructor]>,
         span: Span,
-    ) -> InferResult<(TypedExpr, ConstrSet)> {
+    ) -> (TypedExpr, ConstrSet) {
         let mut args = Vec::new();
         let mut quant = Vec::new();
 
@@ -281,12 +281,12 @@ impl Checker {
 
         let kind = TypedExprKind::Type {
             id: name,
-            parameters,
+            parameters: args.into_boxed_slice(),
             constructors,
         };
         let expr = TypedExpr::new(kind, span, self.get_unit());
 
-        Ok((expr, ConstrSet::new()))
+        (expr, ConstrSet::new())
     }
 
     fn check_pat(&mut self, Pat { data, span }: Pat) -> InferResult<(TypedPat, ConstrSet)> {
@@ -298,8 +298,8 @@ impl Checker {
                     ConstrSet::new(),
                 ))
             }
-            PatKind::Ident(name) => match self.type_env.get_constructor(&name).cloned() {
-                Some(constructor) => {
+            PatKind::Ident(name) => {
+                if let Some(constructor) = self.type_env.get_constructor(&name).cloned() {
                     let ty = self.instantiate(constructor);
                     match ty.as_ref() {
                         Type::Named { name, args } if args.is_empty() => {
@@ -311,8 +311,7 @@ impl Checker {
                         }
                         _ => Err(InferError::Kind(ty)),
                     }
-                }
-                None => {
+                } else {
                     let var = self.new_type_variable();
                     self.env.insert(name.clone(), var.clone());
                     Ok((
@@ -320,7 +319,7 @@ impl Checker {
                         ConstrSet::new(),
                     ))
                 }
-            },
+            }
             PatKind::Or(spanneds) => {
                 let mut patterns = Vec::new();
                 let mut c = ConstrSet::new();
@@ -557,7 +556,7 @@ impl Checker {
                 id,
                 parameters,
                 constructors,
-            } => self.check_type(id, parameters, constructors, span),
+            } => Ok(self.check_type(id, parameters, constructors, span)),
 
             ExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
         }

@@ -3,7 +3,7 @@ use std::{collections::HashSet, iter::Peekable, rc::Rc};
 use crate::{
     compiler::{
         ast::{
-            ast::{Expr, ExprKind, Pat, PatKind},
+            untyped::{Expr, ExprKind, Pat, PatKind},
             BinOp, Constructor, UnOp,
         },
         env::TypeEnv,

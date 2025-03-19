@@ -1,5 +1,5 @@
-pub mod ast;
 pub mod typed;
+pub mod untyped;
 
 use std::{fmt::Display, rc::Rc};
 

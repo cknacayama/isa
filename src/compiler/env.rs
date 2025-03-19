@@ -14,7 +14,7 @@ pub struct Env {
 
 impl Substitute for Env {
     fn substitute(mut self, subs: &Subs, env: &mut TypeEnv) -> Self {
-        for t in self.env.iter_mut().map(HashMap::values_mut).flatten() {
+        for t in self.env.iter_mut().flat_map(HashMap::values_mut) {
             *t = t.clone().substitute(subs, env);
         }
         self
@@ -51,13 +51,12 @@ impl Env {
     pub fn contains_type(&self, ty: &Type) -> bool {
         self.env
             .iter()
-            .map(HashMap::values)
-            .flatten()
+            .flat_map(HashMap::values)
             .any(|t| t.as_ref() == ty)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&Rc<str>, &Rc<Type>)> {
-        self.env.iter().map(HashMap::iter).flatten()
+        self.env.iter().flat_map(HashMap::iter)
     }
 
     fn gen_helper(&self, ty: &Type) -> Vec<u64> {
@@ -153,7 +152,7 @@ impl TypeEnv {
     }
 
     pub fn insert_constructor(&mut self, name: Rc<str>, ty: Rc<Type>) {
-        self.constructors.insert(name, ty.clone());
+        self.constructors.insert(name, ty);
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Rc<Type>> {

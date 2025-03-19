@@ -91,7 +91,7 @@ impl Substitute for &mut TypedPat {
             TypedPatKind::Or(args) | TypedPatKind::Type { args, .. } => {
                 args.iter_mut().for_each(|p| {
                     p.substitute(subs, env);
-                })
+                });
             }
 
             TypedPatKind::Guard { pat, guard } => {
@@ -170,6 +170,10 @@ impl Constr {
     pub fn new(lhs: Rc<Type>, rhs: Rc<Type>) -> Self {
         Self { lhs, rhs }
     }
+
+    pub fn satisfied(&self) -> bool {
+        self.lhs == self.rhs
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -198,6 +202,10 @@ impl ConstrSet {
 
     pub fn push(&mut self, c: Constr) {
         self.constrs.push(c);
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Constr> {
+        self.constrs.iter()
     }
 
     pub fn unify(mut self, env: &mut TypeEnv) -> InferResult<Vec<Subs>> {
