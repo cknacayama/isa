@@ -393,7 +393,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_match_arm(&mut self) -> ParseResult<Spanned<(Pat, Expr)>> {
-        let pat = self.parse_if_pat()?;
+        let pat = self.parse_pat()?;
         self.expect(TokenKind::Arrow)?;
         let expr = self.parse_expr()?;
         let span = pat.span.union(expr.span);
@@ -512,25 +512,6 @@ impl<'a> Parser<'a> {
         }
 
         Ok(pat)
-    }
-
-    fn parse_if_pat(&mut self) -> ParseResult<Pat> {
-        let pat = self.parse_pat()?;
-
-        if self.next_if_match(TokenKind::KwIf).is_some() {
-            let guard = self.parse_expr()?;
-            let span = pat.span.union(guard.span);
-
-            Ok(Pat::new(
-                PatKind::Guard {
-                    pat: Box::new(pat),
-                    guard,
-                },
-                span,
-            ))
-        } else {
-            Ok(pat)
-        }
     }
 
     fn parse_let(&mut self, mut span: Span) -> ParseResult<Expr> {

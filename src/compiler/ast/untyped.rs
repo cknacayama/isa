@@ -33,8 +33,6 @@ pub enum PatKind {
     Bool(bool),
 
     Type { name: Rc<str>, args: Box<[Pat]> },
-
-    Guard { pat: Box<Pat>, guard: Expr },
 }
 
 pub type Pat = Spanned<PatKind>;

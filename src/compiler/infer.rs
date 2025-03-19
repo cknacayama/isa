@@ -94,11 +94,6 @@ impl Substitute for &mut TypedPat {
                 });
             }
 
-            TypedPatKind::Guard { pat, guard } => {
-                pat.substitute(subs, env);
-                guard.substitute(subs, env);
-            }
-
             TypedPatKind::Wild
             | TypedPatKind::Unit
             | TypedPatKind::Int(_)
@@ -172,7 +167,8 @@ impl Constr {
         Self { lhs, rhs }
     }
 
-    #[must_use] pub fn satisfied(&self) -> bool {
+    #[must_use]
+    pub fn satisfied(&self) -> bool {
         self.lhs == self.rhs
     }
 }

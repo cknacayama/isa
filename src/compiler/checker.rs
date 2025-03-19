@@ -411,19 +411,6 @@ impl Checker {
                 }
                 None => Err(InferError::Unbound(name)),
             },
-            PatKind::Guard { pat, guard } => {
-                let (pat, mut c1) = self.check_pat(*pat)?;
-                let ty = pat.ty.clone();
-                let (guard, c2) = self.check(guard)?;
-                c1.append(c2);
-                c1.push(Constr::new(guard.ty.clone(), self.get_bool()));
-
-                let kind = TypedPatKind::Guard {
-                    pat: Box::new(pat),
-                    guard,
-                };
-                Ok((TypedPat::new(kind, span, ty), c1))
-            }
         }
     }
 

@@ -25,11 +25,6 @@ pub enum TypedPatKind {
         name: Rc<str>,
         args: Box<[TypedPat]>,
     },
-
-    Guard {
-        pat:   Box<TypedPat>,
-        guard: TypedExpr,
-    },
 }
 
 #[derive(Clone)]
@@ -78,11 +73,6 @@ impl TypedPat {
                     pat.format_helper(f, indentation + 1)?;
                 }
                 write!(f, ")")
-            }
-            TypedPatKind::Guard { pat, guard } => {
-                pat.format_helper(f, indentation + 1)?;
-                write!(f, " if ")?;
-                guard.format_helper(f, indentation + 1)
             }
         }
     }
@@ -162,7 +152,8 @@ impl TypedExpr {
         Self { kind, span, ty }
     }
 
-    #[must_use] pub fn format(&self) -> String {
+    #[must_use]
+    pub fn format(&self) -> String {
         let mut out = String::new();
         self.format_helper(&mut out, 1).unwrap();
         out
