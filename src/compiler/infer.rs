@@ -172,7 +172,7 @@ impl Constr {
         Self { lhs, rhs }
     }
 
-    pub fn satisfied(&self) -> bool {
+    #[must_use] pub fn satisfied(&self) -> bool {
         self.lhs == self.rhs
     }
 }

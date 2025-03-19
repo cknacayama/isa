@@ -191,7 +191,7 @@ impl Checker {
         }
         let (expr, c_expr) = if rec {
             let var = self.new_type_variable();
-            self.env.insert(id.clone(), var.clone());
+            self.env.insert(id, var.clone());
             let (mut expr, c1) = self.check(expr)?;
             expr.ty = self.function_type(typed_params.iter().map(|p| p.ty.clone()), expr.ty);
             let constr = Constr::new(expr.ty.clone(), var);
@@ -303,7 +303,7 @@ impl Checker {
             args: args.clone().into_boxed_slice(),
         });
 
-        for c in constructors.iter() {
+        for c in &constructors {
             self.check_constructor(c, &subs, quant.clone(), ty.clone());
         }
 

@@ -1,5 +1,4 @@
 use std::fmt::{Debug, Display};
-use thiserror::Error;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -62,7 +61,7 @@ impl Display for Loc {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Error)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Spanned<T> {
     pub data: T,
     pub span: Span,
@@ -75,6 +74,19 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.data.fmt(f)
     }
+}
+
+impl<T> Display for Spanned<T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.data.fmt(f)
+    }
+}
+
+impl<T> std::error::Error for Spanned<T> where T: std::error::Error
+{
 }
 
 impl<T> Spanned<T> {

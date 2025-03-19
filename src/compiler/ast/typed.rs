@@ -162,7 +162,7 @@ impl TypedExpr {
         Self { kind, span, ty }
     }
 
-    pub fn format(&self) -> String {
+    #[must_use] pub fn format(&self) -> String {
         let mut out = String::new();
         self.format_helper(&mut out, 1).unwrap();
         out
