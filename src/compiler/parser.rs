@@ -536,6 +536,12 @@ impl<'a> Parser<'a> {
     fn parse_let(&mut self, mut span: Span) -> ParseResult<Expr> {
         let rec = self.next_if_match(TokenKind::KwRec).is_some();
         let Spanned { data: id, .. } = self.expect_id()?;
+
+        let mut parametes = Vec::new();
+        while !self.check(TokenKind::Eq) {
+            let pat = self.parse_simple_pat()?;
+            parametes.push(pat);
+        }
         self.expect(TokenKind::Eq)?;
         let expr = self.parse_expr()?;
         let body = if self.next_if_match(TokenKind::KwIn).is_some() {
@@ -549,6 +555,7 @@ impl<'a> Parser<'a> {
         Ok(Expr::new(
             ExprKind::Let {
                 rec,
+                params: parametes.into_boxed_slice(),
                 id: self.get_string(id),
                 expr: Box::new(expr),
                 body: body.map(Box::new),

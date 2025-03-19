@@ -1,7 +1,7 @@
 use isa::compiler::{checker::Checker, infer::Substitute, parser::Parser};
 
 fn main() {
-    let input = std::fs::read_to_string("in/input.isa").unwrap();
+    let input = std::fs::read_to_string("in/list.isa").unwrap();
 
     let mut parser = Parser::from_input(&input);
 

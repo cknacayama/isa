@@ -55,10 +55,12 @@ impl Env {
             .any(|t| t.as_ref() == ty)
     }
 
+    #[must_use]
     pub fn iter(&self) -> impl Iterator<Item = (&Rc<str>, &Rc<Type>)> {
         self.env.iter().flat_map(HashMap::iter)
     }
 
+    #[must_use]
     fn gen_helper(&self, ty: &Type) -> Vec<u64> {
         match ty {
             Type::Fn { param, ret } => {
@@ -94,6 +96,7 @@ impl Env {
         }
     }
 
+    #[must_use]
     pub fn generalize(&self, ty: Rc<Type>, type_env: &mut TypeEnv) -> Rc<Type> {
         let mut quantifiers = self.gen_helper(&ty);
 

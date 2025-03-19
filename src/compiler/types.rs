@@ -47,15 +47,6 @@ impl Display for Type {
 
 impl Type {
     #[must_use]
-    pub fn is_simple(&self) -> bool {
-        match self {
-            Self::Int | Self::Bool | Self::Unit | Self::Var(_) => true,
-            Self::Named { args, .. } => !args.iter().any(|t| !t.is_simple()),
-            _ => false,
-        }
-    }
-
-    #[must_use]
     pub fn occurs(&self, var: u64) -> bool {
         match self {
             Self::Fn { param, ret } => param.occurs(var) || ret.occurs(var),

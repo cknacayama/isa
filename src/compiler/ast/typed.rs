@@ -121,10 +121,11 @@ pub enum TypedExprKind {
     Semi(Box<TypedExpr>),
 
     Let {
-        rec:  bool,
-        id:   Rc<str>,
-        expr: Box<TypedExpr>,
-        body: Option<Box<TypedExpr>>,
+        rec:    bool,
+        id:     Rc<str>,
+        params: Box<[TypedPat]>,
+        expr:   Box<TypedExpr>,
+        body:   Option<Box<TypedExpr>>,
     },
 
     Type {
@@ -182,11 +183,17 @@ impl TypedExpr {
             TypedExprKind::UnOp(op) => write!(f, "{op}"),
             TypedExprKind::Let {
                 rec,
+                params,
                 id,
                 expr,
                 body,
             } => {
-                write!(f, "(let {}{id} = ", if *rec { " rec" } else { "" })?;
+                write!(f, "(let {}{id} ", if *rec { " rec" } else { "" })?;
+                for p in params {
+                    p.format_helper(f, indentation + 1)?;
+                    write!(f, " ")?;
+                }
+                write!(f, "= ")?;
                 expr.format_helper(f, indentation + 1)?;
                 if let Some(body) = body {
                     writeln!(f, " in")?;

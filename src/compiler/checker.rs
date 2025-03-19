@@ -163,26 +163,60 @@ impl Checker {
         Ok((TypedExpr::new(kind, span, var), c1))
     }
 
+    fn function_type<I>(&mut self, params: I, ret: Rc<Type>) -> Rc<Type>
+    where
+        I: IntoIterator<Item = Rc<Type>>,
+        I::IntoIter: DoubleEndedIterator,
+    {
+        params
+            .into_iter()
+            .rev()
+            .fold(ret, |ret, param| self.get_type(Type::Fn { param, ret }))
+    }
+
+    fn check_let_value(
+        &mut self,
+        rec: bool,
+        id: Rc<str>,
+        params: Box<[Pat]>,
+        expr: Expr,
+    ) -> InferResult<(TypedExpr, Box<[TypedPat]>, ConstrSet)> {
+        self.env.push_scope();
+        let mut c = ConstrSet::new();
+        let mut typed_params = Vec::new();
+        for p in params {
+            let (pat, c_pat) = self.check_pat(p)?;
+            typed_params.push(pat);
+            c.append(c_pat);
+        }
+        let (expr, c_expr) = if rec {
+            let var = self.new_type_variable();
+            self.env.insert(id.clone(), var.clone());
+            let (mut expr, c1) = self.check(expr)?;
+            expr.ty = self.function_type(typed_params.iter().map(|p| p.ty.clone()), expr.ty);
+            let constr = Constr::new(expr.ty.clone(), var);
+            c.push(constr);
+            (expr, c1)
+        } else {
+            let (mut expr, c) = self.check(expr)?;
+            expr.ty = self.function_type(typed_params.iter().map(|p| p.ty.clone()), expr.ty);
+            (expr, c)
+        };
+        c.append(c_expr);
+        self.env.pop_scope();
+        Ok((expr, typed_params.into_boxed_slice(), c))
+    }
+
     fn check_let(
         &mut self,
         rec: bool,
         id: Rc<str>,
+        params: Box<[Pat]>,
         expr: Expr,
         body: Option<Expr>,
         span: Span,
     ) -> InferResult<(TypedExpr, ConstrSet)> {
-        let (expr, mut c1) = if rec {
-            self.env.push_scope();
-            let var = self.new_type_variable();
-            self.env.insert(id.clone(), var.clone());
-            let (expr, mut c1) = self.check(expr)?;
-            self.env.pop_scope();
-            let constr = Constr::new(expr.ty.clone(), var);
-            c1.push(constr);
-            (expr, c1)
-        } else {
-            self.check(expr)?
-        };
+        let (expr, params, mut c1) = self.check_let_value(rec, id.clone(), params, expr)?;
 
         let s = self.unify(c1.clone())?;
         let u1 = expr
@@ -212,6 +246,7 @@ impl Checker {
         let kind = TypedExprKind::Let {
             rec: false,
             id,
+            params,
             expr: Box::new(expr),
             body: body.map(Box::new),
         };
@@ -222,26 +257,12 @@ impl Checker {
     fn check_constructor(
         &mut self,
         constructor: &Constructor,
-        parameters: &[Rc<str>],
-        parameters_id: &[Rc<Type>],
+        subs: &[Subs],
         quant: Box<[u64]>,
         mut ret: Rc<Type>,
     ) {
-        for param in constructor
-            .params
-            .iter()
-            .rev()
-            .map(|param| match param.as_ref() {
-                Type::Named { name, args } if args.is_empty() => {
-                    if let Some(pos) = parameters.iter().position(|p| p == name) {
-                        parameters_id[pos].clone()
-                    } else {
-                        param.clone()
-                    }
-                }
-                _ => param.clone(),
-            })
-        {
+        for param in constructor.params.iter().rev().cloned() {
+            let param = param.substitute_many(subs, &mut self.type_env);
             ret = self.get_type(Type::Fn { param, ret });
         }
         if !quant.is_empty() {
@@ -260,11 +281,18 @@ impl Checker {
         span: Span,
     ) -> (TypedExpr, ConstrSet) {
         let mut args = Vec::new();
+        let mut subs = Vec::new();
         let mut quant = Vec::new();
 
-        for _ in parameters.iter() {
+        for param in parameters {
             let id = self.new_type_variable_id();
-            args.push(self.get_type(Type::Var(id)));
+            let new = self.get_type(Type::Var(id));
+            let param = self.get_type(Type::Named {
+                name: param,
+                args: Box::from([]),
+            });
+            subs.push(Subs::new(param, new.clone()));
+            args.push(new);
             quant.push(id);
         }
 
@@ -276,7 +304,7 @@ impl Checker {
         });
 
         for c in constructors.iter() {
-            self.check_constructor(c, &parameters, &args, quant.clone(), ty.clone());
+            self.check_constructor(c, &subs, quant.clone(), ty.clone());
         }
 
         let kind = TypedExprKind::Type {
@@ -445,7 +473,8 @@ impl Checker {
         match ty.as_ref() {
             Type::Generic { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
                 let var = self.new_type_variable();
-                let subs = Subs::new(quant, var);
+                let old = self.get_type(Type::Var(quant));
+                let subs = Subs::new(old, var);
                 ty.substitute(&subs, &mut self.type_env)
             }),
             _ => ty,
@@ -544,9 +573,10 @@ impl Checker {
             ExprKind::Let {
                 rec,
                 id,
+                params,
                 expr,
                 body,
-            } => self.check_let(rec, id, *expr, body.map(|body| *body), span),
+            } => self.check_let(rec, id, params, *expr, body.map(|body| *body), span),
             ExprKind::Semi(expr) => {
                 let (mut expr, cset) = self.check(*expr)?;
                 expr.ty = self.get_unit();

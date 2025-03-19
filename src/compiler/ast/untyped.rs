@@ -56,10 +56,11 @@ pub enum ExprKind {
     Semi(Box<Expr>),
 
     Let {
-        rec:  bool,
-        id:   Rc<str>,
-        expr: Box<Expr>,
-        body: Option<Box<Expr>>,
+        rec:    bool,
+        id:     Rc<str>,
+        params: Box<[Pat]>,
+        expr:   Box<Expr>,
+        body:   Option<Box<Expr>>,
     },
 
     Type {

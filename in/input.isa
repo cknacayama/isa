@@ -1,23 +1,23 @@
 type Option a = None | Some a;
 type Result a e = Err e | Ok a;
 
-let fmap = fn f -> fn opt ->
+let fmap f opt =
     match opt in
         Some v -> f v,
         None -> None,
 ;
 
-let is_ok = fn res ->
+let is_ok res =
     match res in
         Ok v -> true,
         Err _ -> false,
 ;
 
-let transpose = fn opt ->
+let transpose opt =
     match opt in
         Some (Ok v) -> Ok (Some v),
         Some (Err e) -> Err e,
         None -> Ok None,
 ;
 
-let a = transpose (fmap (fn x -> if is_ok x then Some (Ok x) else None) (if true then Some (Ok 10) else Some (Err false)));
+let a = transpose (fmap (fn x -> if is_ok x then Some (Ok x) else Some (Err 10)) (if true then Some (Ok 10) else Some (Err false)));

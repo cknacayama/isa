@@ -11,14 +11,14 @@ pub type InferResult<T> = Result<T, InferError>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subs {
-    var: u64,
-    ty:  Rc<Type>,
+    old: Rc<Type>,
+    new: Rc<Type>,
 }
 
 impl Subs {
     #[must_use]
-    pub fn new(var: u64, ty: Rc<Type>) -> Self {
-        Self { var, ty }
+    pub fn new(old: Rc<Type>, new: Rc<Type>) -> Self {
+        Self { old, new }
     }
 }
 
@@ -113,6 +113,8 @@ impl Substitute for &mut TypedPat {
 impl Substitute for Rc<Type> {
     fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
         match self.as_ref() {
+            ty if subs.old.as_ref() == ty => subs.new.clone(),
+
             Type::Fn { param, ret } => {
                 let ty = Type::Fn {
                     param: param.clone().substitute(subs, env),
@@ -120,7 +122,6 @@ impl Substitute for Rc<Type> {
                 };
                 env.get_type(ty)
             }
-            Type::Var(n) if subs.var == *n => subs.ty.clone(),
             Type::Generic { quant, ty } => {
                 let ty = ty.clone().substitute(subs, env);
                 let quant = quant.clone();
@@ -214,15 +215,14 @@ impl ConstrSet {
         while let Some(c) = self.constrs.pop() {
             match (c.lhs.as_ref(), c.rhs.as_ref()) {
                 (
-                    lhs @ (Type::Int | Type::Bool | Type::Var(_) | Type::Named { .. }),
-                    rhs @ (Type::Int | Type::Bool | Type::Var(_) | Type::Named { .. }),
+                    lhs @ (Type::Int | Type::Bool | Type::Var(_)),
+                    rhs @ (Type::Int | Type::Bool | Type::Var(_)),
                 ) if lhs == rhs => {}
-                (Type::Var(var), other) | (other, Type::Var(var)) if !other.occurs(*var) => {
-                    let other = env.get_type(other.clone());
-                    let s = Subs {
-                        var: *var,
-                        ty:  other,
-                    };
+                (Type::Var(var), new) | (new, Type::Var(var)) if !new.occurs(*var) => {
+                    let new = env.get_type(new.clone());
+                    let old = env.get_type(Type::Var(*var));
+
+                    let s = Subs { old, new };
 
                     self = self.substitute(&s, env);
 
@@ -260,7 +260,7 @@ impl ConstrSet {
 
 impl Display for Subs {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "'{} |-> ({})", self.var, self.ty)
+        write!(f, "'{} |-> ({})", self.old, self.new)
     }
 }
 
