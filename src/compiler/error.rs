@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::compiler::token::TokenKind;
 
-use super::infer::Constr;
+use super::{infer::Constr, types::Type};
 
 #[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LexError {
@@ -36,4 +36,6 @@ pub enum InferError {
     Uninferable(Constr),
     #[error("unbound identifier: {0}")]
     Unbound(Rc<str>),
+    #[error("kind error: {0}")]
+    Kind(Rc<Type>),
 }

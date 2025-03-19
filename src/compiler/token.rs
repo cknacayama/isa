@@ -26,7 +26,7 @@ pub enum TokenKind<'a> {
     LParen,
     RParen,
 
-    Pipe,
+    Bar,
 
     Arrow,
     Comma,
@@ -103,7 +103,7 @@ impl Display for TokenKind<'_> {
             TokenKind::Underscore => write!(f, "_"),
             TokenKind::LParen => write!(f, "("),
             TokenKind::RParen => write!(f, ")"),
-            TokenKind::Pipe => write!(f, "|"),
+            TokenKind::Bar => write!(f, "|"),
             TokenKind::Comma => write!(f, ","),
             TokenKind::Semicolon => write!(f, ";"),
             TokenKind::Arrow => write!(f, "->"),

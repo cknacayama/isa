@@ -2,18 +2,17 @@ use std::{collections::HashSet, iter::Peekable, rc::Rc};
 
 use crate::{
     compiler::{
-        ast::{BinOp, Expr, ExprKind, UnOp},
+        ast::{
+            ast::{Expr, ExprKind, Pat, PatKind},
+            BinOp, Constructor, UnOp,
+        },
+        env::TypeEnv,
         error::ParseError,
         lexer::Lexer,
         token::{Token, TokenKind},
+        types::Type,
     },
     span::{Span, Spanned},
-};
-
-use super::{
-    ast::{Constructor, Pat, PatKind},
-    env::TypeEnv,
-    types::Type,
 };
 
 pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
@@ -118,6 +117,10 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn get_type(&mut self, ty: Type) -> Rc<Type> {
+        self.types.get_type(ty)
+    }
+
     pub fn parse_all(&mut self) -> ParseResult<Vec<Expr>> {
         self.collect()
     }
@@ -128,10 +131,6 @@ impl<'a> Parser<'a> {
         } else {
             None
         }
-    }
-
-    fn get_type(&mut self, ty: Type) -> Rc<Type> {
-        self.types.get_type(ty)
     }
 
     fn parse_semi_expr(&mut self) -> ParseResult<Expr> {
@@ -378,7 +377,7 @@ impl<'a> Parser<'a> {
             let c = self.parse_constructor()?;
             constructors.push(c.data);
             span = span.union(c.span);
-            if self.next_if_match(TokenKind::Pipe).is_none() {
+            if self.next_if_match(TokenKind::Bar).is_none() {
                 break;
             }
         }
@@ -495,14 +494,14 @@ impl<'a> Parser<'a> {
     fn parse_pat(&mut self) -> ParseResult<Pat> {
         let mut pat = self.parse_type_pat()?;
 
-        if self.next_if_match(TokenKind::Pipe).is_some() {
+        if self.next_if_match(TokenKind::Bar).is_some() {
             let mut span = pat.span;
             let mut pats = vec![pat];
 
             loop {
                 let pat = self.parse_type_pat()?;
                 pats.push(pat);
-                if self.next_if_match(TokenKind::Pipe).is_none() {
+                if self.next_if_match(TokenKind::Bar).is_none() {
                     break;
                 }
             }

@@ -26,7 +26,7 @@ impl Display for Type {
             Self::Unit => write!(f, "()"),
             Self::Int => write!(f, "int"),
             Self::Bool => write!(f, "bool"),
-            Self::Fn { param, ret } => write!(f, "{param} -> {ret}"),
+            Self::Fn { param, ret } => write!(f, "({param} -> {ret})"),
             Self::Var(var) => write!(f, "'{var}"),
             Self::Generic { quant, ty } => {
                 for n in quant {
@@ -35,8 +35,11 @@ impl Display for Type {
                 write!(f, ". {ty}")
             }
             Self::Named { name, args } => {
-                write!(f, "{name}")?;
-                args.iter().try_for_each(|arg| write!(f, " {arg}"))
+                write!(f, "({name}")?;
+                for arg in args {
+                    write!(f, " {arg}")?;
+                }
+                write!(f, ")")
             }
         }
     }

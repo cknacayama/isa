@@ -160,7 +160,6 @@ impl<'a> Lexer<'a> {
         match c {
             '(' => token!(LParen),
             ')' => token!(RParen),
-            '|' => token!(Pipe),
             ',' => token!(Comma),
             ';' => token!(Semicolon),
             '*' => token!(Star),
@@ -168,6 +167,7 @@ impl<'a> Lexer<'a> {
             '%' => token!(Percent),
             '^' => token!(Caret),
             '+' => token!(Plus),
+            '|' => token!(Bar),
             '-' => token!(Minus, '>' => Arrow),
             '=' => token!(Eq, '=' => EqEq),
             '!' => token!(Bang, '=' => BangEq),

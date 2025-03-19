@@ -44,7 +44,7 @@ fn main() {
     }
 
     for expr in expr {
-        println!("{expr}");
+        println!("{}", expr.format());
     }
 
     for (id, ty) in checker.env().iter() {

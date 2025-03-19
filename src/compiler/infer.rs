@@ -1,6 +1,11 @@
 use std::{fmt::Display, rc::Rc};
 
-use super::{ast::TypedExpr, env::TypeEnv, error::InferError, types::Type};
+use crate::compiler::{
+    ast::typed::{TypedExpr, TypedExprKind, TypedPat, TypedPatKind},
+    env::TypeEnv,
+    error::InferError,
+    types::Type,
+};
 
 pub type InferResult<T> = Result<T, InferError>;
 
@@ -31,7 +36,76 @@ pub trait Substitute {
 
 impl Substitute for &mut TypedExpr {
     fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
-        self.visit(&mut |e| e.ty = e.ty.clone().substitute(subs, env));
+        match &mut self.kind {
+            TypedExprKind::Let { expr, body, .. } => {
+                expr.substitute(subs, env);
+                if let Some(body) = body.as_mut() {
+                    body.substitute(subs, env);
+                }
+            }
+
+            TypedExprKind::Fn { expr, .. } => {
+                expr.substitute(subs, env);
+            }
+
+            TypedExprKind::If {
+                cond,
+                then,
+                otherwise,
+            } => {
+                cond.substitute(subs, env);
+                then.substitute(subs, env);
+                otherwise.substitute(subs, env);
+            }
+
+            TypedExprKind::Call { callee, arg } => {
+                callee.substitute(subs, env);
+                arg.substitute(subs, env);
+            }
+
+            TypedExprKind::Match { expr, arms } => {
+                expr.substitute(subs, env);
+                arms.iter_mut().for_each(|(pat, expr)| {
+                    pat.substitute(subs, env);
+                    expr.substitute(subs, env);
+                });
+            }
+
+            TypedExprKind::Unit
+            | TypedExprKind::Int(_)
+            | TypedExprKind::Bool(_)
+            | TypedExprKind::Ident(_)
+            | TypedExprKind::BinOp(_)
+            | TypedExprKind::UnOp(_)
+            | TypedExprKind::Semi(_)
+            | TypedExprKind::Type { .. } => (),
+        }
+        self.ty = self.ty.clone().substitute(subs, env);
+        self
+    }
+}
+
+impl Substitute for &mut TypedPat {
+    fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
+        match &mut self.kind {
+            TypedPatKind::Or(args) | TypedPatKind::Type { args, .. } => {
+                args.iter_mut().for_each(|p| {
+                    p.substitute(subs, env);
+                })
+            }
+
+            TypedPatKind::Guard { pat, guard } => {
+                pat.substitute(subs, env);
+                guard.substitute(subs, env);
+            }
+
+            TypedPatKind::Wild
+            | TypedPatKind::Unit
+            | TypedPatKind::Int(_)
+            | TypedPatKind::Bool(_)
+            | TypedPatKind::Ident(_) => (),
+        }
+        self.ty = self.ty.clone().substitute(subs, env);
         self
     }
 }

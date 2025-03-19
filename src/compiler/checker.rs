@@ -3,7 +3,11 @@ use std::rc::Rc;
 use crate::span::Span;
 
 use super::{
-    ast::{BinOp, Constructor, Expr, ExprKind, TypedExpr, TypedExprKind, UnOp},
+    ast::{
+        ast::{Expr, ExprKind, Pat, PatKind},
+        typed::{TypedExpr, TypedExprKind, TypedPat, TypedPatKind},
+        BinOp, Constructor, UnOp,
+    },
     env::{Env, TypeEnv},
     error::InferError,
     infer::{Constr, ConstrSet, InferResult, Subs, Substitute},
@@ -113,13 +117,11 @@ impl Checker {
         expr: Expr,
         span: Span,
     ) -> InferResult<(TypedExpr, ConstrSet)> {
+        self.env.push_scope();
         let var = self.new_type_variable();
-        let old = self.env.insert(param.clone(), var);
+        self.env.insert(param.clone(), var.clone());
         let (expr, c) = self.check(expr)?;
-        let var = match old {
-            Some(old) => self.env.insert(param.clone(), old).unwrap(),
-            None => self.env.remove(&param).unwrap(),
-        };
+        self.env.pop_scope();
 
         let ty = Type::Fn {
             param: var,
@@ -169,19 +171,17 @@ impl Checker {
         body: Option<Expr>,
         span: Span,
     ) -> InferResult<(TypedExpr, ConstrSet)> {
-        let (expr, mut c1) = if rec {
+        let (expr, mut c1) = if !rec {
+            self.check(expr)?
+        } else {
+            self.env.push_scope();
             let var = self.new_type_variable();
-            let old = self.env.insert(id.clone(), var);
+            self.env.insert(id.clone(), var.clone());
             let (expr, mut c1) = self.check(expr)?;
-            let var = match old {
-                Some(old) => self.env.insert(id.clone(), old).unwrap(),
-                None => self.env.remove(&id).unwrap(),
-            };
+            self.env.pop_scope();
             let constr = Constr::new(expr.ty.clone(), var);
             c1.push(constr);
             (expr, c1)
-        } else {
-            self.check(expr)?
         };
 
         let s = self.unify(c1.clone())?;
@@ -206,7 +206,7 @@ impl Checker {
                 let ty = body.ty.clone();
                 (Some(body), ty)
             }
-            _ => (None, self.get_unit()),
+            None => (None, self.get_unit()),
         };
 
         let kind = TypedExprKind::Let {
@@ -287,6 +287,159 @@ impl Checker {
         let expr = TypedExpr::new(kind, span, self.get_unit());
 
         Ok((expr, ConstrSet::new()))
+    }
+
+    fn check_pat(&mut self, Pat { data, span }: Pat) -> InferResult<(TypedPat, ConstrSet)> {
+        match data {
+            PatKind::Wild => {
+                let var = self.new_type_variable();
+                Ok((
+                    TypedPat::new(TypedPatKind::Wild, span, var),
+                    ConstrSet::new(),
+                ))
+            }
+            PatKind::Ident(name) => match self.type_env.get_constructor(&name).cloned() {
+                Some(constructor) => {
+                    let ty = self.instantiate(constructor);
+                    match ty.as_ref() {
+                        Type::Named { name, args } if args.is_empty() => {
+                            let kind = TypedPatKind::Type {
+                                name: name.clone(),
+                                args: Box::from([]),
+                            };
+                            Ok((TypedPat::new(kind, span, ty), ConstrSet::new()))
+                        }
+                        _ => Err(InferError::Kind(ty)),
+                    }
+                }
+                None => {
+                    let var = self.new_type_variable();
+                    self.env.insert(name.clone(), var.clone());
+                    Ok((
+                        TypedPat::new(TypedPatKind::Ident(name), span, var),
+                        ConstrSet::new(),
+                    ))
+                }
+            },
+            PatKind::Or(spanneds) => {
+                let mut patterns = Vec::new();
+                let mut c = ConstrSet::new();
+
+                let var = self.new_type_variable();
+                for pat in spanneds {
+                    let (pat, c_pat) = self.check_pat(pat)?;
+                    c.append(c_pat);
+                    c.push(Constr::new(pat.ty.clone(), var.clone()));
+                    patterns.push(pat);
+                }
+
+                Ok((
+                    TypedPat::new(TypedPatKind::Or(patterns.into_boxed_slice()), span, var),
+                    c,
+                ))
+            }
+            PatKind::Unit => Ok((
+                TypedPat::new(TypedPatKind::Unit, span, self.get_unit()),
+                ConstrSet::new(),
+            )),
+            PatKind::Int(i) => Ok((
+                TypedPat::new(TypedPatKind::Int(i), span, self.get_int()),
+                ConstrSet::new(),
+            )),
+            PatKind::Bool(b) => Ok((
+                TypedPat::new(TypedPatKind::Bool(b), span, self.get_bool()),
+                ConstrSet::new(),
+            )),
+            PatKind::Type { name, args } => match self.type_env.get_constructor(&name).cloned() {
+                Some(mut ty) => {
+                    ty = self.instantiate(ty);
+                    let mut c = ConstrSet::new();
+                    let mut typed_args = Vec::new();
+
+                    for arg in args {
+                        let (arg, c_arg) = self.check_pat(arg)?;
+                        let Type::Fn { param, ret } = ty.as_ref() else {
+                            return Err(InferError::Kind(ty));
+                        };
+                        c.append(c_arg);
+                        c.push(Constr::new(arg.ty.clone(), param.clone()));
+                        ty = ret.clone();
+                        typed_args.push(arg);
+                    }
+
+                    let kind = TypedPatKind::Type {
+                        name,
+                        args: typed_args.into_boxed_slice(),
+                    };
+
+                    Ok((TypedPat::new(kind, span, ty), c))
+                }
+                None if args.is_empty() => {
+                    let var = self.new_type_variable();
+                    self.env.insert(name.clone(), var.clone());
+                    Ok((
+                        TypedPat::new(TypedPatKind::Ident(name), span, var),
+                        ConstrSet::new(),
+                    ))
+                }
+                None => Err(InferError::Unbound(name)),
+            },
+            PatKind::Guard { pat, guard } => {
+                let (pat, mut c1) = self.check_pat(*pat)?;
+                let ty = pat.ty.clone();
+                let (guard, c2) = self.check(guard)?;
+                c1.append(c2);
+                c1.push(Constr::new(guard.ty.clone(), self.get_bool()));
+
+                let kind = TypedPatKind::Guard {
+                    pat: Box::new(pat),
+                    guard,
+                };
+                Ok((TypedPat::new(kind, span, ty), c1))
+            }
+        }
+    }
+
+    fn check_match_arm(
+        &mut self,
+        pat: Pat,
+        expr: Expr,
+    ) -> InferResult<((TypedPat, TypedExpr), ConstrSet)> {
+        self.env.push_scope();
+        let (pat, mut c1) = self.check_pat(pat)?;
+        let (expr, c2) = self.check(expr)?;
+
+        c1.append(c2);
+
+        self.env.pop_scope();
+
+        Ok(((pat, expr), c1))
+    }
+
+    fn check_match(
+        &mut self,
+        expr: Expr,
+        arms: Box<[(Pat, Expr)]>,
+        span: Span,
+    ) -> InferResult<(TypedExpr, ConstrSet)> {
+        let (expr, mut c1) = self.check(expr)?;
+
+        let var = self.new_type_variable();
+        let mut typed_arms = Vec::new();
+        for (pat, aexpr) in arms {
+            let ((pat, aexpr), c) = self.check_match_arm(pat, aexpr)?;
+            c1.append(c);
+            c1.push(Constr::new(expr.ty.clone(), pat.ty.clone()));
+            c1.push(Constr::new(aexpr.ty.clone(), var.clone()));
+            typed_arms.push((pat, aexpr));
+        }
+
+        let kind = TypedExprKind::Match {
+            expr: Box::new(expr),
+            arms: typed_arms.into_boxed_slice(),
+        };
+
+        Ok((TypedExpr::new(kind, span, var), c1))
     }
 
     fn instantiate(&mut self, ty: Rc<Type>) -> Rc<Type> {
@@ -406,7 +559,7 @@ impl Checker {
                 constructors,
             } => self.check_type(id, parameters, constructors, span),
 
-            ExprKind::Match { expr, arms } => todo!(),
+            ExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
         }
     }
 }
