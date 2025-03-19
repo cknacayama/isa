@@ -1,6 +1,6 @@
 use super::{
     ast::typed::{TypedExpr, TypedExprKind, TypedParam, TypedPat, TypedPatKind},
-    env::TypeEnv,
+    ctx::TypeCtx,
     error::InferError,
     types::Type,
 };
@@ -23,9 +23,9 @@ impl Subs {
 }
 
 pub trait Substitute {
-    fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self;
+    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self;
 
-    fn substitute_many<'a, S>(self, subs: S, env: &mut TypeEnv) -> Self
+    fn substitute_many<'a, S>(self, subs: S, env: &mut TypeCtx) -> Self
     where
         Self: Sized,
         S: IntoIterator<Item = &'a Subs>,
@@ -35,14 +35,14 @@ pub trait Substitute {
 }
 
 impl Substitute for &mut TypedParam {
-    fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
+    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self {
         self.ty = self.ty.clone().substitute(subs, env);
         self
     }
 }
 
 impl Substitute for &mut TypedExpr {
-    fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
+    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self {
         match &mut self.kind {
             TypedExprKind::Let {
                 params, expr, body, ..
@@ -99,7 +99,7 @@ impl Substitute for &mut TypedExpr {
 }
 
 impl Substitute for &mut TypedPat {
-    fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
+    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self {
         match &mut self.kind {
             TypedPatKind::Or(args) | TypedPatKind::Type { args, .. } => {
                 args.iter_mut().for_each(|p| {
@@ -119,7 +119,7 @@ impl Substitute for &mut TypedPat {
 }
 
 impl Substitute for Rc<Type> {
-    fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
+    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self {
         match self.as_ref() {
             ty if subs.old.as_ref() == ty => subs.new.clone(),
 
@@ -138,7 +138,7 @@ impl Substitute for Rc<Type> {
             }
             Type::Named { name, args } => {
                 let ty = Type::Named {
-                    name: name.clone(),
+                    name: *name,
                     args: args
                         .into_iter()
                         .cloned()
@@ -167,7 +167,7 @@ impl PartialEq for Constr {
 }
 
 impl Substitute for Constr {
-    fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
+    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self {
         Self {
             lhs:  self.lhs.substitute(subs, env),
             rhs:  self.rhs.substitute(subs, env),
@@ -202,7 +202,7 @@ pub struct ConstrSet {
 }
 
 impl Substitute for ConstrSet {
-    fn substitute(mut self, subs: &Subs, env: &mut TypeEnv) -> Self {
+    fn substitute(mut self, subs: &Subs, env: &mut TypeCtx) -> Self {
         for c in &mut self.constrs {
             *c = c.clone().substitute(subs, env);
         }
@@ -228,7 +228,7 @@ impl ConstrSet {
         self.constrs.iter()
     }
 
-    pub fn unify(mut self, env: &mut TypeEnv) -> InferResult<Vec<Subs>> {
+    pub fn unify(mut self, env: &mut TypeCtx) -> InferResult<Vec<Subs>> {
         let mut subs = Vec::new();
 
         while let Some(c) = self.constrs.pop() {

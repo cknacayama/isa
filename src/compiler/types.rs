@@ -1,23 +1,16 @@
 use std::{fmt::Display, rc::Rc};
 
+use crate::global::Symbol;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Unit,
     Int,
     Bool,
     Var(u64),
-    Fn {
-        param: Rc<Type>,
-        ret:   Rc<Type>,
-    },
-    Generic {
-        quant: Box<[u64]>,
-        ty:    Rc<Type>,
-    },
-    Named {
-        name: Rc<str>,
-        args: Box<[Rc<Type>]>,
-    },
+    Fn { param: Rc<Type>, ret: Rc<Type> },
+    Generic { quant: Box<[u64]>, ty: Rc<Type> },
+    Named { name: Symbol, args: Box<[Rc<Type>]> },
 }
 
 impl Display for Type {

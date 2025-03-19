@@ -1,21 +1,20 @@
 use super::{
-    ast::Constructor,
+    ctx::TypeCtx,
     infer::{Subs, Substitute},
     types::Type,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
+use crate::global::Symbol;
+use rustc_hash::FxHashMap;
+use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 pub struct Env {
-    env: Vec<HashMap<Rc<str>, Rc<Type>>>,
+    env: Vec<FxHashMap<Symbol, Rc<Type>>>,
 }
 
 impl Substitute for Env {
-    fn substitute(mut self, subs: &Subs, env: &mut TypeEnv) -> Self {
-        for t in self.env.iter_mut().flat_map(HashMap::values_mut) {
+    fn substitute(mut self, subs: &Subs, env: &mut TypeCtx) -> Self {
+        for t in self.env.iter_mut().flat_map(FxHashMap::values_mut) {
             *t = t.clone().substitute(subs, env);
         }
         self
@@ -25,26 +24,26 @@ impl Substitute for Env {
 impl Default for Env {
     fn default() -> Self {
         Self {
-            env: vec![HashMap::default()],
+            env: vec![FxHashMap::default()],
         }
     }
 }
 
 impl Env {
     #[must_use]
-    pub fn get(&self, id: &str) -> Option<&Rc<Type>> {
+    pub fn get(&self, id: &Symbol) -> Option<&Rc<Type>> {
         self.env.iter().rev().find_map(|e| e.get(id))
     }
 
-    pub fn insert(&mut self, id: Rc<str>, ty: Rc<Type>) -> Option<Rc<Type>> {
+    pub fn insert(&mut self, id: Symbol, ty: Rc<Type>) -> Option<Rc<Type>> {
         self.env.last_mut().unwrap().insert(id, ty)
     }
 
     pub fn push_scope(&mut self) {
-        self.env.push(HashMap::default());
+        self.env.push(FxHashMap::default());
     }
 
-    pub fn pop_scope(&mut self) -> Option<HashMap<Rc<str>, Rc<Type>>> {
+    pub fn pop_scope(&mut self) -> Option<FxHashMap<Symbol, Rc<Type>>> {
         self.env.pop()
     }
 
@@ -52,12 +51,12 @@ impl Env {
     pub fn contains_type(&self, ty: &Type) -> bool {
         self.env
             .iter()
-            .flat_map(HashMap::values)
+            .flat_map(FxHashMap::values)
             .any(|t| t.as_ref() == ty)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&Rc<str>, &Rc<Type>)> {
-        self.env.iter().flat_map(HashMap::iter)
+    pub fn iter(&self) -> impl Iterator<Item = (&Symbol, &Rc<Type>)> {
+        self.env.iter().flat_map(FxHashMap::iter)
     }
 
     #[must_use]
@@ -97,7 +96,7 @@ impl Env {
     }
 
     #[must_use]
-    pub fn generalize(&self, ty: Rc<Type>, type_env: &mut TypeEnv) -> Rc<Type> {
+    pub fn generalize(&self, ty: Rc<Type>, type_env: &mut TypeCtx) -> Rc<Type> {
         let mut quantifiers = self.gen_helper(&ty);
 
         if quantifiers.is_empty() {
@@ -119,71 +118,5 @@ impl Env {
         };
 
         type_env.get_type(ty)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct TypeEnv {
-    types:        HashSet<Rc<Type>>,
-    constructors: HashMap<Rc<str>, Rc<Type>>,
-    variants:     HashMap<Rc<Type>, Box<[Constructor]>>,
-}
-
-impl Default for TypeEnv {
-    fn default() -> Self {
-        let types = HashSet::from([Rc::new(Type::Unit), Rc::new(Type::Int), Rc::new(Type::Bool)]);
-
-        Self {
-            types,
-            constructors: HashMap::default(),
-            variants: HashMap::default(),
-        }
-    }
-}
-
-impl TypeEnv {
-    pub fn get_type(&mut self, ty: Type) -> Rc<Type> {
-        if let Some(ty) = self.types.get(&ty) {
-            ty.clone()
-        } else {
-            let ty = Rc::new(ty);
-            self.types.insert(ty.clone());
-            ty
-        }
-    }
-
-    pub fn get_variants(&self, ty: &Type) -> Option<&[Constructor]> {
-        self.variants.get(ty).map(Box::as_ref)
-    }
-
-    pub fn insert_variants(&mut self, ty: Rc<Type>, variants: Box<[Constructor]>) {
-        self.variants.insert(ty, variants);
-    }
-
-    pub fn get_constructor(&self, name: &str) -> Option<&Rc<Type>> {
-        self.constructors.get(name)
-    }
-
-    pub fn insert_constructor(&mut self, name: Rc<str>, ty: Rc<Type>) {
-        self.constructors.insert(name, ty);
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Rc<Type>> {
-        self.types.iter()
-    }
-
-    #[must_use]
-    pub fn get_unit(&self) -> Rc<Type> {
-        self.types.get(&Type::Unit).unwrap().clone()
-    }
-
-    #[must_use]
-    pub fn get_int(&self) -> Rc<Type> {
-        self.types.get(&Type::Int).unwrap().clone()
-    }
-
-    #[must_use]
-    pub fn get_bool(&self) -> Rc<Type> {
-        self.types.get(&Type::Bool).unwrap().clone()
     }
 }

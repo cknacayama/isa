@@ -1,3 +1,5 @@
+use crate::global::Symbol;
+
 use super::{infer::Constr, token::TokenKind, types::Type};
 use std::{fmt::Display, rc::Rc};
 
@@ -53,7 +55,7 @@ impl std::error::Error for ParseError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InferError {
     Uninferable(Constr),
-    Unbound(Rc<str>),
+    Unbound(Symbol),
     Kind(Rc<Type>),
 }
 

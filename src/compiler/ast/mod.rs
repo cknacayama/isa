@@ -2,6 +2,7 @@ pub mod typed;
 pub mod untyped;
 
 use super::{token::TokenKind, types::Type};
+use crate::global::Symbol;
 use std::{fmt::Display, rc::Rc};
 
 #[derive(Debug, Clone, Copy)]
@@ -134,13 +135,13 @@ impl TokenKind<'_> {
 
 #[derive(Debug, Clone)]
 pub struct Constructor {
-    pub id:     Rc<str>,
+    pub id:     Symbol,
     pub params: Box<[Rc<Type>]>,
 }
 
 impl Constructor {
     #[must_use]
-    pub fn new(id: Rc<str>, params: Box<[Rc<Type>]>) -> Self {
+    pub fn new(id: Symbol, params: Box<[Rc<Type>]>) -> Self {
         Self { id, params }
     }
 }

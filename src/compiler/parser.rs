@@ -3,22 +3,24 @@ use super::{
         untyped::{Expr, ExprKind, Pat, PatKind},
         BinOp, Constructor, UnOp,
     },
-    env::TypeEnv,
+    ctx::TypeCtx,
     error::ParseError,
     lexer::Lexer,
     token::{Token, TokenKind},
     types::Type,
 };
-use crate::span::{Span, Spanned};
-use std::{collections::HashSet, iter::Peekable, rc::Rc};
+use crate::{
+    global::{self, Symbol},
+    span::{Span, Spanned},
+};
+use std::{iter::Peekable, rc::Rc};
 
 pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
 
 #[derive(Debug)]
 pub struct Parser<'a> {
-    lexer:   Peekable<Lexer<'a>>,
-    strings: HashSet<Rc<str>>,
-    types:   TypeEnv,
+    lexer: Peekable<Lexer<'a>>,
+    types: TypeCtx,
 }
 
 impl<'a> Parser<'a> {
@@ -30,24 +32,17 @@ impl<'a> Parser<'a> {
     #[must_use]
     pub fn new(lexer: Lexer<'a>) -> Self {
         Self {
-            lexer:   lexer.peekable(),
-            strings: HashSet::default(),
-            types:   TypeEnv::default(),
+            lexer: lexer.peekable(),
+            types: TypeCtx::default(),
         }
     }
 
-    fn get_string(&mut self, s: &str) -> Rc<str> {
-        if let Some(s) = self.strings.get(s) {
-            s.clone()
-        } else {
-            let s: Rc<str> = Rc::from(s);
-            self.strings.insert(s.clone());
-            s
-        }
+    fn get_symbol(&mut self, s: &str) -> Symbol {
+        global::intern_symbol(s)
     }
 
     #[must_use]
-    pub fn types(self) -> TypeEnv {
+    pub fn types(self) -> TypeCtx {
         self.types
     }
 
@@ -265,7 +260,7 @@ impl<'a> Parser<'a> {
                 }
             }
             TokenKind::Integer(lit) => Ok(Expr::new(ExprKind::Int(lit.parse().unwrap()), span)),
-            TokenKind::Ident(id) => Ok(Expr::new(ExprKind::Ident(self.get_string(id)), span)),
+            TokenKind::Ident(id) => Ok(Expr::new(ExprKind::Ident(self.get_symbol(id)), span)),
             TokenKind::KwTrue => Ok(Expr::new(ExprKind::Bool(true), span)),
             TokenKind::KwFalse => Ok(Expr::new(ExprKind::Bool(false), span)),
             TokenKind::KwLet => self.parse_let(span),
@@ -295,7 +290,7 @@ impl<'a> Parser<'a> {
             TokenKind::KwBool => Ok(Spanned::new(Type::Bool, tk.span)),
             TokenKind::Ident(id) => Ok(Spanned::new(
                 Type::Named {
-                    name: self.get_string(id),
+                    name: self.get_symbol(id),
                     args: Box::from([]),
                 },
                 tk.span,
@@ -349,7 +344,7 @@ impl<'a> Parser<'a> {
 
         Ok(Spanned::new(
             Constructor {
-                id:     self.get_string(id),
+                id:     self.get_symbol(id),
                 params: params.into_boxed_slice(),
             },
             span,
@@ -363,7 +358,7 @@ impl<'a> Parser<'a> {
 
         while !self.check(TokenKind::Eq) {
             let Spanned { data, .. } = self.expect_id()?;
-            params.push(self.get_string(data));
+            params.push(self.get_symbol(data));
         }
 
         self.expect(TokenKind::Eq)?;
@@ -381,7 +376,7 @@ impl<'a> Parser<'a> {
 
         Ok(Expr::new(
             ExprKind::Type {
-                id:           self.get_string(id),
+                id:           self.get_symbol(id),
                 parameters:   params.into_boxed_slice(),
                 constructors: constructors.into_boxed_slice(),
             },
@@ -460,7 +455,7 @@ impl<'a> Parser<'a> {
                 }
             }
             TokenKind::Ident(id) => {
-                let name = self.get_string(id);
+                let name = self.get_symbol(id);
                 Ok(Pat::new(PatKind::Ident(name), span))
             }
             TokenKind::Underscore => Ok(Pat::new(PatKind::Wild, span)),
@@ -518,7 +513,7 @@ impl<'a> Parser<'a> {
         let mut parametes = Vec::new();
         while !self.check(TokenKind::Eq) {
             let Spanned { data, .. } = self.expect_id()?;
-            parametes.push(self.get_string(data));
+            parametes.push(self.get_symbol(data));
         }
         self.expect(TokenKind::Eq)?;
         let expr = self.parse_expr()?;
@@ -534,7 +529,7 @@ impl<'a> Parser<'a> {
             ExprKind::Let {
                 rec,
                 params: parametes.into_boxed_slice(),
-                id: self.get_string(id),
+                id: self.get_symbol(id),
                 expr: Box::new(expr),
                 body: body.map(Box::new),
             },
@@ -553,7 +548,7 @@ impl<'a> Parser<'a> {
 
         Ok(Expr::new(
             ExprKind::Fn {
-                param: self.get_string(param),
+                param: self.get_symbol(param),
                 expr:  Box::new(expr),
             },
             span,

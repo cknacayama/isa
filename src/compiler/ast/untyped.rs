@@ -1,6 +1,9 @@
 use super::{BinOp, Constructor, UnOp};
-use crate::span::{Span, Spanned};
-use std::{fmt::Debug, rc::Rc};
+use crate::{
+    global::Symbol,
+    span::{Span, Spanned},
+};
+use std::fmt::Debug;
 
 #[derive(Clone)]
 pub struct Expr {
@@ -20,7 +23,7 @@ impl Debug for Expr {
 pub enum PatKind {
     Wild,
 
-    Ident(Rc<str>),
+    Ident(Symbol),
 
     Or(Box<[Pat]>),
 
@@ -30,7 +33,7 @@ pub enum PatKind {
 
     Bool(bool),
 
-    Type { name: Rc<str>, args: Box<[Pat]> },
+    Type { name: Symbol, args: Box<[Pat]> },
 }
 
 pub type Pat = Spanned<PatKind>;
@@ -43,7 +46,7 @@ pub enum ExprKind {
 
     Bool(bool),
 
-    Ident(Rc<str>),
+    Ident(Symbol),
 
     BinOp(BinOp),
 
@@ -53,20 +56,20 @@ pub enum ExprKind {
 
     Let {
         rec:    bool,
-        id:     Rc<str>,
-        params: Box<[Rc<str>]>,
+        id:     Symbol,
+        params: Box<[Symbol]>,
         expr:   Box<Expr>,
         body:   Option<Box<Expr>>,
     },
 
     Type {
-        id:           Rc<str>,
-        parameters:   Box<[Rc<str>]>,
+        id:           Symbol,
+        parameters:   Box<[Symbol]>,
         constructors: Box<[Constructor]>,
     },
 
     Fn {
-        param: Rc<str>,
+        param: Symbol,
         expr:  Box<Expr>,
     },
 

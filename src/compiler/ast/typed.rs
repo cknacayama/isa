@@ -1,5 +1,5 @@
 use super::{BinOp, Constructor, UnOp};
-use crate::{compiler::types::Type, span::Span};
+use crate::{compiler::types::Type, global::Symbol, span::Span};
 use std::{
     fmt::{Debug, Display, Write},
     rc::Rc,
@@ -9,7 +9,7 @@ use std::{
 pub enum TypedPatKind {
     Wild,
 
-    Ident(Rc<str>),
+    Ident(Symbol),
 
     Or(Box<[TypedPat]>),
 
@@ -19,10 +19,7 @@ pub enum TypedPatKind {
 
     Bool(bool),
 
-    Type {
-        name: Rc<str>,
-        args: Box<[TypedPat]>,
-    },
+    Type { name: Symbol, args: Box<[TypedPat]> },
 }
 
 #[derive(Clone)]
@@ -113,12 +110,12 @@ impl TypedMatchArm {
 
 #[derive(Debug, Clone)]
 pub struct TypedParam {
-    pub name: Rc<str>,
+    pub name: Symbol,
     pub ty:   Rc<Type>,
 }
 
 impl TypedParam {
-    pub fn new(name: Rc<str>, ty: Rc<Type>) -> Self {
+    pub fn new(name: Symbol, ty: Rc<Type>) -> Self {
         Self { name, ty }
     }
 
@@ -141,7 +138,7 @@ pub enum TypedExprKind {
 
     Bool(bool),
 
-    Ident(Rc<str>),
+    Ident(Symbol),
 
     BinOp(BinOp),
 
@@ -151,14 +148,14 @@ pub enum TypedExprKind {
 
     Let {
         rec:    bool,
-        id:     Rc<str>,
+        id:     Symbol,
         params: Box<[TypedParam]>,
         expr:   Box<TypedExpr>,
         body:   Option<Box<TypedExpr>>,
     },
 
     Type {
-        id:           Rc<str>,
+        id:           Symbol,
         parameters:   Box<[Rc<Type>]>,
         constructors: Box<[Constructor]>,
     },
