@@ -1,4 +1,5 @@
 use super::{
+    ast::Constructor,
     infer::{Subs, Substitute},
     types::Type,
 };
@@ -125,6 +126,7 @@ impl Env {
 pub struct TypeEnv {
     types:        HashSet<Rc<Type>>,
     constructors: HashMap<Rc<str>, Rc<Type>>,
+    variants:     HashMap<Rc<Type>, Box<[Constructor]>>,
 }
 
 impl Default for TypeEnv {
@@ -134,6 +136,7 @@ impl Default for TypeEnv {
         Self {
             types,
             constructors: HashMap::default(),
+            variants: HashMap::default(),
         }
     }
 }
@@ -149,7 +152,15 @@ impl TypeEnv {
         }
     }
 
-    pub fn get_constructor(&mut self, name: &str) -> Option<&Rc<Type>> {
+    pub fn get_variants(&self, ty: &Type) -> Option<&[Constructor]> {
+        self.variants.get(ty).map(Box::as_ref)
+    }
+
+    pub fn insert_variants(&mut self, ty: Rc<Type>, variants: Box<[Constructor]>) {
+        self.variants.insert(ty, variants);
+    }
+
+    pub fn get_constructor(&self, name: &str) -> Option<&Rc<Type>> {
         self.constructors.get(name)
     }
 

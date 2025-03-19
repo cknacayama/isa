@@ -1,5 +1,5 @@
 use super::{
-    ast::typed::{TypedExpr, TypedExprKind, TypedPat, TypedPatKind},
+    ast::typed::{TypedExpr, TypedExprKind, TypedParam, TypedPat, TypedPatKind},
     env::TypeEnv,
     error::InferError,
     types::Type,
@@ -34,17 +34,30 @@ pub trait Substitute {
     }
 }
 
+impl Substitute for &mut TypedParam {
+    fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
+        self.ty = self.ty.clone().substitute(subs, env);
+        self
+    }
+}
+
 impl Substitute for &mut TypedExpr {
     fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
         match &mut self.kind {
-            TypedExprKind::Let { expr, body, .. } => {
+            TypedExprKind::Let {
+                params, expr, body, ..
+            } => {
+                params.iter_mut().for_each(|p| {
+                    p.substitute(subs, env);
+                });
                 expr.substitute(subs, env);
                 if let Some(body) = body.as_mut() {
                     body.substitute(subs, env);
                 }
             }
 
-            TypedExprKind::Fn { expr, .. } => {
+            TypedExprKind::Fn { param, expr } => {
+                param.substitute(subs, env);
                 expr.substitute(subs, env);
             }
 
@@ -65,9 +78,9 @@ impl Substitute for &mut TypedExpr {
 
             TypedExprKind::Match { expr, arms } => {
                 expr.substitute(subs, env);
-                arms.iter_mut().for_each(|(pat, expr)| {
-                    pat.substitute(subs, env);
-                    expr.substitute(subs, env);
+                arms.iter_mut().for_each(|arm| {
+                    arm.pat.substitute(subs, env);
+                    arm.expr.substitute(subs, env);
                 });
             }
 

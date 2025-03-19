@@ -54,7 +54,7 @@ pub enum ExprKind {
     Let {
         rec:    bool,
         id:     Rc<str>,
-        params: Box<[Pat]>,
+        params: Box<[Rc<str>]>,
         expr:   Box<Expr>,
         body:   Option<Box<Expr>>,
     },

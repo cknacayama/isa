@@ -73,9 +73,6 @@ impl Config {
             e.substitute_many(&subs, checker.type_env_mut());
         }
 
-        for expr in expr {
-            println!("{}", expr.format());
-        }
         for (id, ty) in checker.env().iter() {
             println!("val {id}: {ty};");
         }

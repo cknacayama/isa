@@ -1,7 +1,7 @@
 use super::{BinOp, Constructor, UnOp};
 use crate::{compiler::types::Type, span::Span};
 use std::{
-    fmt::{Debug, Write},
+    fmt::{Debug, Display, Write},
     rc::Rc,
 };
 
@@ -93,6 +93,47 @@ impl Debug for TypedExpr {
 }
 
 #[derive(Debug, Clone)]
+pub struct TypedMatchArm {
+    pub pat:  TypedPat,
+    pub expr: TypedExpr,
+}
+
+impl TypedMatchArm {
+    pub fn new(pat: TypedPat, expr: TypedExpr) -> Self {
+        Self { pat, expr }
+    }
+
+    fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
+        self.pat.format_helper(f, indentation)?;
+        write!(f, " -> ")?;
+        self.expr.format_helper(f, indentation)?;
+        writeln!(f, ",")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TypedParam {
+    pub name: Rc<str>,
+    pub ty:   Rc<Type>,
+}
+
+impl TypedParam {
+    pub fn new(name: Rc<str>, ty: Rc<Type>) -> Self {
+        Self { name, ty }
+    }
+
+    pub fn ty(&self) -> &Rc<Type> {
+        &self.ty
+    }
+}
+
+impl Display for TypedParam {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.name, self.ty)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum TypedExprKind {
     Unit,
 
@@ -111,7 +152,7 @@ pub enum TypedExprKind {
     Let {
         rec:    bool,
         id:     Rc<str>,
-        params: Box<[TypedPat]>,
+        params: Box<[TypedParam]>,
         expr:   Box<TypedExpr>,
         body:   Option<Box<TypedExpr>>,
     },
@@ -123,13 +164,13 @@ pub enum TypedExprKind {
     },
 
     Fn {
-        param: Rc<str>,
+        param: TypedParam,
         expr:  Box<TypedExpr>,
     },
 
     Match {
         expr: Box<TypedExpr>,
-        arms: Box<[(TypedPat, TypedExpr)]>,
+        arms: Box<[TypedMatchArm]>,
     },
 
     If {
@@ -179,8 +220,7 @@ impl TypedExpr {
             } => {
                 write!(f, "(let {}{id} ", if *rec { " rec" } else { "" })?;
                 for p in params {
-                    p.format_helper(f, indentation + 1)?;
-                    write!(f, " ")?;
+                    write!(f, "{p} ")?;
                 }
                 write!(f, "= ")?;
                 expr.format_helper(f, indentation + 1)?;
@@ -230,12 +270,9 @@ impl TypedExpr {
                 write!(f, "(match ")?;
                 expr.format_helper(f, indentation + 1)?;
                 writeln!(f, " in")?;
-                for (pat, expr) in arms {
+                for arm in arms {
                     write!(f, "{tab}")?;
-                    pat.format_helper(f, indentation + 1)?;
-                    write!(f, " -> ")?;
-                    expr.format_helper(f, indentation + 1)?;
-                    writeln!(f, ",")?;
+                    arm.format_helper(f, indentation)?;
                 }
                 write!(f, ")")
             }

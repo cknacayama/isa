@@ -1,6 +1,6 @@
 use super::{
     ast::{
-        typed::{TypedExpr, TypedExprKind, TypedPat, TypedPatKind},
+        typed::{TypedExpr, TypedExprKind, TypedMatchArm, TypedParam, TypedPat, TypedPatKind},
         untyped::{Expr, ExprKind, Pat, PatKind},
         BinOp, Constructor, UnOp,
     },
@@ -122,13 +122,13 @@ impl Checker {
         self.env.pop_scope();
 
         let ty = Type::Fn {
-            param: var,
+            param: var.clone(),
             ret:   expr.ty.clone(),
         };
         let ty = self.get_type(ty);
         let kind = TypedExprKind::Fn {
-            param,
-            expr: Box::new(expr),
+            param: TypedParam::new(param, var),
+            expr:  Box::new(expr),
         };
 
         Ok((TypedExpr::new(kind, span, ty), c))
@@ -176,28 +176,28 @@ impl Checker {
         &mut self,
         rec: bool,
         id: Rc<str>,
-        params: Box<[Pat]>,
+        params: Box<[Rc<str>]>,
         expr: Expr,
-    ) -> InferResult<(TypedExpr, Box<[TypedPat]>, ConstrSet)> {
+    ) -> InferResult<(TypedExpr, Box<[TypedParam]>, ConstrSet)> {
         self.env.push_scope();
         let mut c = ConstrSet::new();
         let mut typed_params = Vec::new();
         for p in params {
-            let (pat, c_pat) = self.check_pat(p)?;
-            typed_params.push(pat);
-            c.append(c_pat);
+            let var = self.new_type_variable();
+            self.env.insert(p.clone(), var.clone());
+            typed_params.push(TypedParam::new(p, var));
         }
         let (expr, c_expr) = if rec {
             let var = self.new_type_variable();
             self.env.insert(id, var.clone());
             let (mut expr, c1) = self.check(expr)?;
-            expr.ty = self.function_type(typed_params.iter().map(|p| p.ty.clone()), expr.ty);
+            expr.ty = self.function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
             let constr = Constr::new(expr.ty.clone(), var, expr.span);
             c.push(constr);
             (expr, c1)
         } else {
             let (mut expr, c) = self.check(expr)?;
-            expr.ty = self.function_type(typed_params.iter().map(|p| p.ty.clone()), expr.ty);
+            expr.ty = self.function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
             (expr, c)
         };
         c.append(c_expr);
@@ -209,7 +209,7 @@ impl Checker {
         &mut self,
         rec: bool,
         id: Rc<str>,
-        params: Box<[Pat]>,
+        params: Box<[Rc<str>]>,
         expr: Expr,
         body: Option<Expr>,
         span: Span,
@@ -254,14 +254,17 @@ impl Checker {
 
     fn check_constructor(
         &mut self,
-        constructor: &Constructor,
+        constructor: &mut Constructor,
         subs: &[Subs],
         quant: Box<[u64]>,
         mut ret: Rc<Type>,
     ) {
-        for param in constructor.params.iter().rev().cloned() {
-            let param = param.substitute_many(subs, &mut self.type_env);
-            ret = self.get_type(Type::Fn { param, ret });
+        for param in constructor.params.iter_mut().rev() {
+            *param = param.clone().substitute_many(subs, &mut self.type_env);
+            ret = self.get_type(Type::Fn {
+                param: param.clone(),
+                ret,
+            });
         }
         if !quant.is_empty() {
             ret = self.get_type(Type::Generic { quant, ty: ret });
@@ -275,7 +278,7 @@ impl Checker {
         &mut self,
         name: Rc<str>,
         parameters: Box<[Rc<str>]>,
-        constructors: Box<[Constructor]>,
+        mut constructors: Box<[Constructor]>,
         span: Span,
     ) -> (TypedExpr, ConstrSet) {
         let mut args = Vec::new();
@@ -301,9 +304,11 @@ impl Checker {
             args: args.clone().into_boxed_slice(),
         });
 
-        for c in &constructors {
+        for c in &mut constructors {
             self.check_constructor(c, &subs, quant.clone(), ty.clone());
         }
+
+        self.type_env.insert_variants(ty, constructors.clone());
 
         let kind = TypedExprKind::Type {
             id: name,
@@ -443,7 +448,7 @@ impl Checker {
             c1.append(c);
             c1.push(Constr::new(expr.ty.clone(), pat.ty.clone(), pat.span));
             c1.push(Constr::new(aexpr.ty.clone(), var.clone(), aexpr.span));
-            typed_arms.push((pat, aexpr));
+            typed_arms.push(TypedMatchArm::new(pat, aexpr));
         }
 
         let kind = TypedExprKind::Match {

@@ -517,8 +517,8 @@ impl<'a> Parser<'a> {
 
         let mut parametes = Vec::new();
         while !self.check(TokenKind::Eq) {
-            let pat = self.parse_simple_pat()?;
-            parametes.push(pat);
+            let Spanned { data, .. } = self.expect_id()?;
+            parametes.push(self.get_string(data));
         }
         self.expect(TokenKind::Eq)?;
         let expr = self.parse_expr()?;
