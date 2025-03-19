@@ -1,9 +1,8 @@
 pub mod typed;
 pub mod untyped;
 
+use super::{token::TokenKind, types::Type};
 use std::{fmt::Display, rc::Rc};
-
-use crate::compiler::{token::TokenKind, types::Type};
 
 #[derive(Debug, Clone, Copy)]
 pub enum BinOp {

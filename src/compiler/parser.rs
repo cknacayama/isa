@@ -1,19 +1,16 @@
-use std::{collections::HashSet, iter::Peekable, rc::Rc};
-
-use crate::{
-    compiler::{
-        ast::{
-            untyped::{Expr, ExprKind, Pat, PatKind},
-            BinOp, Constructor, UnOp,
-        },
-        env::TypeEnv,
-        error::ParseError,
-        lexer::Lexer,
-        token::{Token, TokenKind},
-        types::Type,
+use super::{
+    ast::{
+        untyped::{Expr, ExprKind, Pat, PatKind},
+        BinOp, Constructor, UnOp,
     },
-    span::{Span, Spanned},
+    env::TypeEnv,
+    error::ParseError,
+    lexer::Lexer,
+    token::{Token, TokenKind},
+    types::Type,
 };
+use crate::span::{Span, Spanned};
+use std::{collections::HashSet, iter::Peekable, rc::Rc};
 
 pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
 

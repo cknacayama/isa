@@ -1,12 +1,9 @@
-use std::str::Chars;
-
-use crate::{
-    compiler::{
-        error::LexError,
-        token::{Token, TokenKind},
-    },
-    span::{Span, Spanned},
+use super::{
+    error::LexError,
+    token::{Token, TokenKind},
 };
+use crate::span::{Span, Spanned};
+use std::str::Chars;
 
 #[derive(Debug)]
 pub struct Lexer<'a> {

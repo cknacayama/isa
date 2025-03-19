@@ -55,7 +55,6 @@ impl Env {
             .any(|t| t.as_ref() == ty)
     }
 
-    #[must_use]
     pub fn iter(&self) -> impl Iterator<Item = (&Rc<str>, &Rc<Type>)> {
         self.env.iter().flat_map(HashMap::iter)
     }

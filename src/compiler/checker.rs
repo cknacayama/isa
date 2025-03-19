@@ -1,7 +1,3 @@
-use std::rc::Rc;
-
-use crate::span::Span;
-
 use super::{
     ast::{
         typed::{TypedExpr, TypedExprKind, TypedPat, TypedPatKind},
@@ -13,6 +9,8 @@ use super::{
     infer::{Constr, ConstrSet, InferResult, Subs, Substitute},
     types::Type,
 };
+use crate::span::{Span, Spanned};
+use std::rc::Rc;
 
 #[derive(Debug, Default)]
 pub struct Checker {
@@ -91,10 +89,10 @@ impl Checker {
         let (cond, mut c1) = self.check(cond)?;
         let (then, c2) = self.check(then)?;
         let (otherwise, c3) = self.check(otherwise)?;
-        let c_cond = Constr::new(cond.ty.clone(), self.get_bool());
+        let c_cond = Constr::new(cond.ty.clone(), self.get_bool(), cond.span);
         let var = self.new_type_variable();
-        let c_then = Constr::new(var.clone(), then.ty.clone());
-        let c_otherwise = Constr::new(var.clone(), otherwise.ty.clone());
+        let c_then = Constr::new(var.clone(), then.ty.clone(), then.span);
+        let c_otherwise = Constr::new(var.clone(), otherwise.ty.clone(), otherwise.span);
 
         c1.append(c2);
         c1.append(c3);
@@ -150,7 +148,7 @@ impl Checker {
             ret:   var.clone(),
         };
         let fn_ty = self.get_type(fn_ty);
-        let constr = Constr::new(callee.ty.clone(), fn_ty);
+        let constr = Constr::new(callee.ty.clone(), fn_ty, span);
 
         c1.append(c2);
         c1.push(constr);
@@ -194,7 +192,7 @@ impl Checker {
             self.env.insert(id, var.clone());
             let (mut expr, c1) = self.check(expr)?;
             expr.ty = self.function_type(typed_params.iter().map(|p| p.ty.clone()), expr.ty);
-            let constr = Constr::new(expr.ty.clone(), var);
+            let constr = Constr::new(expr.ty.clone(), var, expr.span);
             c.push(constr);
             (expr, c1)
         } else {
@@ -337,7 +335,7 @@ impl Checker {
                             };
                             Ok((TypedPat::new(kind, span, ty), ConstrSet::new()))
                         }
-                        _ => Err(InferError::Kind(ty)),
+                        _ => Err(Spanned::new(InferError::Kind(ty), span)),
                     }
                 } else {
                     let var = self.new_type_variable();
@@ -356,7 +354,7 @@ impl Checker {
                 for pat in spanneds {
                     let (pat, c_pat) = self.check_pat(pat)?;
                     c.append(c_pat);
-                    c.push(Constr::new(pat.ty.clone(), var.clone()));
+                    c.push(Constr::new(pat.ty.clone(), var.clone(), pat.span));
                     patterns.push(pat);
                 }
 
@@ -386,10 +384,10 @@ impl Checker {
                     for arg in args {
                         let (arg, c_arg) = self.check_pat(arg)?;
                         let Type::Fn { param, ret } = ty.as_ref() else {
-                            return Err(InferError::Kind(ty));
+                            return Err(Spanned::new(InferError::Kind(ty), arg.span));
                         };
                         c.append(c_arg);
-                        c.push(Constr::new(arg.ty.clone(), param.clone()));
+                        c.push(Constr::new(arg.ty.clone(), param.clone(), arg.span));
                         ty = ret.clone();
                         typed_args.push(arg);
                     }
@@ -409,7 +407,7 @@ impl Checker {
                         ConstrSet::new(),
                     ))
                 }
-                None => Err(InferError::Unbound(name)),
+                None => Err(Spanned::new(InferError::Unbound(name), span)),
             },
         }
     }
@@ -443,8 +441,8 @@ impl Checker {
         for (pat, aexpr) in arms {
             let ((pat, aexpr), c) = self.check_match_arm(pat, aexpr)?;
             c1.append(c);
-            c1.push(Constr::new(expr.ty.clone(), pat.ty.clone()));
-            c1.push(Constr::new(aexpr.ty.clone(), var.clone()));
+            c1.push(Constr::new(expr.ty.clone(), pat.ty.clone(), pat.span));
+            c1.push(Constr::new(aexpr.ty.clone(), var.clone(), aexpr.span));
             typed_arms.push((pat, aexpr));
         }
 
@@ -512,7 +510,7 @@ impl Checker {
                 let t = self
                     .env
                     .get(&id)
-                    .ok_or_else(|| InferError::Unbound(id.clone()))?
+                    .ok_or_else(|| Spanned::new(InferError::Unbound(id.clone()), span))?
                     .clone();
                 Ok((
                     TypedExpr::new(TypedExprKind::Ident(id), span, self.instantiate(t)),

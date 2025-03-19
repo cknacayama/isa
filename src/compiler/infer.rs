@@ -1,13 +1,13 @@
-use std::{fmt::Display, rc::Rc};
-
-use crate::compiler::{
+use super::{
     ast::typed::{TypedExpr, TypedExprKind, TypedPat, TypedPatKind},
     env::TypeEnv,
     error::InferError,
     types::Type,
 };
+use crate::span::{Span, Spanned};
+use std::{fmt::Display, rc::Rc};
 
-pub type InferResult<T> = Result<T, InferError>;
+pub type InferResult<T> = Result<T, Spanned<InferError>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subs {
@@ -141,8 +141,9 @@ impl Substitute for Rc<Type> {
 
 #[derive(Debug, Clone, Eq)]
 pub struct Constr {
-    lhs: Rc<Type>,
-    rhs: Rc<Type>,
+    lhs:  Rc<Type>,
+    rhs:  Rc<Type>,
+    span: Span,
 }
 
 impl PartialEq for Constr {
@@ -155,21 +156,30 @@ impl PartialEq for Constr {
 impl Substitute for Constr {
     fn substitute(self, subs: &Subs, env: &mut TypeEnv) -> Self {
         Self {
-            lhs: self.lhs.substitute(subs, env),
-            rhs: self.rhs.substitute(subs, env),
+            lhs:  self.lhs.substitute(subs, env),
+            rhs:  self.rhs.substitute(subs, env),
+            span: self.span,
         }
     }
 }
 
 impl Constr {
     #[must_use]
-    pub fn new(lhs: Rc<Type>, rhs: Rc<Type>) -> Self {
-        Self { lhs, rhs }
+    pub fn new(lhs: Rc<Type>, rhs: Rc<Type>, span: Span) -> Self {
+        Self { lhs, rhs, span }
     }
 
     #[must_use]
     pub fn satisfied(&self) -> bool {
         self.lhs == self.rhs
+    }
+
+    pub fn lhs(&self) -> &Type {
+        &self.lhs
+    }
+
+    pub fn rhs(&self) -> &Type {
+        &self.rhs
     }
 }
 
@@ -209,6 +219,7 @@ impl ConstrSet {
         let mut subs = Vec::new();
 
         while let Some(c) = self.constrs.pop() {
+            let span = c.span;
             match (c.lhs.as_ref(), c.rhs.as_ref()) {
                 (
                     lhs @ (Type::Int | Type::Bool | Type::Var(_)),
@@ -225,8 +236,8 @@ impl ConstrSet {
                     subs.push(s);
                 }
                 (Type::Fn { param: i1, ret: o1 }, Type::Fn { param: i2, ret: o2 }) => {
-                    let c1 = Constr::new(i1.clone(), i2.clone());
-                    let c2 = Constr::new(o1.clone(), o2.clone());
+                    let c1 = Constr::new(i1.clone(), i2.clone(), span);
+                    let c2 = Constr::new(o1.clone(), o2.clone(), span);
 
                     self.push(c1);
                     self.push(c2);
@@ -242,11 +253,11 @@ impl ConstrSet {
                     },
                 ) if n1 == n2 && args1.len() == args2.len() => {
                     for (a1, a2) in args1.iter().zip(args2) {
-                        let c = Constr::new(a1.clone(), a2.clone());
+                        let c = Constr::new(a1.clone(), a2.clone(), span);
                         self.push(c);
                     }
                 }
-                _ => return Err(InferError::Uninferable(c)),
+                _ => return Err(Spanned::new(InferError::Uninferable(c), span)),
             }
         }
 

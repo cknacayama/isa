@@ -1,8 +1,6 @@
-use std::{fmt::Debug, rc::Rc};
-
-use crate::span::{Span, Spanned};
-
 use super::{BinOp, Constructor, UnOp};
+use crate::span::{Span, Spanned};
+use std::{fmt::Debug, rc::Rc};
 
 #[derive(Clone)]
 pub struct Expr {

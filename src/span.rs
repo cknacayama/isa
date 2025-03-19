@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    ops::Index,
+};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -10,6 +13,14 @@ pub struct Span {
 pub struct Loc {
     line: u32,
     col:  u32,
+}
+
+impl Index<Span> for str {
+    type Output = Self;
+
+    fn index(&self, index: Span) -> &Self::Output {
+        &self[(index.start as usize)..(index.end as usize)]
+    }
 }
 
 impl Span {
@@ -31,21 +42,35 @@ impl Span {
     }
 
     #[must_use]
-    pub fn start_loc(self, input: &str) -> Loc {
+    pub fn start_loc(self, input: &str) -> (Loc, &str) {
         let mut line = 1;
         let mut col = 1;
+        let mut start = 1;
+        let mut end = 1;
+        let mut passed = false;
+        let mut ended = false;
 
-        for c in input.chars().take(self.start as usize) {
+        for (i, c) in input.char_indices() {
+            if i > self.end as usize {
+                ended = true;
+            } else if i > self.start as usize {
+                passed = true;
+            }
             match c {
-                '\n' => {
+                '\n' if !passed => {
                     line += 1;
                     col = 1;
+                    start = i;
                 }
-                _ => col += 1,
+                '\n' if ended => {
+                    break;
+                }
+                _ if !passed => col += 1,
+                _ => end = i,
             }
         }
 
-        Loc { line, col }
+        (Loc { line, col }, &input[start..end])
     }
 }
 
@@ -92,6 +117,13 @@ impl<T> std::error::Error for Spanned<T> where T: std::error::Error
 impl<T> Spanned<T> {
     pub fn new(data: T, span: Span) -> Self {
         Self { data, span }
+    }
+
+    pub fn from_data(data: T) -> Self {
+        Self {
+            data,
+            span: Span::default(),
+        }
     }
 
     pub fn data(&self) -> &T {

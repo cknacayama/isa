@@ -1,11 +1,9 @@
+use super::{BinOp, Constructor, UnOp};
+use crate::{compiler::types::Type, span::Span};
 use std::{
     fmt::{Debug, Write},
     rc::Rc,
 };
-
-use crate::{compiler::types::Type, span::Span};
-
-use super::{BinOp, Constructor, UnOp};
 
 #[derive(Debug, Clone)]
 pub enum TypedPatKind {
@@ -48,7 +46,7 @@ impl TypedPat {
         Self { kind, span, ty }
     }
 
-    fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
+    fn format_helper(&self, f: &mut impl Write, _indent: usize) -> std::fmt::Result {
         match &self.kind {
             TypedPatKind::Wild => write!(f, "_"),
             TypedPatKind::Ident(id) => write!(f, "{id}"),
@@ -56,10 +54,10 @@ impl TypedPat {
                 let mut iter = typed_pats.iter();
                 let first = iter.next().unwrap();
                 write!(f, "(")?;
-                first.format_helper(f, indentation + 1)?;
+                first.format_helper(f, _indent + 1)?;
                 for pat in iter {
                     write!(f, " | ")?;
-                    pat.format_helper(f, indentation + 1)?;
+                    pat.format_helper(f, _indent + 1)?;
                 }
                 write!(f, ")")
             }
@@ -70,7 +68,7 @@ impl TypedPat {
                 write!(f, "({name}")?;
                 for pat in args {
                     write!(f, " ")?;
-                    pat.format_helper(f, indentation + 1)?;
+                    pat.format_helper(f, _indent + 1)?;
                 }
                 write!(f, ")")
             }
