@@ -51,6 +51,7 @@ pub enum TokenKind<'a> {
     KwNot,
 
     KwMatch,
+    KwWith,
     KwIf,
     KwThen,
     KwElse,
@@ -74,6 +75,7 @@ impl TokenKind<'_> {
             "then" => Some(TokenKind::KwThen),
             "else" => Some(TokenKind::KwElse),
             "in" => Some(TokenKind::KwIn),
+            "with" => Some(TokenKind::KwWith),
             "module" => Some(TokenKind::KwModule),
             "int" => Some(TokenKind::KwInt),
             "bool" => Some(TokenKind::KwBool),
@@ -121,6 +123,7 @@ impl Display for TokenKind<'_> {
             TokenKind::KwOr => write!(f, "or"),
             TokenKind::KwNot => write!(f, "not"),
             TokenKind::KwMatch => write!(f, "match"),
+            TokenKind::KwWith => write!(f, "with"),
             TokenKind::KwIf => write!(f, "if"),
             TokenKind::KwThen => write!(f, "then"),
             TokenKind::KwElse => write!(f, "else"),

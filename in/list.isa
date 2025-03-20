@@ -3,7 +3,7 @@ module List
 type List a = Nil | Cons a (List a);
 
 let rec lenght list =
-    match list in
+    match list with
         Nil -> 0,
         Cons _ list -> 1 + lenght list,
 ;

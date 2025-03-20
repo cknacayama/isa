@@ -8,7 +8,7 @@ pub enum Ty {
     Bool,
     Var(u64),
     Fn { param: Rc<Ty>, ret: Rc<Ty> },
-    Generic { quant: Box<[u64]>, ty: Rc<Ty> },
+    Scheme { quant: Box<[u64]>, ty: Rc<Ty> },
     Named { name: Symbol, args: Box<[Rc<Ty>]> },
 }
 
@@ -20,7 +20,7 @@ impl Display for Ty {
             Self::Bool => write!(f, "bool"),
             Self::Fn { param, ret } => write!(f, "({param} -> {ret})"),
             Self::Var(var) => write!(f, "'{var}"),
-            Self::Generic { quant, ty } => {
+            Self::Scheme { quant, ty } => {
                 for n in quant {
                     write!(f, "'{n} ")?;
                 }
@@ -43,7 +43,7 @@ impl Ty {
         match self {
             Self::Fn { param, ret } => param.occurs(var) || ret.occurs(var),
             Self::Var(n) => *n == var,
-            Self::Generic { ty, .. } => ty.occurs(var),
+            Self::Scheme { ty, .. } => ty.occurs(var),
             Self::Named { args, .. } => args.iter().any(|t| t.occurs(var)),
 
             _ => false,

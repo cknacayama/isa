@@ -1,8 +1,4 @@
-use super::{
-    ctx::TypeCtx,
-    infer::{Subs, Substitute},
-    types::Ty,
-};
+use super::{ctx::TypeCtx, infer::Substitute, types::Ty};
 use crate::global::Symbol;
 use rustc_hash::FxHashMap;
 use std::rc::Rc;
@@ -65,7 +61,7 @@ impl Env {
             ty @ Ty::Var(n) if !&self.contains_type(ty) => {
                 vec![*n]
             }
-            Ty::Generic { quant, ty } => {
+            Ty::Scheme { quant, ty } => {
                 let mut res = self.gen_helper(ty);
                 for n in quant {
                     if !res.contains(n) {
@@ -95,14 +91,14 @@ impl Env {
         }
 
         let ty = match ty.as_ref() {
-            Ty::Generic { quant, ty } => {
+            Ty::Scheme { quant, ty } => {
                 quantifiers.extend_from_slice(quant);
-                Ty::Generic {
+                Ty::Scheme {
                     quant: quantifiers.into_boxed_slice(),
                     ty:    ty.clone(),
                 }
             }
-            _ => Ty::Generic {
+            _ => Ty::Scheme {
                 quant: quantifiers.into_boxed_slice(),
                 ty,
             },

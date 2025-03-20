@@ -26,6 +26,7 @@ pub trait Substitute {
     where
         S: FnMut(&Ty) -> Option<Ty>;
 
+    /// Used mainly for type inference and unification of constraint sets
     fn substitute_eq(self, subs: &Subs, env: &mut TypeCtx) -> Self
     where
         Self: Sized,
@@ -173,10 +174,10 @@ impl Substitute for Rc<Ty> {
                 };
                 env.get_type(ty)
             }
-            Ty::Generic { quant, ty } => {
+            Ty::Scheme { quant, ty } => {
                 let ty = ty.clone().substitute(subs, env);
                 let quant = quant.clone();
-                let ty = Ty::Generic { quant, ty };
+                let ty = Ty::Scheme { quant, ty };
                 env.get_type(ty)
             }
             Ty::Named { name, args } => {

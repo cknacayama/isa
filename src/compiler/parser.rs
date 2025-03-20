@@ -19,8 +19,9 @@ pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
 
 #[derive(Debug)]
 pub struct Parser<'a> {
-    lexer: Peekable<Lexer<'a>>,
-    types: TypeCtx,
+    lexer:     Peekable<Lexer<'a>>,
+    types:     TypeCtx,
+    last_span: Span,
 }
 
 impl<'a> Parser<'a> {
@@ -32,8 +33,9 @@ impl<'a> Parser<'a> {
     #[must_use]
     pub fn new(lexer: Lexer<'a>) -> Self {
         Self {
-            lexer: lexer.peekable(),
-            types: TypeCtx::default(),
+            lexer:     lexer.peekable(),
+            types:     TypeCtx::default(),
+            last_span: Span::default(),
         }
     }
 
@@ -52,9 +54,16 @@ impl<'a> Parser<'a> {
     }
 
     fn peek(&mut self) -> Option<ParseResult<&Token<'a>>> {
-        self.lexer
-            .peek()
-            .map(|res| res.as_ref().map_err(|&err| Spanned::from(err)))
+        self.lexer.peek().map(|res| match res {
+            Ok(t) => {
+                self.last_span = t.span;
+                Ok(t)
+            }
+            Err(e) => {
+                self.last_span = e.span;
+                Err(Spanned::from(*e))
+            }
+        })
     }
 
     fn peek_and<P>(&mut self, p: P) -> ParseResult<bool>
@@ -65,12 +74,21 @@ impl<'a> Parser<'a> {
     }
 
     fn next(&mut self) -> Option<ParseResult<Token<'a>>> {
-        self.lexer.next().map(|res| res.map_err(Spanned::from))
+        self.lexer.next().map(|res| match res {
+            Ok(t) => {
+                self.last_span = t.span;
+                Ok(t)
+            }
+            Err(e) => {
+                self.last_span = e.span;
+                Err(Spanned::from(e))
+            }
+        })
     }
 
     fn next_or_eof(&mut self) -> ParseResult<Token<'a>> {
         self.next()
-            .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, Span::default()))?
+            .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, self.last_span))?
     }
 
     fn next_if_match(&mut self, tk: TokenKind<'static>) -> Option<Token<'a>> {
@@ -145,7 +163,7 @@ impl<'a> Parser<'a> {
             (Some(name), [.., expr]) => name.span.union(expr.span),
             (None, [expr]) => expr.span,
             (None, [first, .., last]) => first.span.union(last.span),
-            (None, []) => return Err(Spanned::new(ParseError::UnexpectedEof, Span::default())),
+            (None, []) => return Err(Spanned::new(ParseError::UnexpectedEof, self.last_span)),
         };
         let name = name.map(|name| name.data);
 
@@ -156,7 +174,7 @@ impl<'a> Parser<'a> {
         std::iter::from_fn(|| self.try_parse_module()).collect()
     }
 
-    /// parses one expression (can have semicolon)
+    /// parses zero or one expression (can have semicolon)
     pub fn parse(&mut self) -> Option<ParseResult<Expr>> {
         if self.peek().is_some() {
             Some(self.parse_semi_expr())
@@ -178,7 +196,19 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> ParseResult<Expr> {
-        self.parse_or()
+        let span = self.last_span;
+        match self
+            .peek()
+            .ok_or(Spanned::new(ParseError::ExpectedExpr, span))??
+            .data
+        {
+            TokenKind::KwLet => self.parse_let(),
+            TokenKind::KwFn => self.parse_fn(),
+            TokenKind::KwIf => self.parse_if(),
+            TokenKind::KwType => self.parse_type_decl(),
+            TokenKind::KwMatch => self.parse_match(),
+            _ => self.parse_or(),
+        }
     }
 
     fn parse_or(&mut self) -> ParseResult<Expr> {
@@ -303,12 +333,6 @@ impl<'a> Parser<'a> {
             TokenKind::Ident(id) => Ok(Expr::new(ExprKind::Ident(self.get_symbol(id)), span)),
             TokenKind::KwTrue => Ok(Expr::new(ExprKind::Bool(true), span)),
             TokenKind::KwFalse => Ok(Expr::new(ExprKind::Bool(false), span)),
-            TokenKind::KwLet => self.parse_let(span),
-            TokenKind::KwFn => self.parse_fn(span),
-            TokenKind::KwIf => self.parse_if(span),
-            TokenKind::KwType => self.parse_type_decl(span),
-            TokenKind::KwMatch => self.parse_match(span),
-
             _ => Err(Spanned::new(ParseError::ExpectedExpr, span)),
         }
     }
@@ -391,7 +415,8 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_type_decl(&mut self, span: Span) -> ParseResult<Expr> {
+    fn parse_type_decl(&mut self) -> ParseResult<Expr> {
+        let span = self.expect(TokenKind::KwType)?;
         let Spanned { data: id, .. } = self.expect_id()?;
 
         let mut params = Vec::new();
@@ -433,9 +458,10 @@ impl<'a> Parser<'a> {
         Ok(Spanned::new((pat, expr), span))
     }
 
-    fn parse_match(&mut self, mut span: Span) -> ParseResult<Expr> {
+    fn parse_match(&mut self) -> ParseResult<Expr> {
+        let mut span = self.expect(TokenKind::KwMatch)?;
         let expr = self.parse_expr()?;
-        self.expect(TokenKind::KwIn)?;
+        self.expect(TokenKind::KwWith)?;
 
         let mut arms = Vec::new();
 
@@ -459,7 +485,8 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_if(&mut self, span: Span) -> ParseResult<Expr> {
+    fn parse_if(&mut self) -> ParseResult<Expr> {
+        let span = self.expect(TokenKind::KwIf)?;
         let cond = self.parse_expr()?;
 
         self.expect(TokenKind::KwThen)?;
@@ -546,7 +573,8 @@ impl<'a> Parser<'a> {
         Ok(pat)
     }
 
-    fn parse_let(&mut self, mut span: Span) -> ParseResult<Expr> {
+    fn parse_let(&mut self) -> ParseResult<Expr> {
+        let mut span = self.expect(TokenKind::KwLet)?;
         let rec = self.next_if_match(TokenKind::KwRec).is_some();
         let Spanned { data: id, .. } = self.expect_id()?;
 
@@ -577,7 +605,8 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_fn(&mut self, span: Span) -> ParseResult<Expr> {
+    fn parse_fn(&mut self) -> ParseResult<Expr> {
+        let span = self.expect(TokenKind::KwFn)?;
         let Spanned { data: param, .. } = self.expect_id()?;
 
         self.expect(TokenKind::Arrow)?;

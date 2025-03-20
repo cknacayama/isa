@@ -282,7 +282,7 @@ impl Checker {
             });
         }
         if !quant.is_empty() {
-            ret = self.get_type(Ty::Generic { quant, ty: ret });
+            ret = self.get_type(Ty::Scheme { quant, ty: ret });
         }
         self.insert_variable(constructor.id, ret.clone());
         self.type_env.insert_constructor(constructor.id, ret);
@@ -475,7 +475,7 @@ impl Checker {
 
     fn instantiate(&mut self, ty: Rc<Ty>) -> Rc<Ty> {
         match ty.as_ref() {
-            Ty::Generic { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
+            Ty::Scheme { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
                 let var = Ty::Var(self.new_type_variable_id());
                 let old = Ty::Var(quant);
                 let subs = Subs::new(old, var);
