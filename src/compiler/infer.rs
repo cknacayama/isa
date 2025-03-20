@@ -16,6 +16,7 @@ pub struct Subs {
 }
 
 impl Subs {
+    #[must_use]
     pub fn new(old: Ty, new: Ty) -> Self {
         Self { old, new }
     }
@@ -43,13 +44,23 @@ pub trait Substitute {
         )
     }
 
-    fn substitute_many<'a, S>(self, subs: S, env: &mut TypeCtx) -> Self
+    fn substitute_many(self, subs: &[Subs], env: &mut TypeCtx) -> Self
     where
         Self: Sized,
-        S: IntoIterator<Item = &'a Subs>,
     {
-        subs.into_iter()
-            .fold(self, |acc, s| acc.substitute_eq(s, env))
+        let mut iter = subs.iter();
+        self.substitute(
+            &mut |ty| {
+                iter.find_map(|s| {
+                    if &s.old == ty {
+                        Some(s.new.clone())
+                    } else {
+                        None
+                    }
+                })
+            },
+            env,
+        )
     }
 }
 
@@ -109,15 +120,25 @@ impl Substitute for &mut TypedExpr {
                 });
             }
 
+            TypedExprKind::Semi(semi) => {
+                semi.substitute(subs, env);
+            }
+            TypedExprKind::Type { constructors, .. } => {
+                constructors.iter_mut().for_each(|c| {
+                    c.params.iter_mut().for_each(|t| {
+                        *t = t.clone().substitute(subs, env);
+                    })
+                });
+            }
+
             TypedExprKind::Unit
             | TypedExprKind::Int(_)
             | TypedExprKind::Bool(_)
             | TypedExprKind::Ident(_)
             | TypedExprKind::BinOp(_)
-            | TypedExprKind::UnOp(_)
-            | TypedExprKind::Semi(_)
-            | TypedExprKind::Type { .. } => (),
+            | TypedExprKind::UnOp(_) => (),
         }
+
         self.ty = self.ty.clone().substitute(subs, env);
         self
     }
@@ -172,13 +193,13 @@ impl Substitute for Rc<Ty> {
                     param: param.clone().substitute(subs, env),
                     ret:   ret.clone().substitute(subs, env),
                 };
-                env.get_type(ty)
+                env.intern_type(ty)
             }
             Ty::Scheme { quant, ty } => {
                 let ty = ty.clone().substitute(subs, env);
                 let quant = quant.clone();
                 let ty = Ty::Scheme { quant, ty };
-                env.get_type(ty)
+                env.intern_type(ty)
             }
             Ty::Named { name, args } => {
                 let ty = Ty::Named {
@@ -189,31 +210,24 @@ impl Substitute for Rc<Ty> {
                         .map(|arg| arg.substitute(subs, env))
                         .collect(),
                 };
-                env.get_type(ty)
+                env.intern_type(ty)
             }
             _ => self,
         };
 
         if let Some(new) = subs(ty.as_ref()) {
-            env.get_type(new)
+            env.intern_type(new)
         } else {
             ty
         }
     }
 }
 
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone)]
 pub struct Constr {
     lhs:  Rc<Ty>,
     rhs:  Rc<Ty>,
     span: Span,
-}
-
-impl PartialEq for Constr {
-    fn eq(&self, other: &Self) -> bool {
-        (self.lhs.eq(&other.lhs) && self.rhs.eq(&other.rhs))
-            || (self.lhs.eq(&other.rhs) && self.rhs.eq(&other.lhs))
-    }
 }
 
 impl Substitute for Constr {
@@ -240,16 +254,18 @@ impl Constr {
         self.lhs == self.rhs
     }
 
+    #[must_use]
     pub fn lhs(&self) -> &Ty {
         &self.lhs
     }
 
+    #[must_use]
     pub fn rhs(&self) -> &Ty {
         &self.rhs
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ConstrSet {
     constrs: Vec<Constr>,
 }

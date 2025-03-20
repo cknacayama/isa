@@ -104,7 +104,7 @@ impl Env {
             },
         };
 
-        type_env.get_type(ty)
+        type_env.intern_type(ty)
     }
 }
 

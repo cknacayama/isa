@@ -41,7 +41,7 @@ impl Checker {
             type_env,
             cur_var: 0,
             cur_module: None,
-            declared_types: Default::default(),
+            declared_types: Vec::new(),
         }
     }
 
@@ -68,7 +68,7 @@ impl Checker {
     }
 
     fn get_type(&mut self, ty: Ty) -> Rc<Ty> {
-        self.type_env.get_type(ty)
+        self.type_env.intern_type(ty)
     }
 
     fn new_type_variable_id(&mut self) -> u64 {
@@ -232,14 +232,8 @@ impl Checker {
         let (expr, params, mut c1) = self.check_let_value(rec, id, params, expr)?;
 
         let s = self.unify(c1.clone())?;
-        let u1 = expr
-            .ty
-            .clone()
-            .substitute_many(s.iter(), &mut self.type_env);
-        let mut env1 = self
-            .env
-            .clone()
-            .substitute_many(s.iter(), &mut self.type_env);
+        let u1 = expr.ty.clone().substitute_many(&s, &mut self.type_env);
+        let mut env1 = self.env.clone().substitute_many(&s, &mut self.type_env);
         let u1 = env1.generalize(u1, &mut self.type_env);
 
         std::mem::swap(&mut self.env, &mut env1);

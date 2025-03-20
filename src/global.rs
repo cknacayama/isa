@@ -36,15 +36,15 @@ thread_local! {
     static GLOBAL_DATA: RefCell<GlobalEnv> = RefCell::new(GlobalEnv::new());
 }
 
-pub fn intern_symbol(symbol: &str) -> Symbol {
+#[must_use] pub fn intern_symbol(symbol: &str) -> Symbol {
     GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern(symbol))
 }
 
-pub fn intern_static_symbol(symbol: &'static str) -> Symbol {
+#[must_use] pub fn intern_static_symbol(symbol: &'static str) -> Symbol {
     GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern_static(symbol))
 }
 
-pub fn symbol_count() -> usize {
+#[must_use] pub fn symbol_count() -> usize {
     GLOBAL_DATA.with_borrow(|e| e.symbols.len())
 }
 
@@ -63,13 +63,10 @@ impl SymbolEnv {
     }
 
     fn intern(&mut self, symbol: &str) -> Symbol {
-        match self.symbols.get_index_of(symbol) {
-            Some(idx) => Symbol(idx),
-            None => {
-                let symbol = Box::leak::<'static>(Box::<str>::from(symbol));
-                let (idx, _) = self.symbols.insert_full(symbol);
-                Symbol(idx)
-            }
+        if let Some(idx) = self.symbols.get_index_of(symbol) { Symbol(idx) } else {
+            let symbol = Box::leak::<'static>(Box::<str>::from(symbol));
+            let (idx, _) = self.symbols.insert_full(symbol);
+            Symbol(idx)
         }
     }
 

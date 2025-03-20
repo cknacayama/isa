@@ -22,7 +22,7 @@ impl Default for TypeCtx {
 }
 
 impl TypeCtx {
-    pub fn get_type(&mut self, ty: Ty) -> Rc<Ty> {
+    pub fn intern_type(&mut self, ty: Ty) -> Rc<Ty> {
         if let Some(ty) = self.types.get(&ty) {
             ty.clone()
         } else {
@@ -32,7 +32,7 @@ impl TypeCtx {
         }
     }
 
-    pub fn get_constructor(&self, name: &Symbol) -> Option<&Rc<Ty>> {
+    #[must_use] pub fn get_constructor(&self, name: &Symbol) -> Option<&Rc<Ty>> {
         self.constructors.get(name)
     }
 

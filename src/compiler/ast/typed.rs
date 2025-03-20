@@ -16,7 +16,7 @@ pub struct TypedModule {
 }
 
 impl TypedModule {
-    pub fn new(
+    #[must_use] pub fn new(
         name: Option<Symbol>,
         declared: FxHashMap<Symbol, Rc<Ty>>,
         exprs: Box<[TypedExpr]>,
@@ -131,7 +131,7 @@ pub struct TypedMatchArm {
 }
 
 impl TypedMatchArm {
-    pub fn new(pat: TypedPat, expr: TypedExpr) -> Self {
+    #[must_use] pub fn new(pat: TypedPat, expr: TypedExpr) -> Self {
         Self { pat, expr }
     }
 
@@ -150,11 +150,11 @@ pub struct TypedParam {
 }
 
 impl TypedParam {
-    pub fn new(name: Symbol, ty: Rc<Ty>) -> Self {
+    #[must_use] pub fn new(name: Symbol, ty: Rc<Ty>) -> Self {
         Self { name, ty }
     }
 
-    pub fn ty(&self) -> &Rc<Ty> {
+    #[must_use] pub fn ty(&self) -> &Rc<Ty> {
         &self.ty
     }
 }

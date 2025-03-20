@@ -13,7 +13,7 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn new(name: Option<Symbol>, exprs: Box<[Expr]>, span: Span) -> Self {
+    #[must_use] pub fn new(name: Option<Symbol>, exprs: Box<[Expr]>, span: Span) -> Self {
         Self { name, exprs, span }
     }
 }

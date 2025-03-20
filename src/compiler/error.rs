@@ -52,7 +52,7 @@ impl Display for ParseError {
 impl std::error::Error for ParseError {
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum InferError {
     Uninferable(Constr),
     Unbound(Symbol),

@@ -128,7 +128,7 @@ impl<'a> Parser<'a> {
     }
 
     fn get_type(&mut self, ty: Ty) -> Rc<Ty> {
-        self.types.get_type(ty)
+        self.types.intern_type(ty)
     }
 
     pub fn try_parse_module(&mut self) -> Option<ParseResult<Module>> {

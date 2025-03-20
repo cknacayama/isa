@@ -20,7 +20,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_env(mut env: std::env::Args) -> Self {
+    #[must_use] pub fn from_env(mut env: std::env::Args) -> Self {
         let bin_path = PathBuf::from(
             env.next()
                 .expect("Should have binary path as first argument"),
@@ -78,7 +78,7 @@ impl Config {
                 Some(name) => println!("module {name}"),
                 None => println!("module"),
             }
-            for (id, ty) in module.declared.iter() {
+            for (id, ty) in &module.declared {
                 println!("    val {id}: {ty};");
             }
         }
