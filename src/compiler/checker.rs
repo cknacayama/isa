@@ -1,14 +1,17 @@
 use super::{
     ast::{
-        typed::{TypedExpr, TypedExprKind, TypedMatchArm, TypedParam, TypedPat, TypedPatKind},
-        untyped::{Expr, ExprKind, Pat, PatKind},
+        typed::{
+            TypedExpr, TypedExprKind, TypedMatchArm, TypedModule, TypedParam, TypedPat,
+            TypedPatKind,
+        },
+        untyped::{Expr, ExprKind, Module, Pat, PatKind},
         BinOp, Constructor, UnOp,
     },
     ctx::TypeCtx,
     env::Env,
     error::InferError,
     infer::{Constr, ConstrSet, InferResult, Subs, Substitute},
-    types::Type,
+    types::Ty,
 };
 use crate::{
     global::Symbol,
@@ -18,9 +21,11 @@ use std::rc::Rc;
 
 #[derive(Debug, Default)]
 pub struct Checker {
-    env:      Env,
-    type_env: TypeCtx,
-    cur_var:  u64,
+    env:            Env,
+    type_env:       TypeCtx,
+    cur_var:        u64,
+    cur_module:     Option<Symbol>,
+    declared_types: Vec<Symbol>,
 }
 
 impl Checker {
@@ -35,6 +40,8 @@ impl Checker {
             env: Env::default(),
             type_env,
             cur_var: 0,
+            cur_module: None,
+            declared_types: Default::default(),
         }
     }
 
@@ -52,11 +59,15 @@ impl Checker {
         &mut self.type_env
     }
 
-    pub fn unify(&mut self, constr: ConstrSet) -> InferResult<Vec<Subs>> {
+    pub fn unify(&mut self, mut constr: ConstrSet) -> InferResult<Vec<Subs>> {
         constr.unify(&mut self.type_env)
     }
 
-    fn get_type(&mut self, ty: Type) -> Rc<Type> {
+    fn insert_variable(&mut self, id: Symbol, ty: Rc<Ty>) -> Option<Rc<Ty>> {
+        self.env.insert(id, ty)
+    }
+
+    fn get_type(&mut self, ty: Ty) -> Rc<Ty> {
         self.type_env.get_type(ty)
     }
 
@@ -66,20 +77,20 @@ impl Checker {
         cur
     }
 
-    fn new_type_variable(&mut self) -> Rc<Type> {
+    fn new_type_variable(&mut self) -> Rc<Ty> {
         let id = self.new_type_variable_id();
-        self.get_type(Type::Var(id))
+        self.get_type(Ty::Var(id))
     }
 
-    fn get_int(&self) -> Rc<Type> {
+    fn get_int(&self) -> Rc<Ty> {
         self.type_env.get_int()
     }
 
-    fn get_unit(&self) -> Rc<Type> {
+    fn get_unit(&self) -> Rc<Ty> {
         self.type_env.get_unit()
     }
 
-    fn get_bool(&self) -> Rc<Type> {
+    fn get_bool(&self) -> Rc<Ty> {
         self.type_env.get_bool()
     }
 
@@ -121,11 +132,11 @@ impl Checker {
     ) -> InferResult<(TypedExpr, ConstrSet)> {
         self.env.push_scope();
         let var = self.new_type_variable();
-        self.env.insert(param, var.clone());
+        self.insert_variable(param, var.clone());
         let (expr, c) = self.check(expr)?;
         self.env.pop_scope();
 
-        let ty = Type::Fn {
+        let ty = Ty::Fn {
             param: var.clone(),
             ret:   expr.ty.clone(),
         };
@@ -147,7 +158,7 @@ impl Checker {
         let (callee, mut c1) = self.check(callee)?;
         let (arg, c2) = self.check(arg)?;
         let var = self.new_type_variable();
-        let fn_ty = Type::Fn {
+        let fn_ty = Ty::Fn {
             param: arg.ty.clone(),
             ret:   var.clone(),
         };
@@ -165,15 +176,15 @@ impl Checker {
         Ok((TypedExpr::new(kind, span, var), c1))
     }
 
-    fn function_type<I>(&mut self, params: I, ret: Rc<Type>) -> Rc<Type>
+    fn function_type<I>(&mut self, params: I, ret: Rc<Ty>) -> Rc<Ty>
     where
-        I: IntoIterator<Item = Rc<Type>>,
+        I: IntoIterator<Item = Rc<Ty>>,
         I::IntoIter: DoubleEndedIterator,
     {
         params
             .into_iter()
             .rev()
-            .fold(ret, |ret, param| self.get_type(Type::Fn { param, ret }))
+            .fold(ret, |ret, param| self.get_type(Ty::Fn { param, ret }))
     }
 
     fn check_let_value(
@@ -188,12 +199,12 @@ impl Checker {
         let mut typed_params = Vec::new();
         for p in params {
             let var = self.new_type_variable();
-            self.env.insert(p, var.clone());
+            self.insert_variable(p, var.clone());
             typed_params.push(TypedParam::new(p, var));
         }
         let (expr, c_expr) = if rec {
             let var = self.new_type_variable();
-            self.env.insert(id, var.clone());
+            self.insert_variable(id, var.clone());
             let (mut expr, c1) = self.check(expr)?;
             expr.ty = self.function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
             let constr = Constr::new(expr.ty.clone(), var, expr.span);
@@ -232,7 +243,7 @@ impl Checker {
         let u1 = env1.generalize(u1, &mut self.type_env);
 
         std::mem::swap(&mut self.env, &mut env1);
-        self.env.insert(id, u1);
+        self.insert_variable(id, u1);
 
         let (body, ty) = match body {
             Some(body) => {
@@ -261,19 +272,19 @@ impl Checker {
         constructor: &mut Constructor,
         subs: &[Subs],
         quant: Box<[u64]>,
-        mut ret: Rc<Type>,
+        mut ret: Rc<Ty>,
     ) {
         for param in constructor.params.iter_mut().rev() {
             *param = param.clone().substitute_many(subs, &mut self.type_env);
-            ret = self.get_type(Type::Fn {
+            ret = self.get_type(Ty::Fn {
                 param: param.clone(),
                 ret,
             });
         }
         if !quant.is_empty() {
-            ret = self.get_type(Type::Generic { quant, ty: ret });
+            ret = self.get_type(Ty::Generic { quant, ty: ret });
         }
-        self.env.insert(constructor.id, ret.clone());
+        self.insert_variable(constructor.id, ret.clone());
         self.type_env.insert_constructor(constructor.id, ret);
     }
 
@@ -290,19 +301,21 @@ impl Checker {
 
         for param in parameters {
             let id = self.new_type_variable_id();
-            let new = self.get_type(Type::Var(id));
-            let param = self.get_type(Type::Named {
+            let new = Ty::Var(id);
+            let param = Ty::Named {
                 name: param,
                 args: Box::from([]),
-            });
+            };
             subs.push(Subs::new(param, new.clone()));
-            args.push(new);
+            args.push(self.get_type(new));
             quant.push(id);
         }
 
         let quant = quant.into_boxed_slice();
 
-        let ty = self.get_type(Type::Named {
+        self.declared_types.push(name);
+
+        let ty = self.get_type(Ty::Named {
             name,
             args: args.clone().into_boxed_slice(),
         });
@@ -310,8 +323,6 @@ impl Checker {
         for c in &mut constructors {
             self.check_constructor(c, &subs, quant.clone(), ty.clone());
         }
-
-        self.type_env.insert_variants(ty, constructors.clone());
 
         let kind = TypedExprKind::Type {
             id: name,
@@ -335,19 +346,18 @@ impl Checker {
             PatKind::Ident(name) => {
                 if let Some(constructor) = self.type_env.get_constructor(&name).cloned() {
                     let ty = self.instantiate(constructor);
-                    match ty.as_ref() {
-                        Type::Named { name, args } if args.is_empty() => {
-                            let kind = TypedPatKind::Type {
-                                name: *name,
-                                args: Box::from([]),
-                            };
-                            Ok((TypedPat::new(kind, span, ty), ConstrSet::new()))
-                        }
-                        _ => Err(Spanned::new(InferError::Kind(ty), span)),
+                    if ty.is_named() {
+                        let kind = TypedPatKind::Type {
+                            name,
+                            args: Box::from([]),
+                        };
+                        Ok((TypedPat::new(kind, span, ty), ConstrSet::new()))
+                    } else {
+                        Err(Spanned::new(InferError::Kind(ty), span))
                     }
                 } else {
                     let var = self.new_type_variable();
-                    self.env.insert(name, var.clone());
+                    self.insert_variable(name, var.clone());
                     Ok((
                         TypedPat::new(TypedPatKind::Ident(name), span, var),
                         ConstrSet::new(),
@@ -391,7 +401,7 @@ impl Checker {
 
                     for arg in args {
                         let (arg, c_arg) = self.check_pat(arg)?;
-                        let Type::Fn { param, ret } = ty.as_ref() else {
+                        let Ty::Fn { param, ret } = ty.as_ref() else {
                             return Err(Spanned::new(InferError::Kind(ty), arg.span));
                         };
                         c.append(c_arg);
@@ -409,7 +419,7 @@ impl Checker {
                 }
                 None if args.is_empty() => {
                     let var = self.new_type_variable();
-                    self.env.insert(name, var.clone());
+                    self.insert_variable(name, var.clone());
                     Ok((
                         TypedPat::new(TypedPatKind::Ident(name), span, var),
                         ConstrSet::new(),
@@ -449,6 +459,7 @@ impl Checker {
         for (pat, aexpr) in arms {
             let ((pat, aexpr), c) = self.check_match_arm(pat, aexpr)?;
             c1.append(c);
+
             c1.push(Constr::new(expr.ty.clone(), pat.ty.clone(), pat.span));
             c1.push(Constr::new(aexpr.ty.clone(), var.clone(), aexpr.span));
             typed_arms.push(TypedMatchArm::new(pat, aexpr));
@@ -462,25 +473,73 @@ impl Checker {
         Ok((TypedExpr::new(kind, span, var), c1))
     }
 
-    fn instantiate(&mut self, ty: Rc<Type>) -> Rc<Type> {
+    fn instantiate(&mut self, ty: Rc<Ty>) -> Rc<Ty> {
         match ty.as_ref() {
-            Type::Generic { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
-                let var = self.new_type_variable();
-                let old = self.get_type(Type::Var(quant));
+            Ty::Generic { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
+                let var = Ty::Var(self.new_type_variable_id());
+                let old = Ty::Var(quant);
                 let subs = Subs::new(old, var);
-                ty.substitute(&subs, &mut self.type_env)
+                ty.substitute_eq(&subs, &mut self.type_env)
             }),
             _ => ty,
         }
     }
 
-    fn bin_op(&mut self, lhs: Rc<Type>, rhs: Rc<Type>, ret: Rc<Type>) -> Rc<Type> {
-        let f2 = Type::Fn { param: lhs, ret };
-        let f1 = Type::Fn {
+    fn bin_op(&mut self, lhs: Rc<Ty>, rhs: Rc<Ty>, ret: Rc<Ty>) -> Rc<Ty> {
+        let f2 = Ty::Fn { param: lhs, ret };
+        let f1 = Ty::Fn {
             param: rhs,
             ret:   self.get_type(f2),
         };
         self.get_type(f1)
+    }
+
+    pub fn check_many_modules<I>(
+        &mut self,
+        modules: I,
+    ) -> InferResult<(Vec<TypedModule>, ConstrSet)>
+    where
+        I: IntoIterator<Item = Module>,
+    {
+        let mut typed_modules = Vec::new();
+        let mut cset = ConstrSet::new();
+
+        for module in modules {
+            let (module, c) = self.check_module(module)?;
+            typed_modules.push(module);
+            cset.append(c);
+        }
+
+        Ok((typed_modules, cset))
+    }
+
+    pub fn check_module(&mut self, module: Module) -> InferResult<(TypedModule, ConstrSet)> {
+        self.env.push_scope();
+        self.cur_module = module.name;
+
+        let (exprs, mut cset) = self.check_many(module.exprs)?;
+        let declared = self.env.pop_scope().unwrap();
+        let mut typed =
+            TypedModule::new(module.name, declared, exprs.into_boxed_slice(), module.span);
+
+        if let Some(mod_name) = module.name {
+            while let Some(decl) = self.declared_types.pop() {
+                let new_name = mod_name.concat(decl, '.');
+                let mut subs = |ty: &Ty| match ty {
+                    Ty::Named { name, args } if name == &decl => Some(Ty::Named {
+                        name: new_name,
+                        args: args.clone(),
+                    }),
+                    _ => None,
+                };
+                cset.substitute(&mut subs, &mut self.type_env);
+                typed.substitute(&mut subs, &mut self.type_env);
+            }
+        } else {
+            self.declared_types.clear();
+        }
+
+        Ok((typed, cset))
     }
 
     pub fn check_many<I>(&mut self, expr: I) -> InferResult<(Vec<TypedExpr>, ConstrSet)>
@@ -550,7 +609,7 @@ impl Checker {
                     UnOp::Not => self.get_bool(),
                     UnOp::Neg => self.get_int(),
                 };
-                let ty = self.get_type(Type::Fn {
+                let ty = self.get_type(Ty::Fn {
                     param: ty.clone(),
                     ret:   ty,
                 });

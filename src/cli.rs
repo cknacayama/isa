@@ -51,7 +51,7 @@ impl Config {
             std::fs::read_to_string(self.input_path).expect("Should have valid path as input");
         let mut parser = Parser::from_input(&input);
 
-        let expr = match parser.parse_all() {
+        let modules = match parser.parse_all() {
             Ok(expr) if !expr.is_empty() => expr,
             Err(err) => return err.panic(&input),
             _ => return,
@@ -59,7 +59,7 @@ impl Config {
 
         let mut checker = Checker::with_types(parser.types());
 
-        let (mut expr, c) = match checker.check_many(expr) {
+        let (mut modules, c) = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
             Err(err) => return err.panic(&input),
         };
@@ -69,12 +69,18 @@ impl Config {
             Err(err) => return err.panic(&input),
         };
 
-        for e in &mut expr {
-            e.substitute_many(&subs, checker.type_env_mut());
+        for module in &mut modules {
+            module.substitute_many(&subs, checker.type_env_mut());
         }
 
-        for (id, ty) in checker.env().iter() {
-            println!("val {id}: {ty};");
+        for module in modules {
+            match module.name {
+                Some(name) => println!("module {name}"),
+                None => println!("module"),
+            }
+            for (id, ty) in module.declared.iter() {
+                println!("    val {id}: {ty};");
+            }
         }
     }
 }

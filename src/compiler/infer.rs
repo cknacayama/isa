@@ -1,48 +1,72 @@
 use super::{
-    ast::typed::{TypedExpr, TypedExprKind, TypedParam, TypedPat, TypedPatKind},
+    ast::typed::{TypedExpr, TypedExprKind, TypedModule, TypedParam, TypedPat, TypedPatKind},
     ctx::TypeCtx,
     error::InferError,
-    types::Type,
+    types::Ty,
 };
 use crate::span::{Span, Spanned};
 use std::{fmt::Display, rc::Rc};
 
 pub type InferResult<T> = Result<T, Spanned<InferError>>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Subs {
-    old: Rc<Type>,
-    new: Rc<Type>,
+    old: Ty,
+    new: Ty,
 }
 
 impl Subs {
-    #[must_use]
-    pub fn new(old: Rc<Type>, new: Rc<Type>) -> Self {
+    pub fn new(old: Ty, new: Ty) -> Self {
         Self { old, new }
     }
 }
 
 pub trait Substitute {
-    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self;
+    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    where
+        S: FnMut(&Ty) -> Option<Ty>;
+
+    fn substitute_eq(self, subs: &Subs, env: &mut TypeCtx) -> Self
+    where
+        Self: Sized,
+    {
+        self.substitute(
+            &mut move |t| {
+                if t == &subs.old {
+                    Some(subs.new.clone())
+                } else {
+                    None
+                }
+            },
+            env,
+        )
+    }
 
     fn substitute_many<'a, S>(self, subs: S, env: &mut TypeCtx) -> Self
     where
         Self: Sized,
         S: IntoIterator<Item = &'a Subs>,
     {
-        subs.into_iter().fold(self, |ty, s| ty.substitute(s, env))
+        subs.into_iter()
+            .fold(self, |acc, s| acc.substitute_eq(s, env))
     }
 }
 
 impl Substitute for &mut TypedParam {
-    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self {
+    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
         self.ty = self.ty.clone().substitute(subs, env);
         self
     }
 }
 
 impl Substitute for &mut TypedExpr {
-    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self {
+    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
         match &mut self.kind {
             TypedExprKind::Let {
                 params, expr, body, ..
@@ -98,8 +122,26 @@ impl Substitute for &mut TypedExpr {
     }
 }
 
+impl Substitute for &mut TypedModule {
+    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.exprs.iter_mut().for_each(|e| {
+            e.substitute(subs, env);
+        });
+        self.declared.values_mut().for_each(|ty| {
+            *ty = ty.clone().substitute(subs, env);
+        });
+        self
+    }
+}
+
 impl Substitute for &mut TypedPat {
-    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self {
+    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
         match &mut self.kind {
             TypedPatKind::Or(args) | TypedPatKind::Type { args, .. } => {
                 args.iter_mut().for_each(|p| {
@@ -118,26 +160,27 @@ impl Substitute for &mut TypedPat {
     }
 }
 
-impl Substitute for Rc<Type> {
-    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self {
-        match self.as_ref() {
-            ty if subs.old.as_ref() == ty => subs.new.clone(),
-
-            Type::Fn { param, ret } => {
-                let ty = Type::Fn {
+impl Substitute for Rc<Ty> {
+    fn substitute<Subs>(self, subs: &mut Subs, env: &mut TypeCtx) -> Self
+    where
+        Subs: FnMut(&Ty) -> Option<Ty>,
+    {
+        let ty = match self.as_ref() {
+            Ty::Fn { param, ret } => {
+                let ty = Ty::Fn {
                     param: param.clone().substitute(subs, env),
                     ret:   ret.clone().substitute(subs, env),
                 };
                 env.get_type(ty)
             }
-            Type::Generic { quant, ty } => {
+            Ty::Generic { quant, ty } => {
                 let ty = ty.clone().substitute(subs, env);
                 let quant = quant.clone();
-                let ty = Type::Generic { quant, ty };
+                let ty = Ty::Generic { quant, ty };
                 env.get_type(ty)
             }
-            Type::Named { name, args } => {
-                let ty = Type::Named {
+            Ty::Named { name, args } => {
+                let ty = Ty::Named {
                     name: *name,
                     args: args
                         .into_iter()
@@ -148,14 +191,20 @@ impl Substitute for Rc<Type> {
                 env.get_type(ty)
             }
             _ => self,
+        };
+
+        if let Some(new) = subs(ty.as_ref()) {
+            env.get_type(new)
+        } else {
+            ty
         }
     }
 }
 
 #[derive(Debug, Clone, Eq)]
 pub struct Constr {
-    lhs:  Rc<Type>,
-    rhs:  Rc<Type>,
+    lhs:  Rc<Ty>,
+    rhs:  Rc<Ty>,
     span: Span,
 }
 
@@ -167,7 +216,10 @@ impl PartialEq for Constr {
 }
 
 impl Substitute for Constr {
-    fn substitute(self, subs: &Subs, env: &mut TypeCtx) -> Self {
+    fn substitute<Subs>(self, subs: &mut Subs, env: &mut TypeCtx) -> Self
+    where
+        Subs: FnMut(&Ty) -> Option<Ty>,
+    {
         Self {
             lhs:  self.lhs.substitute(subs, env),
             rhs:  self.rhs.substitute(subs, env),
@@ -178,7 +230,7 @@ impl Substitute for Constr {
 
 impl Constr {
     #[must_use]
-    pub fn new(lhs: Rc<Type>, rhs: Rc<Type>, span: Span) -> Self {
+    pub fn new(lhs: Rc<Ty>, rhs: Rc<Ty>, span: Span) -> Self {
         Self { lhs, rhs, span }
     }
 
@@ -187,11 +239,11 @@ impl Constr {
         self.lhs == self.rhs
     }
 
-    pub fn lhs(&self) -> &Type {
+    pub fn lhs(&self) -> &Ty {
         &self.lhs
     }
 
-    pub fn rhs(&self) -> &Type {
+    pub fn rhs(&self) -> &Ty {
         &self.rhs
     }
 }
@@ -201,8 +253,11 @@ pub struct ConstrSet {
     constrs: Vec<Constr>,
 }
 
-impl Substitute for ConstrSet {
-    fn substitute(mut self, subs: &Subs, env: &mut TypeCtx) -> Self {
+impl Substitute for &mut ConstrSet {
+    fn substitute<Subs>(self, subs: &mut Subs, env: &mut TypeCtx) -> Self
+    where
+        Subs: FnMut(&Ty) -> Option<Ty>,
+    {
         for c in &mut self.constrs {
             *c = c.clone().substitute(subs, env);
         }
@@ -228,27 +283,27 @@ impl ConstrSet {
         self.constrs.iter()
     }
 
-    pub fn unify(mut self, env: &mut TypeCtx) -> InferResult<Vec<Subs>> {
+    pub fn unify(&mut self, env: &mut TypeCtx) -> InferResult<Vec<Subs>> {
         let mut subs = Vec::new();
 
         while let Some(c) = self.constrs.pop() {
             let span = c.span;
             match (c.lhs.as_ref(), c.rhs.as_ref()) {
                 (
-                    lhs @ (Type::Int | Type::Bool | Type::Var(_)),
-                    rhs @ (Type::Int | Type::Bool | Type::Var(_)),
+                    lhs @ (Ty::Int | Ty::Bool | Ty::Var(_)),
+                    rhs @ (Ty::Int | Ty::Bool | Ty::Var(_)),
                 ) if lhs == rhs => {}
-                (Type::Var(var), new) | (new, Type::Var(var)) if !new.occurs(*var) => {
-                    let new = env.get_type(new.clone());
-                    let old = env.get_type(Type::Var(*var));
+                (Ty::Var(var), new) | (new, Ty::Var(var)) if !new.occurs(*var) => {
+                    let new = new.clone();
+                    let old = Ty::Var(*var);
 
                     let s = Subs { old, new };
 
-                    self = self.substitute(&s, env);
+                    self.substitute_eq(&s, env);
 
                     subs.push(s);
                 }
-                (Type::Fn { param: i1, ret: o1 }, Type::Fn { param: i2, ret: o2 }) => {
+                (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
                     let c1 = Constr::new(i1.clone(), i2.clone(), span);
                     let c2 = Constr::new(o1.clone(), o2.clone(), span);
 
@@ -256,11 +311,11 @@ impl ConstrSet {
                     self.push(c2);
                 }
                 (
-                    Type::Named {
+                    Ty::Named {
                         name: n1,
                         args: args1,
                     },
-                    Type::Named {
+                    Ty::Named {
                         name: n2,
                         args: args2,
                     },

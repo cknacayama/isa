@@ -1,13 +1,13 @@
 use super::{
     ast::{
-        untyped::{Expr, ExprKind, Pat, PatKind},
+        untyped::{Expr, ExprKind, Module, Pat, PatKind},
         BinOp, Constructor, UnOp,
     },
     ctx::TypeCtx,
     error::ParseError,
     lexer::Lexer,
     token::{Token, TokenKind},
-    types::Type,
+    types::Ty,
 };
 use crate::{
     global::{self, Symbol},
@@ -109,14 +109,54 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn get_type(&mut self, ty: Type) -> Rc<Type> {
+    fn get_type(&mut self, ty: Ty) -> Rc<Ty> {
         self.types.get_type(ty)
     }
 
-    pub fn parse_all(&mut self) -> ParseResult<Vec<Expr>> {
-        self.collect()
+    pub fn try_parse_module(&mut self) -> Option<ParseResult<Module>> {
+        if self.peek().is_some() {
+            Some(self.parse_module())
+        } else {
+            None
+        }
     }
 
+    /// parses one module
+    fn parse_module(&mut self) -> ParseResult<Module> {
+        let name = match self.next_if_match(TokenKind::KwModule) {
+            Some(Token { span, .. }) => {
+                let mut id = self.expect_id()?;
+                id.span = span.union(id.span);
+                Some(id.map(global::intern_symbol))
+            }
+            None => None,
+        };
+
+        let mut exprs = Vec::new();
+        while !self.check(TokenKind::KwModule) {
+            let Some(expr) = self.parse() else {
+                break;
+            };
+            exprs.push(expr?);
+        }
+
+        let span = match (name.as_ref(), exprs.as_slice()) {
+            (Some(name), []) => name.span,
+            (Some(name), [.., expr]) => name.span.union(expr.span),
+            (None, [expr]) => expr.span,
+            (None, [first, .., last]) => first.span.union(last.span),
+            (None, []) => return Err(Spanned::new(ParseError::UnexpectedEof, Span::default())),
+        };
+        let name = name.map(|name| name.data);
+
+        Ok(Module::new(name, exprs.into_boxed_slice(), span))
+    }
+
+    pub fn parse_all(&mut self) -> ParseResult<Vec<Module>> {
+        std::iter::from_fn(|| self.try_parse_module()).collect()
+    }
+
+    /// parses one expression (can have semicolon)
     pub fn parse(&mut self) -> Option<ParseResult<Expr>> {
         if self.peek().is_some() {
             Some(self.parse_semi_expr())
@@ -273,23 +313,23 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_simple_type(&mut self) -> ParseResult<Spanned<Type>> {
+    fn parse_simple_type(&mut self) -> ParseResult<Spanned<Ty>> {
         let tk = self.next_or_eof()?;
 
         match tk.data {
             TokenKind::LParen => {
                 if let Some(Spanned { span, .. }) = self.next_if_match(TokenKind::RParen) {
-                    Ok(Spanned::new(Type::Unit, tk.span.union(span)))
+                    Ok(Spanned::new(Ty::Unit, tk.span.union(span)))
                 } else {
                     let t = self.parse_type()?;
                     let span = tk.span.union(self.expect(TokenKind::RParen)?);
                     Ok(Spanned::new(t.data, span))
                 }
             }
-            TokenKind::KwInt => Ok(Spanned::new(Type::Int, tk.span)),
-            TokenKind::KwBool => Ok(Spanned::new(Type::Bool, tk.span)),
+            TokenKind::KwInt => Ok(Spanned::new(Ty::Int, tk.span)),
+            TokenKind::KwBool => Ok(Spanned::new(Ty::Bool, tk.span)),
             TokenKind::Ident(id) => Ok(Spanned::new(
-                Type::Named {
+                Ty::Named {
                     name: self.get_symbol(id),
                     args: Box::from([]),
                 },
@@ -300,7 +340,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_type(&mut self) -> ParseResult<Spanned<Type>> {
+    fn parse_type(&mut self) -> ParseResult<Spanned<Ty>> {
         let simple = self.parse_simple_type()?;
 
         if self.next_if_match(TokenKind::Arrow).is_some() {
@@ -308,13 +348,13 @@ impl<'a> Parser<'a> {
             let span = simple.span.union(ret.span);
 
             Ok(Spanned::new(
-                Type::Fn {
+                Ty::Fn {
                     param: self.get_type(simple.data),
                     ret:   self.get_type(ret.data),
                 },
                 span,
             ))
-        } else if let Type::Named { name, .. } = simple.data {
+        } else if let Ty::Named { name, .. } = simple.data {
             let mut span = simple.span;
             let mut params = Vec::new();
 
@@ -325,7 +365,7 @@ impl<'a> Parser<'a> {
             }
 
             let args = params.into_boxed_slice();
-            Ok(Spanned::new(Type::Named { name, args }, span))
+            Ok(Spanned::new(Ty::Named { name, args }, span))
         } else {
             Ok(simple)
         }

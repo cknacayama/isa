@@ -162,7 +162,6 @@ impl<'a> Lexer<'a> {
             '*' => token!(Star),
             '/' => token!(Slash),
             '%' => token!(Percent),
-            '^' => token!(Caret),
             '+' => token!(Plus),
             '|' => token!(Bar),
             '-' => token!(Minus, '>' => Arrow),

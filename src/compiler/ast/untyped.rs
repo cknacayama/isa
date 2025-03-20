@@ -6,6 +6,28 @@ use crate::{
 use std::fmt::Debug;
 
 #[derive(Clone)]
+pub struct Module {
+    pub name:  Option<Symbol>,
+    pub exprs: Box<[Expr]>,
+    pub span:  Span,
+}
+
+impl Module {
+    pub fn new(name: Option<Symbol>, exprs: Box<[Expr]>, span: Span) -> Self {
+        Self { name, exprs, span }
+    }
+}
+
+impl Debug for Module {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Module")
+            .field("name", &self.name)
+            .field("exprs", &self.exprs)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Clone)]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
@@ -16,6 +38,33 @@ impl Debug for Expr {
         f.debug_struct("Expr")
             .field("kind", &self.kind)
             .finish_non_exhaustive()
+    }
+}
+
+impl Expr {
+    #[must_use]
+    pub fn new(kind: ExprKind, span: Span) -> Self {
+        Self { kind, span }
+    }
+
+    #[must_use]
+    pub fn bin_expr(op: BinOp, lhs: Expr, rhs: Expr, span: Span) -> Self {
+        let op = Self::new(ExprKind::BinOp(op), span);
+        let lhs_span = lhs.span;
+        let c1 = Self::new(
+            ExprKind::Call {
+                callee: Box::new(op),
+                arg:    Box::new(lhs),
+            },
+            lhs_span,
+        );
+        Self::new(
+            ExprKind::Call {
+                callee: Box::new(c1),
+                arg:    Box::new(rhs),
+            },
+            span,
+        )
     }
 }
 
@@ -88,31 +137,4 @@ pub enum ExprKind {
         callee: Box<Expr>,
         arg:    Box<Expr>,
     },
-}
-
-impl Expr {
-    #[must_use]
-    pub fn new(kind: ExprKind, span: Span) -> Self {
-        Self { kind, span }
-    }
-
-    #[must_use]
-    pub fn bin_expr(op: BinOp, lhs: Expr, rhs: Expr, span: Span) -> Self {
-        let op = Self::new(ExprKind::BinOp(op), span);
-        let lhs_span = lhs.span;
-        let c1 = Self::new(
-            ExprKind::Call {
-                callee: Box::new(op),
-                arg:    Box::new(lhs),
-            },
-            lhs_span,
-        );
-        Self::new(
-            ExprKind::Call {
-                callee: Box::new(c1),
-                arg:    Box::new(rhs),
-            },
-            span,
-        )
-    }
 }

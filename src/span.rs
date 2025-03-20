@@ -143,4 +143,8 @@ impl<T> Spanned<T> {
     {
         other.map(From::from)
     }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
 }

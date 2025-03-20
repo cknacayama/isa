@@ -1,9 +1,44 @@
+use rustc_hash::FxHashMap;
+
 use super::{BinOp, Constructor, UnOp};
-use crate::{compiler::types::Type, global::Symbol, span::Span};
+use crate::{compiler::types::Ty, global::Symbol, span::Span};
 use std::{
     fmt::{Debug, Display, Write},
     rc::Rc,
 };
+
+#[derive(Clone)]
+pub struct TypedModule {
+    pub name:     Option<Symbol>,
+    pub declared: FxHashMap<Symbol, Rc<Ty>>,
+    pub exprs:    Box<[TypedExpr]>,
+    pub span:     Span,
+}
+
+impl TypedModule {
+    pub fn new(
+        name: Option<Symbol>,
+        declared: FxHashMap<Symbol, Rc<Ty>>,
+        exprs: Box<[TypedExpr]>,
+        span: Span,
+    ) -> Self {
+        Self {
+            name,
+            declared,
+            exprs,
+            span,
+        }
+    }
+}
+
+impl Debug for TypedModule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TypedModule")
+            .field("name", &self.name)
+            .field("exprs", &self.exprs)
+            .finish_non_exhaustive()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum TypedPatKind {
@@ -26,7 +61,7 @@ pub enum TypedPatKind {
 pub struct TypedPat {
     pub kind: TypedPatKind,
     pub span: Span,
-    pub ty:   Rc<Type>,
+    pub ty:   Rc<Ty>,
 }
 
 impl Debug for TypedPat {
@@ -39,7 +74,7 @@ impl Debug for TypedPat {
 }
 impl TypedPat {
     #[must_use]
-    pub fn new(kind: TypedPatKind, span: Span, ty: Rc<Type>) -> Self {
+    pub fn new(kind: TypedPatKind, span: Span, ty: Rc<Ty>) -> Self {
         Self { kind, span, ty }
     }
 
@@ -77,7 +112,7 @@ impl TypedPat {
 pub struct TypedExpr {
     pub kind: TypedExprKind,
     pub span: Span,
-    pub ty:   Rc<Type>,
+    pub ty:   Rc<Ty>,
 }
 
 impl Debug for TypedExpr {
@@ -111,15 +146,15 @@ impl TypedMatchArm {
 #[derive(Debug, Clone)]
 pub struct TypedParam {
     pub name: Symbol,
-    pub ty:   Rc<Type>,
+    pub ty:   Rc<Ty>,
 }
 
 impl TypedParam {
-    pub fn new(name: Symbol, ty: Rc<Type>) -> Self {
+    pub fn new(name: Symbol, ty: Rc<Ty>) -> Self {
         Self { name, ty }
     }
 
-    pub fn ty(&self) -> &Rc<Type> {
+    pub fn ty(&self) -> &Rc<Ty> {
         &self.ty
     }
 }
@@ -156,7 +191,7 @@ pub enum TypedExprKind {
 
     Type {
         id:           Symbol,
-        parameters:   Box<[Rc<Type>]>,
+        parameters:   Box<[Rc<Ty>]>,
         constructors: Box<[Constructor]>,
     },
 
@@ -184,7 +219,7 @@ pub enum TypedExprKind {
 
 impl TypedExpr {
     #[must_use]
-    pub fn new(kind: TypedExprKind, span: Span, ty: Rc<Type>) -> Self {
+    pub fn new(kind: TypedExprKind, span: Span, ty: Rc<Ty>) -> Self {
         Self { kind, span, ty }
     }
 

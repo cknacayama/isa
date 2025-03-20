@@ -14,6 +14,13 @@ impl Display for Symbol {
     }
 }
 
+impl Symbol {
+    pub fn concat(self, other: Self, sep: impl Display) -> Symbol {
+        let symbol = format!("{self}{sep}{other}");
+        intern_static_symbol(symbol.leak())
+    }
+}
+
 #[derive(Debug, Default)]
 struct GlobalEnv {
     symbols: SymbolEnv,
@@ -31,6 +38,10 @@ thread_local! {
 
 pub fn intern_symbol(symbol: &str) -> Symbol {
     GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern(symbol))
+}
+
+pub fn intern_static_symbol(symbol: &'static str) -> Symbol {
+    GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern_static(symbol))
 }
 
 pub fn symbol_count() -> usize {
@@ -60,5 +71,10 @@ impl SymbolEnv {
                 Symbol(idx)
             }
         }
+    }
+
+    fn intern_static(&mut self, symbol: &'static str) -> Symbol {
+        let (idx, _) = self.symbols.insert_full(symbol);
+        Symbol(idx)
     }
 }

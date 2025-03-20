@@ -1,19 +1,18 @@
+use crate::global::Symbol;
 use std::{fmt::Display, rc::Rc};
 
-use crate::global::Symbol;
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Type {
+pub enum Ty {
     Unit,
     Int,
     Bool,
     Var(u64),
-    Fn { param: Rc<Type>, ret: Rc<Type> },
-    Generic { quant: Box<[u64]>, ty: Rc<Type> },
-    Named { name: Symbol, args: Box<[Rc<Type>]> },
+    Fn { param: Rc<Ty>, ret: Rc<Ty> },
+    Generic { quant: Box<[u64]>, ty: Rc<Ty> },
+    Named { name: Symbol, args: Box<[Rc<Ty>]> },
 }
 
-impl Display for Type {
+impl Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unit => write!(f, "()"),
@@ -38,7 +37,7 @@ impl Display for Type {
     }
 }
 
-impl Type {
+impl Ty {
     #[must_use]
     pub fn occurs(&self, var: u64) -> bool {
         match self {
@@ -49,5 +48,13 @@ impl Type {
 
             _ => false,
         }
+    }
+
+    /// Returns `true` if the ty is [`Named`].
+    ///
+    /// [`Named`]: Ty::Named
+    #[must_use]
+    pub fn is_named(&self) -> bool {
+        matches!(self, Self::Named { .. })
     }
 }
