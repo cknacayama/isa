@@ -67,7 +67,7 @@ impl Checker {
         self.env.insert(id, ty)
     }
 
-    fn get_type(&mut self, ty: Ty) -> Rc<Ty> {
+    fn intern_type(&mut self, ty: Ty) -> Rc<Ty> {
         self.type_env.intern_type(ty)
     }
 
@@ -79,7 +79,7 @@ impl Checker {
 
     fn new_type_variable(&mut self) -> Rc<Ty> {
         let id = self.new_type_variable_id();
-        self.get_type(Ty::Var(id))
+        self.intern_type(Ty::Var(id))
     }
 
     fn get_int(&self) -> Rc<Ty> {
@@ -140,7 +140,7 @@ impl Checker {
             param: var.clone(),
             ret:   expr.ty.clone(),
         };
-        let ty = self.get_type(ty);
+        let ty = self.intern_type(ty);
         let kind = TypedExprKind::Fn {
             param: TypedParam::new(param, var),
             expr:  Box::new(expr),
@@ -162,7 +162,7 @@ impl Checker {
             param: arg.ty.clone(),
             ret:   var.clone(),
         };
-        let fn_ty = self.get_type(fn_ty);
+        let fn_ty = self.intern_type(fn_ty);
         let constr = Constr::new(callee.ty.clone(), fn_ty, span);
 
         c1.append(c2);
@@ -184,7 +184,7 @@ impl Checker {
         params
             .into_iter()
             .rev()
-            .fold(ret, |ret, param| self.get_type(Ty::Fn { param, ret }))
+            .fold(ret, |ret, param| self.intern_type(Ty::Fn { param, ret }))
     }
 
     fn check_let_value(
@@ -270,13 +270,13 @@ impl Checker {
     ) {
         for param in constructor.params.iter_mut().rev() {
             *param = param.clone().substitute_many(subs, &mut self.type_env);
-            ret = self.get_type(Ty::Fn {
+            ret = self.intern_type(Ty::Fn {
                 param: param.clone(),
                 ret,
             });
         }
         if !quant.is_empty() {
-            ret = self.get_type(Ty::Scheme { quant, ty: ret });
+            ret = self.intern_type(Ty::Scheme { quant, ty: ret });
         }
         self.insert_variable(constructor.id, ret.clone());
         self.type_env.insert_constructor(constructor.id, ret);
@@ -295,13 +295,13 @@ impl Checker {
 
         for param in parameters {
             let id = self.new_type_variable_id();
-            let new = Ty::Var(id);
-            let param = Ty::Named {
+            let new = self.intern_type(Ty::Var(id));
+            let param = self.intern_type(Ty::Named {
                 name: param,
                 args: Box::from([]),
-            };
+            });
             subs.push(Subs::new(param, new.clone()));
-            args.push(self.get_type(new));
+            args.push(new);
             quant.push(id);
         }
 
@@ -309,7 +309,7 @@ impl Checker {
 
         self.declared_types.push(name);
 
-        let ty = self.get_type(Ty::Named {
+        let ty = self.intern_type(Ty::Named {
             name,
             args: args.clone().into_boxed_slice(),
         });
@@ -470,8 +470,8 @@ impl Checker {
     fn instantiate(&mut self, ty: Rc<Ty>) -> Rc<Ty> {
         match ty.as_ref() {
             Ty::Scheme { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
-                let var = Ty::Var(self.new_type_variable_id());
-                let old = Ty::Var(quant);
+                let var = self.new_type_variable();
+                let old = self.intern_type(Ty::Var(quant));
                 let subs = Subs::new(old, var);
                 ty.substitute_eq(&subs, &mut self.type_env)
             }),
@@ -483,9 +483,9 @@ impl Checker {
         let f2 = Ty::Fn { param: lhs, ret };
         let f1 = Ty::Fn {
             param: rhs,
-            ret:   self.get_type(f2),
+            ret:   self.intern_type(f2),
         };
-        self.get_type(f1)
+        self.intern_type(f1)
     }
 
     pub fn check_many_modules<I>(
@@ -519,11 +519,11 @@ impl Checker {
         if let Some(mod_name) = module.name {
             while let Some(decl) = self.declared_types.pop() {
                 let new_name = mod_name.concat(decl, '.');
-                let mut subs = |ty: &Ty| match ty {
-                    Ty::Named { name, args } if name == &decl => Some(Ty::Named {
+                let mut subs = |ty: &Ty, env: &mut TypeCtx| match ty {
+                    Ty::Named { name, args } if name == &decl => Some(env.intern_type(Ty::Named {
                         name: new_name,
                         args: args.clone(),
-                    }),
+                    })),
                     _ => None,
                 };
                 cset.substitute(&mut subs, &mut self.type_env);
@@ -603,7 +603,7 @@ impl Checker {
                     UnOp::Not => self.get_bool(),
                     UnOp::Neg => self.get_int(),
                 };
-                let ty = self.get_type(Ty::Fn {
+                let ty = self.intern_type(Ty::Fn {
                     param: ty.clone(),
                     ret:   ty,
                 });

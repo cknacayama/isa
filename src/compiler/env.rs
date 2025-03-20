@@ -36,10 +36,11 @@ impl Env {
 
     #[must_use]
     pub fn contains_type(&self, ty: &Ty) -> bool {
-        self.env
-            .iter()
-            .flat_map(FxHashMap::values)
-            .any(|t| t.as_ref() == ty)
+        let ty: *const Ty = ty;
+        self.env.iter().flat_map(FxHashMap::values).any(|t| {
+            let t: *const Ty = t.as_ref();
+            t == ty
+        })
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&Symbol, &Rc<Ty>)> {
@@ -111,7 +112,7 @@ impl Env {
 impl Substitute for Env {
     fn substitute<S>(mut self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         for t in self.env.iter_mut().flat_map(FxHashMap::values_mut) {
             *t = t.clone().substitute(subs, env);

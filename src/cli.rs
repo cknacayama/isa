@@ -20,7 +20,8 @@ pub struct Config {
 }
 
 impl Config {
-    #[must_use] pub fn from_env(mut env: std::env::Args) -> Self {
+    #[must_use]
+    pub fn from_env(mut env: std::env::Args) -> Self {
         let bin_path = PathBuf::from(
             env.next()
                 .expect("Should have binary path as first argument"),

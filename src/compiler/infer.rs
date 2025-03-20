@@ -11,13 +11,13 @@ pub type InferResult<T> = Result<T, Spanned<InferError>>;
 
 #[derive(Debug, Clone)]
 pub struct Subs {
-    old: Ty,
-    new: Ty,
+    old: Rc<Ty>,
+    new: Rc<Ty>,
 }
 
 impl Subs {
     #[must_use]
-    pub fn new(old: Ty, new: Ty) -> Self {
+    pub fn new(old: Rc<Ty>, new: Rc<Ty>) -> Self {
         Self { old, new }
     }
 }
@@ -25,7 +25,7 @@ impl Subs {
 pub trait Substitute {
     fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
-        S: FnMut(&Ty) -> Option<Ty>;
+        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>;
 
     /// Used mainly for type inference and unification of constraint sets
     fn substitute_eq(self, subs: &Subs, env: &mut TypeCtx) -> Self
@@ -33,8 +33,10 @@ pub trait Substitute {
         Self: Sized,
     {
         self.substitute(
-            &mut move |t| {
-                if t == &subs.old {
+            &mut move |t, _| {
+                let t: *const Ty = t;
+                let old: *const Ty = &*subs.old;
+                if t == old {
                     Some(subs.new.clone())
                 } else {
                     None
@@ -48,26 +50,15 @@ pub trait Substitute {
     where
         Self: Sized,
     {
-        let mut iter = subs.iter();
-        self.substitute(
-            &mut |ty| {
-                iter.find_map(|s| {
-                    if &s.old == ty {
-                        Some(s.new.clone())
-                    } else {
-                        None
-                    }
-                })
-            },
-            env,
-        )
+        subs.into_iter()
+            .fold(self, |res, subs| res.substitute_eq(subs, env))
     }
 }
 
 impl Substitute for &mut TypedParam {
     fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         self.ty = self.ty.clone().substitute(subs, env);
         self
@@ -77,7 +68,7 @@ impl Substitute for &mut TypedParam {
 impl Substitute for &mut TypedExpr {
     fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         match &mut self.kind {
             TypedExprKind::Let {
@@ -147,7 +138,7 @@ impl Substitute for &mut TypedExpr {
 impl Substitute for &mut TypedModule {
     fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         self.exprs.iter_mut().for_each(|e| {
             e.substitute(subs, env);
@@ -162,7 +153,7 @@ impl Substitute for &mut TypedModule {
 impl Substitute for &mut TypedPat {
     fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         match &mut self.kind {
             TypedPatKind::Or(args) | TypedPatKind::Type { args, .. } => {
@@ -185,7 +176,7 @@ impl Substitute for &mut TypedPat {
 impl Substitute for Rc<Ty> {
     fn substitute<Subs>(self, subs: &mut Subs, env: &mut TypeCtx) -> Self
     where
-        Subs: FnMut(&Ty) -> Option<Ty>,
+        Subs: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         let ty = match self.as_ref() {
             Ty::Fn { param, ret } => {
@@ -215,8 +206,8 @@ impl Substitute for Rc<Ty> {
             _ => self,
         };
 
-        if let Some(new) = subs(ty.as_ref()) {
-            env.intern_type(new)
+        if let Some(new) = subs(ty.as_ref(), env) {
+            new
         } else {
             ty
         }
@@ -233,7 +224,7 @@ pub struct Constr {
 impl Substitute for Constr {
     fn substitute<Subs>(self, subs: &mut Subs, env: &mut TypeCtx) -> Self
     where
-        Subs: FnMut(&Ty) -> Option<Ty>,
+        Subs: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         Self {
             lhs:  self.lhs.substitute(subs, env),
@@ -273,7 +264,7 @@ pub struct ConstrSet {
 impl Substitute for &mut ConstrSet {
     fn substitute<Subs>(self, subs: &mut Subs, env: &mut TypeCtx) -> Self
     where
-        Subs: FnMut(&Ty) -> Option<Ty>,
+        Subs: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         for c in &mut self.constrs {
             *c = c.clone().substitute(subs, env);
@@ -290,6 +281,10 @@ impl ConstrSet {
 
     pub fn append(&mut self, mut other: Self) {
         self.constrs.append(&mut other.constrs);
+    }
+
+    pub fn len(&self) -> usize {
+        self.constrs.len()
     }
 
     pub fn push(&mut self, c: Constr) {
@@ -311,8 +306,8 @@ impl ConstrSet {
                     rhs @ (Ty::Int | Ty::Bool | Ty::Var(_)),
                 ) if lhs == rhs => {}
                 (Ty::Var(var), new) | (new, Ty::Var(var)) if !new.occurs(*var) => {
-                    let new = new.clone();
-                    let old = Ty::Var(*var);
+                    let new = env.intern_type(new.clone());
+                    let old = env.intern_type(Ty::Var(*var));
 
                     let s = Subs { old, new };
 
