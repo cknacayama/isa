@@ -45,32 +45,18 @@ impl Span {
     pub fn start_loc(self, input: &str) -> (Loc, &str) {
         let mut line = 1;
         let mut col = 1;
-        let mut start = 1;
-        let mut end = 1;
-        let mut passed = false;
-        let mut ended = false;
 
-        for (i, c) in input.char_indices() {
-            if i > self.end as usize {
-                ended = true;
-            } else if i > self.start as usize {
-                passed = true;
-            }
+        for c in input.chars().take(self.start as usize) {
             match c {
-                '\n' if !passed => {
+                '\n' => {
                     line += 1;
                     col = 1;
-                    start = i;
                 }
-                '\n' if ended => {
-                    break;
-                }
-                _ if !passed => col += 1,
-                _ => end = i,
+                _ => col += 1,
             }
         }
 
-        (Loc { line, col }, &input[start..end])
+        (Loc { line, col }, &input[self])
     }
 }
 

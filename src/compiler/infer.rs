@@ -274,6 +274,17 @@ impl Substitute for &mut ConstrSet {
     }
 }
 
+impl<T> From<T> for ConstrSet
+where
+    Vec<Constr>: From<T>,
+{
+    fn from(value: T) -> Self {
+        Self {
+            constrs: Vec::from(value),
+        }
+    }
+}
+
 impl ConstrSet {
     #[must_use]
     pub fn new() -> Self {

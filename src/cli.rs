@@ -70,19 +70,10 @@ impl Config {
 
         let mut checker = Checker::with_types(parser.types());
 
-        let (mut modules, c) = match checker.check_many_modules(modules) {
+        let modules = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
             Err(err) => return err.panic(&input),
         };
-
-        let subs = match checker.unify(c) {
-            Ok(subs) => subs,
-            Err(err) => return err.panic(&input),
-        };
-
-        for module in &mut modules {
-            module.substitute_many(&subs, checker.type_env_mut());
-        }
 
         let duration = start.elapsed();
 
