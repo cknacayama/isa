@@ -263,7 +263,7 @@ impl Checker {
         &mut self,
         constructor: &mut Constructor,
         subs: &[Subs],
-        quant: Box<[u64]>,
+        quant: Rc<[u64]>,
         mut ret: Rc<Ty>,
     ) {
         for param in constructor.params.iter_mut().rev() {
@@ -296,20 +296,20 @@ impl Checker {
             let new = self.intern_type(Ty::Var(id));
             let param = self.intern_type(Ty::Named {
                 name: param,
-                args: Box::from([]),
+                args: Rc::from([]),
             });
             subs.push(Subs::new(param, new.clone()));
             args.push(new);
             quant.push(id);
         }
 
-        let quant = quant.into_boxed_slice();
+        let quant = Rc::<[u64]>::from(quant);
 
         self.declared_types.push(name);
 
         let ty = self.intern_type(Ty::Named {
             name,
-            args: args.clone().into_boxed_slice(),
+            args: args.clone().into(),
         });
 
         for c in &mut constructors {
@@ -465,6 +465,81 @@ impl Checker {
         Ok((TypedExpr::new(kind, span, var), c1))
     }
 
+    fn check_bin(
+        &mut self,
+        op: BinOp,
+        lhs: Expr,
+        rhs: Expr,
+        span: Span,
+    ) -> InferResult<(TypedExpr, ConstrSet)> {
+        let (lhs, mut c1) = self.check(lhs)?;
+        let (rhs, c2) = self.check(rhs)?;
+        c1.append(c2);
+
+        let int = self.get_int();
+        let bol = self.get_bool();
+
+        match op {
+            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
+                c1.push(Constr::new(int.clone(), lhs.ty.clone(), lhs.span));
+                c1.push(Constr::new(int.clone(), rhs.ty.clone(), rhs.span));
+
+                let kind = TypedExprKind::Bin {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                };
+
+                Ok((TypedExpr::new(kind, span, int), c1))
+            }
+            BinOp::Eq | BinOp::Ne | BinOp::Gt | BinOp::Ge | BinOp::Lt | BinOp::Le => {
+                c1.push(Constr::new(int.clone(), lhs.ty.clone(), lhs.span));
+                c1.push(Constr::new(int, rhs.ty.clone(), rhs.span));
+
+                let kind = TypedExprKind::Bin {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                };
+
+                Ok((TypedExpr::new(kind, span, bol), c1))
+            }
+            BinOp::And | BinOp::Or => {
+                c1.push(Constr::new(bol.clone(), lhs.ty.clone(), lhs.span));
+                c1.push(Constr::new(bol.clone(), rhs.ty.clone(), rhs.span));
+
+                let kind = TypedExprKind::Bin {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                };
+
+                Ok((TypedExpr::new(kind, span, bol), c1))
+            }
+        }
+    }
+    fn check_un(
+        &mut self,
+        op: UnOp,
+        expr: Expr,
+        span: Span,
+    ) -> InferResult<(TypedExpr, ConstrSet)> {
+        let (expr, mut c1) = self.check(expr)?;
+
+        let ty = match op {
+            UnOp::Not => self.get_bool(),
+            UnOp::Neg => self.get_int(),
+        };
+        c1.push(Constr::new(ty.clone(), expr.ty.clone(), expr.span));
+
+        let kind = TypedExprKind::Un {
+            op,
+            expr: Box::new(expr),
+        };
+
+        Ok((TypedExpr::new(kind, span, ty), c1))
+    }
+
     fn instantiate(&mut self, ty: Rc<Ty>) -> Rc<Ty> {
         match ty.as_ref() {
             Ty::Scheme { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
@@ -475,15 +550,6 @@ impl Checker {
             }),
             _ => ty,
         }
-    }
-
-    fn bin_op(&mut self, lhs: Rc<Ty>, rhs: Rc<Ty>, ret: Rc<Ty>) -> Rc<Ty> {
-        let f2 = Ty::Fn { param: lhs, ret };
-        let f1 = Ty::Fn {
-            param: rhs,
-            ret:   self.intern_type(f2),
-        };
-        self.intern_type(f1)
     }
 
     pub fn check_many_modules<I>(
@@ -576,37 +642,8 @@ impl Checker {
                     ConstrSet::new(),
                 ))
             }
-            ExprKind::BinOp(bin_op) => {
-                let kind = TypedExprKind::BinOp(bin_op);
-                let int = self.get_int();
-                let bol = self.get_bool();
-                match bin_op {
-                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => Ok((
-                        TypedExpr::new(kind, span, self.bin_op(int.clone(), int.clone(), int)),
-                        ConstrSet::new(),
-                    )),
-                    BinOp::Eq | BinOp::Ne | BinOp::Gt | BinOp::Ge | BinOp::Lt | BinOp::Le => Ok((
-                        TypedExpr::new(kind, span, self.bin_op(int.clone(), int, bol)),
-                        ConstrSet::new(),
-                    )),
-                    BinOp::And | BinOp::Or => Ok((
-                        TypedExpr::new(kind, span, self.bin_op(bol.clone(), bol.clone(), bol)),
-                        ConstrSet::new(),
-                    )),
-                }
-            }
-            ExprKind::UnOp(un_op) => {
-                let kind = TypedExprKind::UnOp(un_op);
-                let ty = match un_op {
-                    UnOp::Not => self.get_bool(),
-                    UnOp::Neg => self.get_int(),
-                };
-                let ty = self.intern_type(Ty::Fn {
-                    param: ty.clone(),
-                    ret:   ty,
-                });
-                Ok((TypedExpr::new(kind, span, ty), ConstrSet::new()))
-            }
+            ExprKind::Bin { op, lhs, rhs } => self.check_bin(op, *lhs, *rhs, span),
+            ExprKind::Un { op, expr } => self.check_un(op, *expr, span),
             ExprKind::If {
                 cond,
                 then,

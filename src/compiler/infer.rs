@@ -87,12 +87,10 @@ impl Substitute for &mut TypedExpr {
                     body.substitute(subs, env);
                 }
             }
-
             TypedExprKind::Fn { param, expr } => {
                 param.substitute(subs, env);
                 expr.substitute(subs, env);
             }
-
             TypedExprKind::If {
                 cond,
                 then,
@@ -102,12 +100,10 @@ impl Substitute for &mut TypedExpr {
                 then.substitute(subs, env);
                 otherwise.substitute(subs, env);
             }
-
             TypedExprKind::Call { callee, arg } => {
                 callee.substitute(subs, env);
                 arg.substitute(subs, env);
             }
-
             TypedExprKind::Match { expr, arms } => {
                 expr.substitute(subs, env);
                 arms.iter_mut().for_each(|arm| {
@@ -115,7 +111,6 @@ impl Substitute for &mut TypedExpr {
                     arm.expr.substitute(subs, env);
                 });
             }
-
             TypedExprKind::Semi(semi) => {
                 semi.substitute(subs, env);
             }
@@ -126,13 +121,18 @@ impl Substitute for &mut TypedExpr {
                     });
                 });
             }
+            TypedExprKind::Bin { lhs, rhs, .. } => {
+                lhs.substitute(subs, env);
+                rhs.substitute(subs, env);
+            }
+            TypedExprKind::Un { expr, .. } => {
+                expr.substitute(subs, env);
+            }
 
             TypedExprKind::Unit
             | TypedExprKind::Int(_)
             | TypedExprKind::Bool(_)
-            | TypedExprKind::Ident(_)
-            | TypedExprKind::BinOp(_)
-            | TypedExprKind::UnOp(_) => (),
+            | TypedExprKind::Ident(_) => (),
         }
 
         self.ty = self.ty.clone().substitute(subs, env);
@@ -201,7 +201,7 @@ impl Substitute for Rc<Ty> {
                 let ty = Ty::Named {
                     name: *name,
                     args: args
-                        .into_iter()
+                        .iter()
                         .cloned()
                         .map(|arg| arg.substitute(subs, env))
                         .collect(),
@@ -339,7 +339,7 @@ impl ConstrSet {
                         args: args2,
                     },
                 ) if n1 == n2 && args1.len() == args2.len() => {
-                    for (a1, a2) in args1.iter().zip(args2) {
+                    for (a1, a2) in args1.iter().zip(args2.iter()) {
                         let c = Constr::new(a1.clone(), a2.clone(), span);
                         self.push(c);
                     }

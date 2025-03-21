@@ -179,9 +179,16 @@ pub enum TypedExprKind {
 
     Ident(Symbol),
 
-    BinOp(BinOp),
+    Bin {
+        op:  BinOp,
+        lhs: Box<TypedExpr>,
+        rhs: Box<TypedExpr>,
+    },
 
-    UnOp(UnOp),
+    Un {
+        op:   UnOp,
+        expr: Box<TypedExpr>,
+    },
 
     Semi(Box<TypedExpr>),
 
@@ -245,8 +252,18 @@ impl TypedExpr {
             TypedExprKind::Int(i) => write!(f, "{i}"),
             TypedExprKind::Bool(b) => write!(f, "{b}"),
             TypedExprKind::Ident(id) => write!(f, "{id}"),
-            TypedExprKind::BinOp(op) => write!(f, "{op}"),
-            TypedExprKind::UnOp(op) => write!(f, "{op}"),
+            TypedExprKind::Bin { op, lhs, rhs } => {
+                write!(f, "(({op}) ")?;
+                lhs.format_helper(f, indentation + 1)?;
+                write!(f, " ")?;
+                rhs.format_helper(f, indentation + 1)?;
+                write!(f, ")")
+            }
+            TypedExprKind::Un { op, expr } => {
+                write!(f, "(({op}) ")?;
+                expr.format_helper(f, indentation + 1)?;
+                write!(f, ")")
+            }
             TypedExprKind::Let {
                 params,
                 id,

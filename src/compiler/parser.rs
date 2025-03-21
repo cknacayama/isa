@@ -271,7 +271,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_mul(&mut self) -> ParseResult<Expr> {
-        let mut lhs = self.parse_call()?;
+        let mut lhs = self.parse_unary()?;
 
         while let Some(op) = self.next_if_map(|tk| match tk.data {
             TokenKind::Star => Some(BinOp::Mul),
@@ -279,12 +279,30 @@ impl<'a> Parser<'a> {
             TokenKind::Percent => Some(BinOp::Rem),
             _ => None,
         }) {
-            let rhs = self.parse_call()?;
+            let rhs = self.parse_unary()?;
             let span = lhs.span.union(rhs.span);
             lhs = Expr::bin_expr(op, lhs, rhs, span);
         }
 
         Ok(lhs)
+    }
+
+    fn parse_unary(&mut self) -> ParseResult<Expr> {
+        if let Some(op) =
+            self.next_if_map(|tk| UnOp::from_token(tk.data).map(|op| Spanned::new(op, tk.span)))
+        {
+            let expr = self.parse_unary()?;
+            let span = op.span.union(expr.span);
+
+            let kind = ExprKind::Un {
+                op:   op.data,
+                expr: Box::new(expr),
+            };
+
+            Ok(Expr::new(kind, span))
+        } else {
+            self.parse_call()
+        }
     }
 
     fn parse_call(&mut self) -> ParseResult<Expr> {
@@ -306,13 +324,6 @@ impl<'a> Parser<'a> {
 
     fn parse_prim(&mut self) -> ParseResult<Expr> {
         let Token { data, span } = self.next_or_eof()?;
-
-        if let Some(op) = UnOp::from_token(data) {
-            return Ok(Expr::new(ExprKind::UnOp(op), span));
-        }
-        if let Some(op) = BinOp::from_token(data) {
-            return Ok(Expr::new(ExprKind::BinOp(op), span));
-        }
 
         match data {
             TokenKind::LParen => {
@@ -354,7 +365,7 @@ impl<'a> Parser<'a> {
             TokenKind::Ident(id) => Ok(Spanned::new(
                 Ty::Named {
                     name: Self::intern_symbol(id),
-                    args: Box::from([]),
+                    args: Rc::from([]),
                 },
                 tk.span,
             )),
@@ -387,7 +398,7 @@ impl<'a> Parser<'a> {
                 params.push(self.get_type(ty.data));
             }
 
-            let args = params.into_boxed_slice();
+            let args = params.into();
             Ok(Spanned::new(Ty::Named { name, args }, span))
         } else {
             Ok(simple)

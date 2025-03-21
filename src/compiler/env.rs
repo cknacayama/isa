@@ -64,7 +64,7 @@ impl Env {
             }
             Ty::Scheme { quant, ty } => {
                 let mut res = self.gen_helper(ty);
-                for n in quant {
+                for n in quant.iter() {
                     if !res.contains(n) {
                         res.push(*n);
                     }
@@ -95,12 +95,12 @@ impl Env {
             Ty::Scheme { quant, ty } => {
                 quantifiers.extend_from_slice(quant);
                 Ty::Scheme {
-                    quant: quantifiers.into_boxed_slice(),
+                    quant: quantifiers.into(),
                     ty:    ty.clone(),
                 }
             }
             _ => Ty::Scheme {
-                quant: quantifiers.into_boxed_slice(),
+                quant: quantifiers.into(),
                 ty,
             },
         };

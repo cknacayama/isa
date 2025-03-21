@@ -170,7 +170,7 @@ impl<'a> Lexer<'a> {
             '<' => token!(Lt, '=' => Le),
             '>' => token!(Gt, '=' => Ge),
             '0'..='9' => Some(Ok(self.number())),
-            '\'' | '_' | 'a'..='z' | 'A'..'Z' => Some(Ok(self.identifier_or_keyword())),
+            '\'' | '_' | 'a'..='z' | 'A'..='Z' => Some(Ok(self.identifier_or_keyword())),
             _ => Some(Err(self.make_err(LexError::InvalidChar(c)))),
         }
     }

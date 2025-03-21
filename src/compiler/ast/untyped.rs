@@ -50,19 +50,11 @@ impl Expr {
 
     #[must_use]
     pub fn bin_expr(op: BinOp, lhs: Self, rhs: Self, span: Span) -> Self {
-        let op = Self::new(ExprKind::BinOp(op), span);
-        let lhs_span = lhs.span;
-        let c1 = Self::new(
-            ExprKind::Call {
-                callee: Box::new(op),
-                arg:    Box::new(lhs),
-            },
-            lhs_span,
-        );
         Self::new(
-            ExprKind::Call {
-                callee: Box::new(c1),
-                arg:    Box::new(rhs),
+            ExprKind::Bin {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
             },
             span,
         )
@@ -98,9 +90,16 @@ pub enum ExprKind {
 
     Ident(Symbol),
 
-    BinOp(BinOp),
+    Bin {
+        op:  BinOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+    },
 
-    UnOp(UnOp),
+    Un {
+        op:   UnOp,
+        expr: Box<Expr>,
+    },
 
     Semi(Box<Expr>),
 

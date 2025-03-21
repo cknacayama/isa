@@ -8,8 +8,8 @@ pub enum Ty {
     Bool,
     Var(u64),
     Fn { param: Rc<Ty>, ret: Rc<Ty> },
-    Scheme { quant: Box<[u64]>, ty: Rc<Ty> },
-    Named { name: Symbol, args: Box<[Rc<Ty>]> },
+    Scheme { quant: Rc<[u64]>, ty: Rc<Ty> },
+    Named { name: Symbol, args: Rc<[Rc<Ty>]> },
 }
 
 impl Display for Ty {
@@ -21,14 +21,14 @@ impl Display for Ty {
             Self::Fn { param, ret } => write!(f, "({param} -> {ret})"),
             Self::Var(var) => write!(f, "'{var}"),
             Self::Scheme { quant, ty } => {
-                for n in quant {
+                for n in quant.iter() {
                     write!(f, "'{n} ")?;
                 }
                 write!(f, ". {ty}")
             }
             Self::Named { name, args } => {
                 write!(f, "({name}")?;
-                for arg in args {
+                for arg in args.iter() {
                     write!(f, " {arg}")?;
                 }
                 write!(f, ")")
