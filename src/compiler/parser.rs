@@ -39,7 +39,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn get_symbol(&mut self, s: &str) -> Symbol {
+    fn intern_symbol(s: &str) -> Symbol {
         global::intern_symbol(s)
     }
 
@@ -199,7 +199,7 @@ impl<'a> Parser<'a> {
         let span = self.last_span;
         match self
             .peek()
-            .ok_or(Spanned::new(ParseError::ExpectedExpr, span))??
+            .ok_or_else(|| Spanned::new(ParseError::ExpectedExpr, span))??
             .data
         {
             TokenKind::KwLet => self.parse_let(),
@@ -330,7 +330,7 @@ impl<'a> Parser<'a> {
                 }
             }
             TokenKind::Integer(lit) => Ok(Expr::new(ExprKind::Int(lit.parse().unwrap()), span)),
-            TokenKind::Ident(id) => Ok(Expr::new(ExprKind::Ident(self.get_symbol(id)), span)),
+            TokenKind::Ident(id) => Ok(Expr::new(ExprKind::Ident(Self::intern_symbol(id)), span)),
             TokenKind::KwTrue => Ok(Expr::new(ExprKind::Bool(true), span)),
             TokenKind::KwFalse => Ok(Expr::new(ExprKind::Bool(false), span)),
             _ => Err(Spanned::new(ParseError::ExpectedExpr, span)),
@@ -354,7 +354,7 @@ impl<'a> Parser<'a> {
             TokenKind::KwBool => Ok(Spanned::new(Ty::Bool, tk.span)),
             TokenKind::Ident(id) => Ok(Spanned::new(
                 Ty::Named {
-                    name: self.get_symbol(id),
+                    name: Self::intern_symbol(id),
                     args: Box::from([]),
                 },
                 tk.span,
@@ -408,7 +408,7 @@ impl<'a> Parser<'a> {
 
         Ok(Spanned::new(
             Constructor {
-                id:     self.get_symbol(id),
+                id:     Self::intern_symbol(id),
                 params: params.into_boxed_slice(),
             },
             span,
@@ -423,7 +423,7 @@ impl<'a> Parser<'a> {
 
         while !self.check(TokenKind::Eq) {
             let Spanned { data, .. } = self.expect_id()?;
-            params.push(self.get_symbol(data));
+            params.push(Self::intern_symbol(data));
         }
 
         self.expect(TokenKind::Eq)?;
@@ -441,7 +441,7 @@ impl<'a> Parser<'a> {
 
         Ok(Expr::new(
             ExprKind::Type {
-                id:           self.get_symbol(id),
+                id:           Self::intern_symbol(id),
                 parameters:   params.into_boxed_slice(),
                 constructors: constructors.into_boxed_slice(),
             },
@@ -522,7 +522,7 @@ impl<'a> Parser<'a> {
                 }
             }
             TokenKind::Ident(id) => {
-                let name = self.get_symbol(id);
+                let name = Self::intern_symbol(id);
                 Ok(Pat::new(PatKind::Ident(name), span))
             }
             TokenKind::Underscore => Ok(Pat::new(PatKind::Wild, span)),
@@ -575,13 +575,12 @@ impl<'a> Parser<'a> {
 
     fn parse_let(&mut self) -> ParseResult<Expr> {
         let mut span = self.expect(TokenKind::KwLet)?;
-        let rec = self.next_if_match(TokenKind::KwRec).is_some();
         let Spanned { data: id, .. } = self.expect_id()?;
 
         let mut parametes = Vec::new();
         while !self.check(TokenKind::Eq) {
             let Spanned { data, .. } = self.expect_id()?;
-            parametes.push(self.get_symbol(data));
+            parametes.push(Self::intern_symbol(data));
         }
         self.expect(TokenKind::Eq)?;
         let expr = self.parse_expr()?;
@@ -595,11 +594,10 @@ impl<'a> Parser<'a> {
 
         Ok(Expr::new(
             ExprKind::Let {
-                rec,
                 params: parametes.into_boxed_slice(),
-                id: self.get_symbol(id),
-                expr: Box::new(expr),
-                body: body.map(Box::new),
+                id:     Self::intern_symbol(id),
+                expr:   Box::new(expr),
+                body:   body.map(Box::new),
             },
             span,
         ))
@@ -617,7 +615,7 @@ impl<'a> Parser<'a> {
 
         Ok(Expr::new(
             ExprKind::Fn {
-                param: self.get_symbol(param),
+                param: Self::intern_symbol(param),
                 expr:  Box::new(expr),
             },
             span,

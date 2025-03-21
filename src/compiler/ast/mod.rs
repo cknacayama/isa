@@ -26,19 +26,19 @@ impl BinOp {
     #[must_use]
     pub fn from_token(tk: TokenKind<'_>) -> Option<Self> {
         match tk {
-            TokenKind::Plus => Some(BinOp::Add),
-            TokenKind::Minus => Some(BinOp::Sub),
-            TokenKind::Star => Some(BinOp::Mul),
-            TokenKind::Slash => Some(BinOp::Div),
-            TokenKind::Percent => Some(BinOp::Rem),
-            TokenKind::EqEq => Some(BinOp::Eq),
-            TokenKind::BangEq => Some(BinOp::Ne),
-            TokenKind::Gt => Some(BinOp::Gt),
-            TokenKind::Ge => Some(BinOp::Ge),
-            TokenKind::Lt => Some(BinOp::Lt),
-            TokenKind::Le => Some(BinOp::Le),
-            TokenKind::KwAnd => Some(BinOp::And),
-            TokenKind::KwOr => Some(BinOp::Or),
+            TokenKind::Plus => Some(Self::Add),
+            TokenKind::Minus => Some(Self::Sub),
+            TokenKind::Star => Some(Self::Mul),
+            TokenKind::Slash => Some(Self::Div),
+            TokenKind::Percent => Some(Self::Rem),
+            TokenKind::EqEq => Some(Self::Eq),
+            TokenKind::BangEq => Some(Self::Ne),
+            TokenKind::Gt => Some(Self::Gt),
+            TokenKind::Ge => Some(Self::Ge),
+            TokenKind::Lt => Some(Self::Lt),
+            TokenKind::Le => Some(Self::Le),
+            TokenKind::KwAnd => Some(Self::And),
+            TokenKind::KwOr => Some(Self::Or),
 
             _ => None,
         }
@@ -48,19 +48,19 @@ impl BinOp {
 impl Display for BinOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BinOp::Add => write!(f, "+"),
-            BinOp::Sub => write!(f, "-"),
-            BinOp::Mul => write!(f, "*"),
-            BinOp::Div => write!(f, "/"),
-            BinOp::Rem => write!(f, "%"),
-            BinOp::Eq => write!(f, "=="),
-            BinOp::Ne => write!(f, "!="),
-            BinOp::Gt => write!(f, ">"),
-            BinOp::Ge => write!(f, ">="),
-            BinOp::Lt => write!(f, "<"),
-            BinOp::Le => write!(f, "<="),
-            BinOp::And => write!(f, "and"),
-            BinOp::Or => write!(f, "or"),
+            Self::Add => write!(f, "+"),
+            Self::Sub => write!(f, "-"),
+            Self::Mul => write!(f, "*"),
+            Self::Div => write!(f, "/"),
+            Self::Rem => write!(f, "%"),
+            Self::Eq => write!(f, "=="),
+            Self::Ne => write!(f, "!="),
+            Self::Gt => write!(f, ">"),
+            Self::Ge => write!(f, ">="),
+            Self::Lt => write!(f, "<"),
+            Self::Le => write!(f, "<="),
+            Self::And => write!(f, "and"),
+            Self::Or => write!(f, "or"),
         }
     }
 }
@@ -75,8 +75,8 @@ impl UnOp {
     #[must_use]
     pub fn from_token(tk: TokenKind<'_>) -> Option<Self> {
         match tk {
-            TokenKind::KwNot => Some(UnOp::Not),
-            TokenKind::Minus => Some(UnOp::Neg),
+            TokenKind::KwNot => Some(Self::Not),
+            TokenKind::Minus => Some(Self::Neg),
             _ => None,
         }
     }
@@ -85,8 +85,8 @@ impl UnOp {
 impl Display for UnOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnOp::Not => write!(f, "not"),
-            UnOp::Neg => write!(f, "-"),
+            Self::Not => write!(f, "not"),
+            Self::Neg => write!(f, "-"),
         }
     }
 }

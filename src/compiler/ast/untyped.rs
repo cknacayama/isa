@@ -13,7 +13,8 @@ pub struct Module {
 }
 
 impl Module {
-    #[must_use] pub fn new(name: Option<Symbol>, exprs: Box<[Expr]>, span: Span) -> Self {
+    #[must_use]
+    pub fn new(name: Option<Symbol>, exprs: Box<[Expr]>, span: Span) -> Self {
         Self { name, exprs, span }
     }
 }
@@ -48,7 +49,7 @@ impl Expr {
     }
 
     #[must_use]
-    pub fn bin_expr(op: BinOp, lhs: Expr, rhs: Expr, span: Span) -> Self {
+    pub fn bin_expr(op: BinOp, lhs: Self, rhs: Self, span: Span) -> Self {
         let op = Self::new(ExprKind::BinOp(op), span);
         let lhs_span = lhs.span;
         let c1 = Self::new(
@@ -104,7 +105,6 @@ pub enum ExprKind {
     Semi(Box<Expr>),
 
     Let {
-        rec:    bool,
         id:     Symbol,
         params: Box<[Symbol]>,
         expr:   Box<Expr>,

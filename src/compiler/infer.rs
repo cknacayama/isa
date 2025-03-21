@@ -1,3 +1,8 @@
+#![allow(
+    clippy::return_self_not_must_use,
+    reason = "Substitute trait is implemented on some &mut ref"
+)]
+
 use super::{
     ast::typed::{TypedExpr, TypedExprKind, TypedModule, TypedParam, TypedPat, TypedPatKind},
     ctx::TypeCtx,
@@ -50,7 +55,7 @@ pub trait Substitute {
     where
         Self: Sized,
     {
-        subs.into_iter()
+        subs.iter()
             .fold(self, |res, subs| res.substitute_eq(subs, env))
     }
 }
@@ -118,7 +123,7 @@ impl Substitute for &mut TypedExpr {
                 constructors.iter_mut().for_each(|c| {
                     c.params.iter_mut().for_each(|t| {
                         *t = t.clone().substitute(subs, env);
-                    })
+                    });
                 });
             }
 
@@ -176,7 +181,7 @@ impl Substitute for &mut TypedPat {
 impl Substitute for Rc<Ty> {
     fn substitute<Subs>(self, subs: &mut Subs, env: &mut TypeCtx) -> Self
     where
-        Subs: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        Subs: FnMut(&Ty, &mut TypeCtx) -> Option<Self>,
     {
         let ty = match self.as_ref() {
             Ty::Fn { param, ret } => {
@@ -206,11 +211,7 @@ impl Substitute for Rc<Ty> {
             _ => self,
         };
 
-        if let Some(new) = subs(ty.as_ref(), env) {
-            new
-        } else {
-            ty
-        }
+        subs(ty.as_ref(), env).unwrap_or(ty)
     }
 }
 
@@ -283,8 +284,14 @@ impl ConstrSet {
         self.constrs.append(&mut other.constrs);
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.constrs.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.constrs.len() == 0
     }
 
     pub fn push(&mut self, c: Constr) {

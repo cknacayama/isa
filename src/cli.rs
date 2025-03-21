@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Instant};
 
 use crate::{
     compiler::{checker::Checker, infer::Substitute, parser::Parser},
@@ -17,9 +17,14 @@ pub struct Config {
     opt:        Opt,
     input_path: PathBuf,
     bin_path:   PathBuf,
+    input:      String,
 }
 
 impl Config {
+    /// # Panics
+    ///
+    /// Will panic if any arguments are missing
+    /// Or if input file does not exist
     #[must_use]
     pub fn from_env(mut env: std::env::Args) -> Self {
         let bin_path = PathBuf::from(
@@ -31,6 +36,8 @@ impl Config {
             env.next()
                 .expect("Should have input path as second argument"),
         );
+
+        let input = std::fs::read_to_string(&input_path).expect("Should have valid path as input");
 
         let opt = env
             .next()
@@ -44,12 +51,15 @@ impl Config {
             opt,
             input_path,
             bin_path,
+            input,
         }
     }
 
     pub fn run(self) {
-        let input =
-            std::fs::read_to_string(self.input_path).expect("Should have valid path as input");
+        let input = self.input;
+
+        let start = Instant::now();
+
         let mut parser = Parser::from_input(&input);
 
         let modules = match parser.parse_all() {
@@ -74,6 +84,8 @@ impl Config {
             module.substitute_many(&subs, checker.type_env_mut());
         }
 
+        let duration = start.elapsed();
+
         for module in modules {
             match module.name {
                 Some(name) => println!("module {name}"),
@@ -83,5 +95,7 @@ impl Config {
                 println!("    val {id}: {ty};");
             }
         }
+
+        println!("ran in {duration:?}");
     }
 }

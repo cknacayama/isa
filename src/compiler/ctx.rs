@@ -32,7 +32,8 @@ impl TypeCtx {
         }
     }
 
-    #[must_use] pub fn get_constructor(&self, name: &Symbol) -> Option<&Rc<Ty>> {
+    #[must_use]
+    pub fn get_constructor(&self, name: &Symbol) -> Option<&Rc<Ty>> {
         self.constructors.get(name)
     }
 
@@ -46,16 +47,22 @@ impl TypeCtx {
 
     #[must_use]
     pub fn get_unit(&self) -> Rc<Ty> {
-        self.types.get(&Ty::Unit).unwrap().clone()
+        self.types
+            .get(&Ty::Unit)
+            .map_or_else(|| unreachable!(), Rc::clone)
     }
 
     #[must_use]
     pub fn get_int(&self) -> Rc<Ty> {
-        self.types.get(&Ty::Int).unwrap().clone()
+        self.types
+            .get(&Ty::Int)
+            .map_or_else(|| unreachable!(), Rc::clone)
     }
 
     #[must_use]
     pub fn get_bool(&self) -> Rc<Ty> {
-        self.types.get(&Ty::Bool).unwrap().clone()
+        self.types
+            .get(&Ty::Bool)
+            .map_or_else(|| unreachable!(), Rc::clone)
     }
 }

@@ -26,11 +26,11 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn peek(&mut self) -> Option<char> {
+    fn peek(&self) -> Option<char> {
         self.chars.clone().next()
     }
 
-    fn peek_next(&mut self) -> Option<char> {
+    fn peek_next(&self) -> Option<char> {
         let mut iter = self.chars.clone();
         iter.next();
         iter.next()
@@ -58,7 +58,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn check_next<P>(&mut self, pred: P) -> bool
+    fn check_next<P>(&self, pred: P) -> bool
     where
         P: FnOnce(char) -> bool,
     {
@@ -116,10 +116,10 @@ impl<'a> Lexer<'a> {
     fn identifier_or_keyword(&mut self) -> Token<'a> {
         self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_');
         let s = &self.input[self.start..self.cur];
-        match TokenKind::keyword(s) {
-            Some(kw) => self.make_token(kw),
-            None => self.make_token(TokenKind::Ident(s)),
-        }
+        TokenKind::keyword(s).map_or_else(
+            || self.make_token(TokenKind::Ident(s)),
+            |kw| self.make_token(kw),
+        )
     }
 
     pub fn next_token(&mut self) -> Option<LexResult<Token<'a>>> {

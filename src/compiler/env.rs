@@ -23,7 +23,7 @@ impl Env {
     }
 
     pub fn insert(&mut self, id: Symbol, ty: Rc<Ty>) -> Option<Rc<Ty>> {
-        self.env.last_mut().unwrap().insert(id, ty)
+        self.env.last_mut().and_then(|env| env.insert(id, ty))
     }
 
     pub fn push_scope(&mut self) {

@@ -11,7 +11,7 @@ pub enum LexError {
 impl Display for LexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LexError::InvalidChar(c) => write!(f, "invalid character '{c}'"),
+            Self::InvalidChar(c) => write!(f, "invalid character '{c}'"),
         }
     }
 }
@@ -39,13 +39,13 @@ impl From<LexError> for ParseError {
 impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::LexError(lex_error) => lex_error.fmt(f),
-            ParseError::UnexpectedEof => write!(f, "unexpected end-of-file"),
-            ParseError::ExpectedToken(token_kind) => write!(f, "expected '{token_kind}'"),
-            ParseError::ExpectedExpr => write!(f, "expected expression"),
-            ParseError::ExpectedId => write!(f, "expected identifier"),
-            ParseError::ExpectedType => write!(f, "expected type"),
-            ParseError::ExpectedPattern => write!(f, "expected pattern"),
+            Self::LexError(lex_error) => lex_error.fmt(f),
+            Self::UnexpectedEof => write!(f, "unexpected end-of-file"),
+            Self::ExpectedToken(token_kind) => write!(f, "expected '{token_kind}'"),
+            Self::ExpectedExpr => write!(f, "expected expression"),
+            Self::ExpectedId => write!(f, "expected identifier"),
+            Self::ExpectedType => write!(f, "expected type"),
+            Self::ExpectedPattern => write!(f, "expected pattern"),
         }
     }
 }
@@ -62,11 +62,11 @@ pub enum InferError {
 impl Display for InferError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            InferError::Uninferable(constr) => {
+            Self::Uninferable(constr) => {
                 write!(f, "expected '{}', got '{}'", constr.lhs(), constr.rhs())
             }
-            InferError::Unbound(id) => write!(f, "unbound identifier: {id}"),
-            InferError::Kind(kind) => write!(f, "kind error: {kind}"),
+            Self::Unbound(id) => write!(f, "unbound identifier: {id}"),
+            Self::Kind(kind) => write!(f, "kind error: {kind}"),
         }
     }
 }

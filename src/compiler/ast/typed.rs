@@ -16,7 +16,8 @@ pub struct TypedModule {
 }
 
 impl TypedModule {
-    #[must_use] pub fn new(
+    #[must_use]
+    pub fn new(
         name: Option<Symbol>,
         declared: FxHashMap<Symbol, Rc<Ty>>,
         exprs: Box<[TypedExpr]>,
@@ -78,7 +79,7 @@ impl TypedPat {
         Self { kind, span, ty }
     }
 
-    fn format_helper(&self, f: &mut impl Write, _indent: usize) -> std::fmt::Result {
+    fn format_helper(&self, f: &mut impl Write) -> std::fmt::Result {
         match &self.kind {
             TypedPatKind::Wild => write!(f, "_"),
             TypedPatKind::Ident(id) => write!(f, "{id}"),
@@ -86,10 +87,10 @@ impl TypedPat {
                 let mut iter = typed_pats.iter();
                 let first = iter.next().unwrap();
                 write!(f, "(")?;
-                first.format_helper(f, _indent + 1)?;
+                first.format_helper(f)?;
                 for pat in iter {
                     write!(f, " | ")?;
-                    pat.format_helper(f, _indent + 1)?;
+                    pat.format_helper(f)?;
                 }
                 write!(f, ")")
             }
@@ -100,7 +101,7 @@ impl TypedPat {
                 write!(f, "({name}")?;
                 for pat in args {
                     write!(f, " ")?;
-                    pat.format_helper(f, _indent + 1)?;
+                    pat.format_helper(f)?;
                 }
                 write!(f, ")")
             }
@@ -131,12 +132,13 @@ pub struct TypedMatchArm {
 }
 
 impl TypedMatchArm {
-    #[must_use] pub fn new(pat: TypedPat, expr: TypedExpr) -> Self {
+    #[must_use]
+    pub fn new(pat: TypedPat, expr: TypedExpr) -> Self {
         Self { pat, expr }
     }
 
     fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
-        self.pat.format_helper(f, indentation)?;
+        self.pat.format_helper(f)?;
         write!(f, " -> ")?;
         self.expr.format_helper(f, indentation)?;
         writeln!(f, ",")
@@ -150,11 +152,13 @@ pub struct TypedParam {
 }
 
 impl TypedParam {
-    #[must_use] pub fn new(name: Symbol, ty: Rc<Ty>) -> Self {
+    #[must_use]
+    pub fn new(name: Symbol, ty: Rc<Ty>) -> Self {
         Self { name, ty }
     }
 
-    #[must_use] pub fn ty(&self) -> &Rc<Ty> {
+    #[must_use]
+    pub fn ty(&self) -> &Rc<Ty> {
         &self.ty
     }
 }
@@ -182,7 +186,6 @@ pub enum TypedExprKind {
     Semi(Box<TypedExpr>),
 
     Let {
-        rec:    bool,
         id:     Symbol,
         params: Box<[TypedParam]>,
         expr:   Box<TypedExpr>,
@@ -226,7 +229,8 @@ impl TypedExpr {
     #[must_use]
     pub fn format(&self) -> String {
         let mut out = String::new();
-        self.format_helper(&mut out, 1).unwrap();
+        // String formatting is infallible
+        let _ = self.format_helper(&mut out, 1);
         out
     }
 
@@ -244,13 +248,12 @@ impl TypedExpr {
             TypedExprKind::BinOp(op) => write!(f, "{op}"),
             TypedExprKind::UnOp(op) => write!(f, "{op}"),
             TypedExprKind::Let {
-                rec,
                 params,
                 id,
                 expr,
                 body,
             } => {
-                write!(f, "(let {}{id} ", if *rec { " rec" } else { "" })?;
+                write!(f, "(let {id} ")?;
                 for p in params {
                     write!(f, "{p} ")?;
                 }

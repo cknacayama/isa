@@ -189,12 +189,12 @@ impl Checker {
 
     fn check_let_value(
         &mut self,
-        rec: bool,
         id: Symbol,
         params: Box<[Symbol]>,
         expr: Expr,
     ) -> InferResult<(TypedExpr, Box<[TypedParam]>, ConstrSet)> {
         self.env.push_scope();
+        let rec = !params.is_empty();
         let mut c = ConstrSet::new();
         let mut typed_params = Vec::new();
         for p in params {
@@ -222,14 +222,13 @@ impl Checker {
 
     fn check_let(
         &mut self,
-        rec: bool,
         id: Symbol,
         params: Box<[Symbol]>,
         expr: Expr,
         body: Option<Expr>,
         span: Span,
     ) -> InferResult<(TypedExpr, ConstrSet)> {
-        let (expr, params, mut c1) = self.check_let_value(rec, id, params, expr)?;
+        let (expr, params, mut c1) = self.check_let_value(id, params, expr)?;
 
         let s = self.unify(c1.clone())?;
         let u1 = expr.ty.clone().substitute_many(&s, &mut self.type_env);
@@ -251,7 +250,6 @@ impl Checker {
         };
 
         let kind = TypedExprKind::Let {
-            rec: false,
             id,
             params,
             expr: Box::new(expr),
@@ -512,7 +510,7 @@ impl Checker {
         self.cur_module = module.name;
 
         let (exprs, mut cset) = self.check_many(module.exprs)?;
-        let declared = self.env.pop_scope().unwrap();
+        let declared = self.env.pop_scope().unwrap_or_else(|| unreachable!());
         let mut typed =
             TypedModule::new(module.name, declared, exprs.into_boxed_slice(), module.span);
 
@@ -617,12 +615,11 @@ impl Checker {
             ExprKind::Fn { param, expr } => self.check_fn(param, *expr, span),
             ExprKind::Call { callee, arg } => self.check_call(*callee, *arg, span),
             ExprKind::Let {
-                rec,
                 id,
                 params,
                 expr,
                 body,
-            } => self.check_let(rec, id, params, *expr, body.map(|body| *body), span),
+            } => self.check_let(id, params, *expr, body.map(|body| *body), span),
             ExprKind::Semi(expr) => {
                 let (mut expr, cset) = self.check(*expr)?;
                 expr.ty = self.get_unit();
