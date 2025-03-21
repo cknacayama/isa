@@ -150,11 +150,10 @@ impl<'a> Parser<'a> {
             None => None,
         };
 
-        let mut exprs = Vec::new();
+        let mut exprs = vec![self.parse_semi_expr()?];
+
         while !self.check(TokenKind::KwModule) {
-            let Some(expr) = self.parse() else {
-                break;
-            };
+            let Some(expr) = self.parse() else { break };
             exprs.push(expr?);
         }
 
@@ -430,6 +429,7 @@ impl<'a> Parser<'a> {
 
         let mut constructors = Vec::new();
         let mut span = span;
+        self.next_if_match(TokenKind::Bar);
         loop {
             let c = self.parse_constructor()?;
             constructors.push(c.data);

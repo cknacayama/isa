@@ -114,7 +114,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn identifier_or_keyword(&mut self) -> Token<'a> {
-        self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_');
+        self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_' || c == '\'');
         let s = &self.input[self.start..self.cur];
         TokenKind::keyword(s).map_or_else(
             || self.make_token(TokenKind::Ident(s)),
@@ -170,7 +170,7 @@ impl<'a> Lexer<'a> {
             '<' => token!(Lt, '=' => Le),
             '>' => token!(Gt, '=' => Ge),
             '0'..='9' => Some(Ok(self.number())),
-            c if c.is_ascii_alphabetic() || c == '_' => Some(Ok(self.identifier_or_keyword())),
+            '\'' | '_' | 'a'..='z' | 'A'..'Z' => Some(Ok(self.identifier_or_keyword())),
             _ => Some(Err(self.make_err(LexError::InvalidChar(c)))),
         }
     }
