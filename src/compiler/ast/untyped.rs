@@ -1,126 +1,45 @@
-use std::fmt::Debug;
+use rustc_hash::FxHashMap;
 
-use super::{BinOp, Constructor, UnOp};
+use super::{Expr, ExprKind, MatchArm, Module, Param, Pat, PatKind};
 use crate::global::Symbol;
-use crate::span::{Span, Spanned};
+use crate::span::Span;
 
-#[derive(Clone)]
-pub struct Module {
-    pub name:  Option<Symbol>,
-    pub exprs: Box<[Expr]>,
-    pub span:  Span,
-}
+pub type UntypedModule = Module<()>;
+pub type UntypedExpr = Expr<()>;
+pub type UntypedPatKind = PatKind<()>;
+pub type UntypedPat = Pat<()>;
+pub type UntypedExprKind = ExprKind<()>;
+pub type UntypedMatchArm = MatchArm<()>;
+pub type UntypedParam = Param<()>;
 
-impl Module {
+impl UntypedModule {
+    #[allow(
+        clippy::zero_sized_map_values,
+        reason = "Generic Type requires HashMap"
+    )]
     #[must_use]
-    pub const fn new(name: Option<Symbol>, exprs: Box<[Expr]>, span: Span) -> Self {
-        Self { name, exprs, span }
+    pub fn untyped(name: Option<Symbol>, exprs: Box<[UntypedExpr]>, span: Span) -> Self {
+        Self::new(name, FxHashMap::default(), exprs, span)
     }
 }
 
-impl Debug for Module {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Module")
-            .field("name", &self.name)
-            .field("exprs", &self.exprs)
-            .finish_non_exhaustive()
-    }
-}
-
-#[derive(Clone)]
-pub struct Expr {
-    pub kind: ExprKind,
-    pub span: Span,
-}
-
-impl Debug for Expr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Expr")
-            .field("kind", &self.kind)
-            .finish_non_exhaustive()
-    }
-}
-
-impl Expr {
+impl UntypedExpr {
     #[must_use]
-    pub const fn new(kind: ExprKind, span: Span) -> Self {
-        Self { kind, span }
+    pub const fn untyped(kind: UntypedExprKind, span: Span) -> Self {
+        Self::new(kind, span, ())
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum PatKind {
-    Wild,
-
-    Ident(Symbol),
-
-    Or(Box<[Pat]>),
-
-    Unit,
-
-    Int(i64),
-
-    Bool(bool),
-
-    Type { name: Symbol, args: Box<[Pat]> },
+impl UntypedPat {
+    #[must_use]
+    pub const fn untyped(kind: UntypedPatKind, span: Span) -> Self {
+        Self::new(kind, span, ())
+    }
 }
 
-pub type Pat = Spanned<PatKind>;
-
-#[derive(Debug, Clone)]
-pub enum ExprKind {
-    Unit,
-
-    Int(i64),
-
-    Bool(bool),
-
-    Ident(Symbol),
-
-    Bin {
-        op:  BinOp,
-        lhs: Box<Expr>,
-        rhs: Box<Expr>,
-    },
-
-    Un {
-        op:   UnOp,
-        expr: Box<Expr>,
-    },
-
-    Semi(Box<Expr>),
-
-    Let {
-        id:     Symbol,
-        params: Box<[Symbol]>,
-        expr:   Box<Expr>,
-        body:   Option<Box<Expr>>,
-    },
-
-    Type {
-        id:           Symbol,
-        parameters:   Box<[Symbol]>,
-        constructors: Box<[Constructor]>,
-    },
-
-    Fn {
-        param: Symbol,
-        expr:  Box<Expr>,
-    },
-
-    Match {
-        expr: Box<Expr>,
-        arms: Box<[(Pat, Expr)]>,
-    },
-
-    If {
-        cond:      Box<Expr>,
-        then:      Box<Expr>,
-        otherwise: Box<Expr>,
-    },
-
-    Call {
-        callee: Box<Expr>,
-        arg:    Box<Expr>,
-    },
+impl UntypedParam {
+    #[must_use]
+    pub const fn untyped(name: Symbol) -> Self {
+        Self::new(name, ())
+    }
 }
