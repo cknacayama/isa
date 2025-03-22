@@ -27,6 +27,7 @@ pub struct TypeCtx {
     builtin:      BuiltinTypes,
     types:        FxHashSet<Rc<Ty>>,
     constructors: FxHashMap<Symbol, Rc<Ty>>,
+    id_generator: u64,
 }
 
 impl TypeCtx {
@@ -43,6 +44,17 @@ impl TypeCtx {
     #[must_use]
     pub fn get_constructor(&self, name: &Symbol) -> Option<&Rc<Ty>> {
         self.constructors.get(name)
+    }
+
+    pub const fn gen_id(&mut self) -> u64 {
+        let cur = self.id_generator;
+        self.id_generator += 1;
+        cur
+    }
+
+    pub fn gen_type_var(&mut self) -> Rc<Ty> {
+        let id = self.gen_id();
+        self.intern_type(Ty::Var(id))
     }
 
     pub fn insert_constructor(&mut self, name: Symbol, ty: Rc<Ty>) {

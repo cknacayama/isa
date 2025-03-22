@@ -17,7 +17,6 @@ use crate::span::{Span, Spanned};
 pub struct Checker {
     env:            Env,
     type_ctx:       TypeCtx,
-    cur_var:        u64,
     cur_module:     Option<Symbol>,
     declared_types: Vec<Symbol>,
 }
@@ -33,7 +32,6 @@ impl Checker {
         Self {
             env:            Env::default(),
             type_ctx:       type_env,
-            cur_var:        0,
             cur_module:     None,
             declared_types: Vec::new(),
         }
@@ -63,15 +61,12 @@ impl Checker {
         self.type_ctx.intern_type(ty)
     }
 
-    const fn new_type_variable_id(&mut self) -> u64 {
-        let cur = self.cur_var;
-        self.cur_var += 1;
-        cur
+    const fn gen_id(&mut self) -> u64 {
+        self.type_ctx.gen_id()
     }
 
-    fn new_type_variable(&mut self) -> Rc<Ty> {
-        let id = self.new_type_variable_id();
-        self.intern_type(Ty::Var(id))
+    fn gen_type_var(&mut self) -> Rc<Ty> {
+        self.type_ctx.gen_type_var()
     }
 
     fn get_int(&self) -> Rc<Ty> {
@@ -97,7 +92,7 @@ impl Checker {
         let mut then = self.check(then)?;
         let mut otherwise = self.check(otherwise)?;
 
-        let var = self.new_type_variable();
+        let var = self.gen_type_var();
 
         let c_cond = Constr::new(cond.ty.clone(), self.get_bool(), cond.span);
         let c_then = Constr::new(var.clone(), then.ty.clone(), then.span);
@@ -122,7 +117,7 @@ impl Checker {
     fn check_fn(&mut self, param: Symbol, expr: Expr, span: Span) -> InferResult<TypedExpr> {
         self.env.push_scope();
 
-        let var = self.new_type_variable();
+        let var = self.gen_type_var();
         self.insert_variable(param, var);
 
         let expr = self.check(expr)?;
@@ -147,7 +142,7 @@ impl Checker {
         let mut callee = self.check(callee)?;
         let mut arg = self.check(arg)?;
 
-        let var = self.new_type_variable();
+        let var = self.gen_type_var();
         let fn_ty = self.intern_type(Ty::Fn {
             param: arg.ty.clone(),
             ret:   var.clone(),
@@ -189,7 +184,7 @@ impl Checker {
         let mut typed_params = params
             .into_iter()
             .map(|p| {
-                let var = self.new_type_variable();
+                let var = self.gen_type_var();
                 self.insert_variable(p, var.clone());
                 TypedParam::new(p, var)
             })
@@ -198,7 +193,7 @@ impl Checker {
         let expr = if typed_params.is_empty() {
             self.check(expr)?
         } else {
-            let var_id = self.new_type_variable_id();
+            let var_id = self.gen_id();
             let var = self.intern_type(Ty::Var(var_id));
             self.insert_variable(id, var);
 
@@ -297,7 +292,7 @@ impl Checker {
         let mut quant = Vec::new();
 
         for param in parameters {
-            let id = self.new_type_variable_id();
+            let id = self.gen_id();
             let param = self.intern_type(Ty::Named {
                 name: param,
                 args: Rc::from([]),
@@ -333,7 +328,7 @@ impl Checker {
     fn check_pat(&mut self, Pat { data, span }: Pat) -> InferResult<TypedPat> {
         match data {
             PatKind::Wild => {
-                let var = self.new_type_variable();
+                let var = self.gen_type_var();
                 Ok(TypedPat::new(TypedPatKind::Wild, span, var))
             }
             PatKind::Ident(name) => {
@@ -349,7 +344,7 @@ impl Checker {
                         Err(Spanned::new(InferError::Kind(ty), span))
                     }
                 } else {
-                    let var = self.new_type_variable();
+                    let var = self.gen_type_var();
                     self.insert_variable(name, var.clone());
                     Ok(TypedPat::new(TypedPatKind::Ident(name), span, var))
                 }
@@ -358,7 +353,7 @@ impl Checker {
                 let mut patterns = Vec::new();
                 let mut c = ConstrSet::new();
 
-                let var = self.new_type_variable();
+                let var = self.gen_type_var();
                 for pat in spanneds {
                     let pat = self.check_pat(pat)?;
                     c.push(Constr::new(pat.ty.clone(), var.clone(), pat.span));
@@ -411,7 +406,7 @@ impl Checker {
                     Ok(TypedPat::new(kind, span, ty))
                 }
                 None if args.is_empty() => {
-                    let var = self.new_type_variable();
+                    let var = self.gen_type_var();
                     self.insert_variable(name, var.clone());
                     Ok(TypedPat::new(TypedPatKind::Ident(name), span, var))
                 }
@@ -439,7 +434,7 @@ impl Checker {
     ) -> InferResult<TypedExpr> {
         let mut expr = self.check(expr)?;
 
-        let var = self.new_type_variable();
+        let var = self.gen_type_var();
         let mut typed_arms = Vec::new();
 
         let mut c = ConstrSet::new();
@@ -552,7 +547,7 @@ impl Checker {
         match ty.as_ref() {
             Ty::Scheme { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
                 let old = quant;
-                let new = self.new_type_variable();
+                let new = self.gen_type_var();
                 let subs = Subs::new(old, new);
                 ty.substitute_eq(&subs, &mut self.type_ctx)
             }),
