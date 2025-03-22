@@ -1,16 +1,16 @@
 use super::{
     ast::{
+        BinOp, Constructor, UnOp,
         typed::{
             TypedExpr, TypedExprKind, TypedMatchArm, TypedModule, TypedParam, TypedPat,
             TypedPatKind,
         },
         untyped::{Expr, ExprKind, Module, Pat, PatKind},
-        BinOp, Constructor, UnOp,
     },
     ctx::TypeCtx,
     env::Env,
     error::InferError,
-    infer::{Constr, ConstrSet, InferResult, Subs, Substitute},
+    infer::{Constr, ConstrSet, InferResult, Subs, Substitute, unify},
     types::Ty,
 };
 use crate::{
@@ -45,35 +45,24 @@ impl Checker {
         }
     }
 
-    #[must_use]
-    pub fn env(&self) -> &Env {
-        &self.env
-    }
-
-    #[must_use]
-    pub fn type_env(&self) -> &TypeCtx {
-        &self.type_ctx
-    }
-
-    pub fn type_env_mut(&mut self) -> &mut TypeCtx {
-        &mut self.type_ctx
-    }
-
-    pub fn unify(&mut self, mut constr: ConstrSet) -> InferResult<Vec<Subs>> {
-        let subs = constr.unify(&mut self.type_ctx)?;
-        self.env = self.env.clone().substitute_many(&subs, &mut self.type_ctx);
-        Ok(subs)
+    fn unify<C>(&mut self, constr: C) -> InferResult<Vec<Subs>>
+    where
+        ConstrSet: From<C>,
+    {
+        unify(constr, &mut self.type_ctx).inspect(|subs| {
+            self.env.substitute_many(subs, &mut self.type_ctx);
+        })
     }
 
     fn insert_variable(&mut self, id: Symbol, ty: Rc<Ty>) -> Option<Rc<Ty>> {
         self.env.insert(id, ty)
     }
 
-    fn get_variable(&mut self, id: &Symbol) -> InferResult<Rc<Ty>> {
+    fn get_variable(&self, id: Symbol) -> InferResult<Rc<Ty>> {
         self.env
-            .get(id)
-            .ok_or_else(|| Spanned::new(InferError::Unbound(*id), Span::default()))
+            .get(&id)
             .cloned()
+            .ok_or_else(|| Spanned::new(InferError::Unbound(id), Span::default()))
     }
 
     fn intern_type(&mut self, ty: Ty) -> Rc<Ty> {
@@ -120,9 +109,7 @@ impl Checker {
         let c_then = Constr::new(var.clone(), then.ty.clone(), then.span);
         let c_otherwise = Constr::new(var.clone(), otherwise.ty.clone(), otherwise.span);
 
-        let cset = ConstrSet::from([c_cond, c_then, c_otherwise]);
-
-        let subs = self.unify(cset)?;
+        let subs = self.unify([c_cond, c_then, c_otherwise])?;
 
         cond.substitute_many(&subs, &mut self.type_ctx);
         then.substitute_many(&subs, &mut self.type_ctx);
@@ -140,17 +127,20 @@ impl Checker {
 
     fn check_fn(&mut self, param: Symbol, expr: Expr, span: Span) -> InferResult<TypedExpr> {
         self.env.push_scope();
+
         let var = self.new_type_variable();
-        self.insert_variable(param, var.clone());
+        self.insert_variable(param, var);
+
         let expr = self.check(expr)?;
-        let var = self.get_variable(&param)?;
+        let var = self.get_variable(param)?;
+
         self.env.pop_scope();
 
-        let ty = Ty::Fn {
+        let ty = self.intern_type(Ty::Fn {
             param: var.clone(),
             ret:   expr.ty.clone(),
-        };
-        let ty = self.intern_type(ty);
+        });
+
         let kind = TypedExprKind::Fn {
             param: TypedParam::new(param, var),
             expr:  Box::new(expr),
@@ -164,18 +154,15 @@ impl Checker {
         let mut arg = self.check(arg)?;
 
         let var = self.new_type_variable();
-        let fn_ty = Ty::Fn {
+        let fn_ty = self.intern_type(Ty::Fn {
             param: arg.ty.clone(),
             ret:   var.clone(),
-        };
-        let fn_ty = self.intern_type(fn_ty);
-        let constr = Constr::new(callee.ty.clone(), fn_ty, span);
-        let cset = ConstrSet::from([constr]);
-
-        let subs = self.unify(cset)?;
+        });
+        let subs = self.unify(Constr::new(callee.ty.clone(), fn_ty, span))?;
 
         callee.substitute_many(&subs, &mut self.type_ctx);
         arg.substitute_many(&subs, &mut self.type_ctx);
+
         let var = var.substitute_many(&subs, &mut self.type_ctx);
 
         let kind = TypedExprKind::Call {
@@ -204,36 +191,39 @@ impl Checker {
         expr: Expr,
     ) -> InferResult<(TypedExpr, Box<[TypedParam]>)> {
         self.env.push_scope();
-        let rec = !params.is_empty();
-        let mut c = ConstrSet::new();
-        let mut typed_params = Vec::new();
-        for p in params {
-            let var = self.new_type_variable();
-            self.insert_variable(p, var.clone());
-            typed_params.push(TypedParam::new(p, var));
-        }
-        let mut expr = if rec {
-            let var = self.new_type_variable();
-            self.insert_variable(id, var.clone());
-            let mut expr = self.check(expr)?;
-            for p in typed_params.iter_mut() {
-                p.ty = self.get_variable(&p.name)?;
-            }
-            expr.ty = self.function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
-            let constr = Constr::new(expr.ty.clone(), var, expr.span);
-            c.push(constr);
-            expr
-        } else {
-            self.check(expr)?
-        };
-        let subs = self.unify(c)?;
-        self.env.pop_scope();
 
-        for p in typed_params.iter_mut() {
-            p.substitute_many(&subs, &mut self.type_ctx);
-        }
-        expr.substitute_many(&subs, &mut self.type_ctx);
-        Ok((expr, typed_params.into_boxed_slice()))
+        let mut typed_params = params
+            .into_iter()
+            .map(|p| {
+                let var = self.new_type_variable();
+                self.insert_variable(p, var.clone());
+                TypedParam::new(p, var)
+            })
+            .collect::<Box<_>>();
+
+        let expr = if typed_params.is_empty() {
+            self.check(expr)?
+        } else {
+            let var_id = self.new_type_variable_id();
+            let var = self.intern_type(Ty::Var(var_id));
+            self.insert_variable(id, var.clone());
+
+            let mut expr = self.check(expr)?;
+
+            for p in &mut typed_params {
+                p.ty = self.get_variable(p.name)?;
+            }
+
+            expr.ty = self.function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
+
+            let subs = Subs::new(var_id, expr.ty.clone());
+
+            expr.substitute_eq(&subs, &mut self.type_ctx);
+            expr
+        };
+
+        self.env.pop_scope();
+        Ok((expr, typed_params))
     }
 
     fn check_let(
@@ -246,12 +236,10 @@ impl Checker {
     ) -> InferResult<TypedExpr> {
         let (expr, params) = self.check_let_value(id, params, expr)?;
 
+        let u1 = self.env.generalize(expr.ty.clone(), &mut self.type_ctx);
         let mut env1 = self.env.clone();
-
-        let u1 = env1.generalize(expr.ty.clone(), &mut self.type_ctx);
-
         std::mem::swap(&mut self.env, &mut env1);
-        self.insert_variable(id, u1.clone());
+        self.insert_variable(id, u1);
 
         let (body, ty) = match body {
             Some(body) => {
@@ -276,12 +264,21 @@ impl Checker {
     fn check_constructor(
         &mut self,
         constructor: &mut Constructor,
-        subs: &[Subs],
+        subs: &[(Rc<Ty>, Rc<Ty>)],
         quant: Rc<[u64]>,
         mut ret: Rc<Ty>,
     ) {
         for param in constructor.params.iter_mut().rev() {
-            *param = param.clone().substitute_many(subs, &mut self.type_ctx);
+            *param = param.clone().substitute(
+                &mut |ty, _| {
+                    subs.iter().find_map(|(old, new)| {
+                        let ty = std::ptr::from_ref(ty);
+                        let old = Rc::as_ptr(old);
+                        if ty == old { Some(new.clone()) } else { None }
+                    })
+                },
+                &mut self.type_ctx,
+            );
             ret = self.intern_type(Ty::Fn {
                 param: param.clone(),
                 ret,
@@ -307,12 +304,12 @@ impl Checker {
 
         for param in parameters {
             let id = self.new_type_variable_id();
-            let new = self.intern_type(Ty::Var(id));
             let param = self.intern_type(Ty::Named {
                 name: param,
                 args: Rc::from([]),
             });
-            subs.push(Subs::new(param, new.clone()));
+            let new = self.intern_type(Ty::Var(id));
+            subs.push((param, new.clone()));
             args.push(new);
             quant.push(id);
         }
@@ -335,9 +332,8 @@ impl Checker {
             parameters: args.into_boxed_slice(),
             constructors,
         };
-        let expr = TypedExpr::new(kind, span, self.get_unit());
 
-        expr
+        TypedExpr::new(kind, span, self.get_unit())
     }
 
     fn check_pat(&mut self, Pat { data, span }: Pat) -> InferResult<TypedPat> {
@@ -377,7 +373,7 @@ impl Checker {
 
                 let subs = self.unify(c)?;
 
-                for p in patterns.iter_mut() {
+                for p in &mut patterns {
                     p.substitute_many(&subs, &mut self.type_ctx);
                 }
                 let var = var.substitute_many(&subs, &mut self.type_ctx);
@@ -408,8 +404,7 @@ impl Checker {
                     }
 
                     let subs = self.unify(c)?;
-
-                    for arg in typed_args.iter_mut() {
+                    for arg in &mut typed_args {
                         arg.substitute_many(&subs, &mut self.type_ctx);
                     }
                     ty = ty.substitute_many(&subs, &mut self.type_ctx);
@@ -453,19 +448,19 @@ impl Checker {
         let var = self.new_type_variable();
         let mut typed_arms = Vec::new();
 
-        let mut c1 = ConstrSet::new();
+        let mut c = ConstrSet::new();
 
         for (pat, aexpr) in arms {
             let (pat, aexpr) = self.check_match_arm(pat, aexpr)?;
-            c1.push(Constr::new(aexpr.ty.clone(), var.clone(), aexpr.span));
-            c1.push(Constr::new(expr.ty.clone(), pat.ty.clone(), expr.span));
+            c.push(Constr::new(aexpr.ty.clone(), var.clone(), aexpr.span));
+            c.push(Constr::new(expr.ty.clone(), pat.ty.clone(), expr.span));
             typed_arms.push(TypedMatchArm::new(pat, aexpr));
         }
 
-        let subs = self.unify(c1)?;
+        let subs = self.unify(c)?;
 
         expr.substitute_many(&subs, &mut self.type_ctx);
-        for arm in typed_arms.iter_mut() {
+        for arm in &mut typed_arms {
             arm.pat.substitute_many(&subs, &mut self.type_ctx);
             arm.expr.substitute_many(&subs, &mut self.type_ctx);
         }
@@ -491,8 +486,7 @@ impl Checker {
                 let c1 = Constr::new(int.clone(), lhs.ty.clone(), lhs.span);
                 let c2 = Constr::new(int.clone(), rhs.ty.clone(), rhs.span);
 
-                let cset = ConstrSet::from([c1, c2]);
-                let subs = self.unify(cset)?;
+                let subs = self.unify([c1, c2])?;
 
                 lhs.substitute_many(&subs, &mut self.type_ctx);
                 rhs.substitute_many(&subs, &mut self.type_ctx);
@@ -509,8 +503,7 @@ impl Checker {
                 let c1 = Constr::new(int.clone(), lhs.ty.clone(), lhs.span);
                 let c2 = Constr::new(int, rhs.ty.clone(), rhs.span);
 
-                let cset = ConstrSet::from([c1, c2]);
-                let subs = self.unify(cset)?;
+                let subs = self.unify([c1, c2])?;
 
                 lhs.substitute_many(&subs, &mut self.type_ctx);
                 rhs.substitute_many(&subs, &mut self.type_ctx);
@@ -527,8 +520,7 @@ impl Checker {
                 let c1 = Constr::new(bol.clone(), lhs.ty.clone(), lhs.span);
                 let c2 = Constr::new(bol.clone(), rhs.ty.clone(), rhs.span);
 
-                let cset = ConstrSet::from([c1, c2]);
-                let subs = self.unify(cset)?;
+                let subs = self.unify([c1, c2])?;
 
                 lhs.substitute_many(&subs, &mut self.type_ctx);
                 rhs.substitute_many(&subs, &mut self.type_ctx);
@@ -551,9 +543,7 @@ impl Checker {
             UnOp::Not => self.get_bool(),
             UnOp::Neg => self.get_int(),
         };
-        let cset = ConstrSet::from([Constr::new(ty.clone(), expr.ty.clone(), expr.span)]);
-
-        let subs = self.unify(cset)?;
+        let subs = self.unify(Constr::new(ty.clone(), expr.ty.clone(), expr.span))?;
         expr.substitute_many(&subs, &mut self.type_ctx);
 
         let kind = TypedExprKind::Un {
@@ -567,9 +557,9 @@ impl Checker {
     fn instantiate(&mut self, ty: Rc<Ty>) -> Rc<Ty> {
         match ty.as_ref() {
             Ty::Scheme { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
-                let var = self.new_type_variable();
-                let old = self.intern_type(Ty::Var(quant));
-                let subs = Subs::new(old, var);
+                let old = quant;
+                let new = self.new_type_variable();
+                let subs = Subs::new(old, new);
                 ty.substitute_eq(&subs, &mut self.type_ctx)
             }),
             _ => ty,
@@ -580,14 +570,10 @@ impl Checker {
     where
         I: IntoIterator<Item = Module>,
     {
-        let mut typed_modules = Vec::new();
-
-        for module in modules {
-            let module = self.check_module(module)?;
-            typed_modules.push(module);
-        }
-
-        Ok(typed_modules)
+        modules
+            .into_iter()
+            .map(|module| self.check_module(module))
+            .collect()
     }
 
     pub fn check_module(&mut self, module: Module) -> InferResult<TypedModule> {
@@ -622,14 +608,7 @@ impl Checker {
     where
         I: IntoIterator<Item = Expr>,
     {
-        let mut exprs = Vec::new();
-
-        for expr in expr {
-            let expr = self.check(expr)?;
-            exprs.push(expr);
-        }
-
-        Ok(exprs)
+        expr.into_iter().map(|expr| self.check(expr)).collect()
     }
 
     pub fn check(&mut self, expr: Expr) -> InferResult<TypedExpr> {

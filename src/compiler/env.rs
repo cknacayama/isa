@@ -109,8 +109,8 @@ impl Env {
     }
 }
 
-impl Substitute for Env {
-    fn substitute<S>(mut self, subs: &mut S, env: &mut TypeCtx) -> Self
+impl Substitute for &mut Env {
+    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
         S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {

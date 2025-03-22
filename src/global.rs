@@ -43,7 +43,7 @@ pub fn intern_symbol(symbol: &str) -> Symbol {
 }
 
 #[must_use]
-pub fn intern_static_symbol(symbol: &'static str) -> Symbol {
+fn intern_static_symbol(symbol: &'static str) -> Symbol {
     GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern_static(symbol))
 }
 

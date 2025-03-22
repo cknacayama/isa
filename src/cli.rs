@@ -1,7 +1,7 @@
 use std::{path::PathBuf, time::Instant};
 
 use crate::{
-    compiler::{checker::Checker, infer::Substitute, parser::Parser},
+    compiler::{checker::Checker, parser::Parser},
     report::Report,
 };
 

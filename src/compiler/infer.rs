@@ -16,13 +16,13 @@ pub type InferResult<T> = Result<T, Spanned<InferError>>;
 
 #[derive(Debug, Clone)]
 pub struct Subs {
-    old: Rc<Ty>,
+    old: u64,
     new: Rc<Ty>,
 }
 
 impl Subs {
     #[must_use]
-    pub fn new(old: Rc<Ty>, new: Rc<Ty>) -> Self {
+    pub fn new(old: u64, new: Rc<Ty>) -> Self {
         Self { old, new }
     }
 }
@@ -38,14 +38,9 @@ pub trait Substitute {
         Self: Sized,
     {
         self.substitute(
-            &mut move |t, _| {
-                let t: *const Ty = t;
-                let old: *const Ty = &*subs.old;
-                if t == old {
-                    Some(subs.new.clone())
-                } else {
-                    None
-                }
+            &mut |t, _| match t {
+                Ty::Var(id) if *id == subs.old => Some(subs.new.clone()),
+                _ => None,
             },
             env,
         )
@@ -285,6 +280,64 @@ where
     }
 }
 
+impl From<Constr> for ConstrSet {
+    fn from(value: Constr) -> Self {
+        Self {
+            constrs: vec![value],
+        }
+    }
+}
+
+pub fn unify<C>(cset: C, type_ctx: &mut TypeCtx) -> InferResult<Vec<Subs>>
+where
+    ConstrSet: From<C>,
+{
+    let mut cset = ConstrSet::from(cset);
+    let mut subs = Vec::new();
+
+    while let Some(c) = cset.constrs.pop() {
+        let span = c.span;
+        match (c.lhs.as_ref(), c.rhs.as_ref()) {
+            (lhs @ (Ty::Int | Ty::Bool | Ty::Var(_)), rhs @ (Ty::Int | Ty::Bool | Ty::Var(_)))
+                if lhs == rhs => {}
+            (Ty::Var(var), new) | (new, Ty::Var(var)) if !new.occurs(*var) => {
+                let old = *var;
+                let new = type_ctx.intern_type(new.clone());
+
+                let s = Subs { old, new };
+
+                cset.substitute_eq(&s, type_ctx);
+
+                subs.push(s);
+            }
+            (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
+                let c1 = Constr::new(i1.clone(), i2.clone(), span);
+                let c2 = Constr::new(o1.clone(), o2.clone(), span);
+
+                cset.push(c1);
+                cset.push(c2);
+            }
+            (
+                Ty::Named {
+                    name: n1,
+                    args: args1,
+                },
+                Ty::Named {
+                    name: n2,
+                    args: args2,
+                },
+            ) if n1 == n2 && args1.len() == args2.len() => {
+                for (a1, a2) in args1.iter().zip(args2.iter()) {
+                    cset.push(Constr::new(a1.clone(), a2.clone(), span));
+                }
+            }
+            _ => return Err(Spanned::new(InferError::Uninferable(c), span)),
+        }
+    }
+
+    Ok(subs)
+}
+
 impl ConstrSet {
     #[must_use]
     pub fn new() -> Self {
@@ -311,55 +364,6 @@ impl ConstrSet {
 
     pub fn iter(&self) -> impl Iterator<Item = &Constr> {
         self.constrs.iter()
-    }
-
-    pub fn unify(&mut self, env: &mut TypeCtx) -> InferResult<Vec<Subs>> {
-        let mut subs = Vec::new();
-
-        while let Some(c) = self.constrs.pop() {
-            let span = c.span;
-            match (c.lhs.as_ref(), c.rhs.as_ref()) {
-                (
-                    lhs @ (Ty::Int | Ty::Bool | Ty::Var(_)),
-                    rhs @ (Ty::Int | Ty::Bool | Ty::Var(_)),
-                ) if lhs == rhs => {}
-                (Ty::Var(var), new) | (new, Ty::Var(var)) if !new.occurs(*var) => {
-                    let new = env.intern_type(new.clone());
-                    let old = env.intern_type(Ty::Var(*var));
-
-                    let s = Subs { old, new };
-
-                    self.substitute_eq(&s, env);
-
-                    subs.push(s);
-                }
-                (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
-                    let c1 = Constr::new(i1.clone(), i2.clone(), span);
-                    let c2 = Constr::new(o1.clone(), o2.clone(), span);
-
-                    self.push(c1);
-                    self.push(c2);
-                }
-                (
-                    Ty::Named {
-                        name: n1,
-                        args: args1,
-                    },
-                    Ty::Named {
-                        name: n2,
-                        args: args2,
-                    },
-                ) if n1 == n2 && args1.len() == args2.len() => {
-                    for (a1, a2) in args1.iter().zip(args2.iter()) {
-                        let c = Constr::new(a1.clone(), a2.clone(), span);
-                        self.push(c);
-                    }
-                }
-                _ => return Err(Spanned::new(InferError::Uninferable(c), span)),
-            }
-        }
-
-        Ok(subs)
     }
 }
 

@@ -4,21 +4,27 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::rc::Rc;
 
 #[derive(Debug, Clone)]
-pub struct TypeCtx {
-    types:        FxHashSet<Rc<Ty>>,
-    constructors: FxHashMap<Symbol, Rc<Ty>>,
+struct BuiltinTypes {
+    integer: Rc<Ty>,
+    boolean: Rc<Ty>,
+    unit:    Rc<Ty>,
 }
 
-impl Default for TypeCtx {
+impl Default for BuiltinTypes {
     fn default() -> Self {
-        let mut types = FxHashSet::default();
-        types.extend([Rc::new(Ty::Unit), Rc::new(Ty::Int), Rc::new(Ty::Bool)]);
-
         Self {
-            types,
-            constructors: FxHashMap::default(),
+            integer: Rc::new(Ty::Int),
+            boolean: Rc::new(Ty::Bool),
+            unit:    Rc::new(Ty::Unit),
         }
     }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TypeCtx {
+    builtin:      BuiltinTypes,
+    types:        FxHashSet<Rc<Ty>>,
+    constructors: FxHashMap<Symbol, Rc<Ty>>,
 }
 
 impl TypeCtx {
@@ -47,22 +53,16 @@ impl TypeCtx {
 
     #[must_use]
     pub fn get_unit(&self) -> Rc<Ty> {
-        self.types
-            .get(&Ty::Unit)
-            .map_or_else(|| unreachable!(), Rc::clone)
+        self.builtin.unit.clone()
     }
 
     #[must_use]
     pub fn get_int(&self) -> Rc<Ty> {
-        self.types
-            .get(&Ty::Int)
-            .map_or_else(|| unreachable!(), Rc::clone)
+        self.builtin.integer.clone()
     }
 
     #[must_use]
     pub fn get_bool(&self) -> Rc<Ty> {
-        self.types
-            .get(&Ty::Bool)
-            .map_or_else(|| unreachable!(), Rc::clone)
+        self.builtin.boolean.clone()
     }
 }
