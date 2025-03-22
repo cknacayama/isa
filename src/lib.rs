@@ -12,8 +12,9 @@ pub mod global;
 pub mod report;
 pub mod span;
 
-use rustc_hash::FxHasher;
 use std::hash::BuildHasherDefault;
+
+use rustc_hash::FxHasher;
 
 pub type IndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<FxHasher>>;
 pub type IndexSet<V> = indexmap::IndexSet<V, BuildHasherDefault<FxHasher>>;

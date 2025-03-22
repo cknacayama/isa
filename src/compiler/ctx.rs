@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
+use rustc_hash::{FxHashMap, FxHashSet};
+
 use super::types::Ty;
 use crate::global::Symbol;
-use rustc_hash::{FxHashMap, FxHashSet};
-use std::rc::Rc;
 
 #[derive(Debug, Clone)]
 struct BuiltinTypes {

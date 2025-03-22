@@ -1,19 +1,15 @@
-use super::{
-    ast::{
-        untyped::{Expr, ExprKind, Module, Pat, PatKind},
-        BinOp, Constructor, UnOp,
-    },
-    ctx::TypeCtx,
-    error::ParseError,
-    lexer::Lexer,
-    token::{Token, TokenKind},
-    types::Ty,
-};
-use crate::{
-    global::{self, Symbol},
-    span::{Span, Spanned},
-};
-use std::{iter::Peekable, rc::Rc};
+use std::iter::Peekable;
+use std::rc::Rc;
+
+use super::ast::untyped::{Expr, ExprKind, Module, Pat, PatKind};
+use super::ast::{BinOp, Constructor, UnOp};
+use super::ctx::TypeCtx;
+use super::error::ParseError;
+use super::lexer::Lexer;
+use super::token::{Token, TokenKind};
+use super::types::Ty;
+use crate::global::{self, Symbol};
+use crate::span::{Span, Spanned};
 
 pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
 
@@ -216,7 +212,14 @@ impl<'a> Parser<'a> {
         while self.next_if_match(TokenKind::KwOr).is_some() {
             let rhs = self.parse_and()?;
             let span = lhs.span.union(rhs.span);
-            lhs = Expr::bin_expr(BinOp::Or, lhs, rhs, span);
+            lhs = Expr::new(
+                ExprKind::Bin {
+                    op:  BinOp::Or,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            );
         }
 
         Ok(lhs)
@@ -228,7 +231,14 @@ impl<'a> Parser<'a> {
         while self.next_if_match(TokenKind::KwAnd).is_some() {
             let rhs = self.parse_cmp()?;
             let span = lhs.span.union(rhs.span);
-            lhs = Expr::bin_expr(BinOp::And, lhs, rhs, span);
+            lhs = Expr::new(
+                ExprKind::Bin {
+                    op:  BinOp::And,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            );
         }
 
         Ok(lhs)
@@ -248,7 +258,14 @@ impl<'a> Parser<'a> {
         }) {
             let rhs = self.parse_add()?;
             let span = lhs.span.union(rhs.span);
-            lhs = Expr::bin_expr(op, lhs, rhs, span);
+            lhs = Expr::new(
+                ExprKind::Bin {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            );
         }
 
         Ok(lhs)
@@ -264,7 +281,14 @@ impl<'a> Parser<'a> {
         }) {
             let rhs = self.parse_mul()?;
             let span = lhs.span.union(rhs.span);
-            lhs = Expr::bin_expr(op, lhs, rhs, span);
+            lhs = Expr::new(
+                ExprKind::Bin {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            );
         }
 
         Ok(lhs)
@@ -281,7 +305,14 @@ impl<'a> Parser<'a> {
         }) {
             let rhs = self.parse_unary()?;
             let span = lhs.span.union(rhs.span);
-            lhs = Expr::bin_expr(op, lhs, rhs, span);
+            lhs = Expr::new(
+                ExprKind::Bin {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            );
         }
 
         Ok(lhs)

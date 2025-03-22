@@ -1,5 +1,6 @@
-use crate::span::Spanned;
 use std::fmt::Display;
+
+use crate::span::Spanned;
 
 pub type Token<'a> = Spanned<TokenKind<'a>>;
 

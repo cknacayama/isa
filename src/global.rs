@@ -1,4 +1,5 @@
-use std::{cell::RefCell, fmt::Display};
+use std::cell::RefCell;
+use std::fmt::Display;
 
 use crate::IndexSet;
 

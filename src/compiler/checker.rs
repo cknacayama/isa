@@ -1,23 +1,17 @@
-use super::{
-    ast::{
-        BinOp, Constructor, UnOp,
-        typed::{
-            TypedExpr, TypedExprKind, TypedMatchArm, TypedModule, TypedParam, TypedPat,
-            TypedPatKind,
-        },
-        untyped::{Expr, ExprKind, Module, Pat, PatKind},
-    },
-    ctx::TypeCtx,
-    env::Env,
-    error::InferError,
-    infer::{Constr, ConstrSet, InferResult, Subs, Substitute, unify},
-    types::Ty,
-};
-use crate::{
-    global::Symbol,
-    span::{Span, Spanned},
-};
 use std::rc::Rc;
+
+use super::ast::typed::{
+    TypedExpr, TypedExprKind, TypedMatchArm, TypedModule, TypedParam, TypedPat, TypedPatKind,
+};
+use super::ast::untyped::{Expr, ExprKind, Module, Pat, PatKind};
+use super::ast::{BinOp, Constructor, UnOp};
+use super::ctx::TypeCtx;
+use super::env::Env;
+use super::error::InferError;
+use super::infer::{Constr, ConstrSet, InferResult, Subs, Substitute, unify};
+use super::types::Ty;
+use crate::global::Symbol;
+use crate::span::{Span, Spanned};
 
 #[derive(Debug, Default)]
 pub struct Checker {
@@ -69,7 +63,7 @@ impl Checker {
         self.type_ctx.intern_type(ty)
     }
 
-    fn new_type_variable_id(&mut self) -> u64 {
+    const fn new_type_variable_id(&mut self) -> u64 {
         let cur = self.cur_var;
         self.cur_var += 1;
         cur
@@ -206,7 +200,7 @@ impl Checker {
         } else {
             let var_id = self.new_type_variable_id();
             let var = self.intern_type(Ty::Var(var_id));
-            self.insert_variable(id, var.clone());
+            self.insert_variable(id, var);
 
             let mut expr = self.check(expr)?;
 
@@ -589,7 +583,7 @@ impl Checker {
             while let Some(decl) = self.declared_types.pop() {
                 let new_name = mod_name.concat(decl, '.');
                 let mut subs = |ty: &Ty, env: &mut TypeCtx| match ty {
-                    Ty::Named { name, args } if name == &decl => Some(env.intern_type(Ty::Named {
+                    Ty::Named { name, args } if *name == decl => Some(env.intern_type(Ty::Named {
                         name: new_name,
                         args: args.clone(),
                     })),

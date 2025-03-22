@@ -1,7 +1,11 @@
-use super::{ctx::TypeCtx, infer::Substitute, types::Ty};
-use crate::global::Symbol;
-use rustc_hash::FxHashMap;
 use std::rc::Rc;
+
+use rustc_hash::FxHashMap;
+
+use super::ctx::TypeCtx;
+use super::infer::Substitute;
+use super::types::Ty;
+use crate::global::Symbol;
 
 #[derive(Debug, Clone)]
 pub struct Env {

@@ -3,14 +3,16 @@
     reason = "Substitute trait is implemented on some &mut ref"
 )]
 
-use super::{
-    ast::typed::{TypedExpr, TypedExprKind, TypedModule, TypedParam, TypedPat, TypedPatKind},
-    ctx::TypeCtx,
-    error::InferError,
-    types::Ty,
+use std::fmt::Display;
+use std::rc::Rc;
+
+use super::ast::typed::{
+    TypedExpr, TypedExprKind, TypedModule, TypedParam, TypedPat, TypedPatKind,
 };
+use super::ctx::TypeCtx;
+use super::error::InferError;
+use super::types::Ty;
 use crate::span::{Span, Spanned};
-use std::{fmt::Display, rc::Rc};
 
 pub type InferResult<T> = Result<T, Spanned<InferError>>;
 
@@ -22,7 +24,7 @@ pub struct Subs {
 
 impl Subs {
     #[must_use]
-    pub fn new(old: u64, new: Rc<Ty>) -> Self {
+    pub const fn new(old: u64, new: Rc<Ty>) -> Self {
         Self { old, new }
     }
 }
@@ -232,7 +234,7 @@ impl Substitute for Constr {
 
 impl Constr {
     #[must_use]
-    pub fn new(lhs: Rc<Ty>, rhs: Rc<Ty>, span: Span) -> Self {
+    pub const fn new(lhs: Rc<Ty>, rhs: Rc<Ty>, span: Span) -> Self {
         Self { lhs, rhs, span }
     }
 
@@ -346,16 +348,6 @@ impl ConstrSet {
 
     pub fn append(&mut self, mut other: Self) {
         self.constrs.append(&mut other.constrs);
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.constrs.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.constrs.len() == 0
     }
 
     pub fn push(&mut self, c: Constr) {

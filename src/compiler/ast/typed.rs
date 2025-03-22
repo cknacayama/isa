@@ -1,11 +1,12 @@
+use std::fmt::{Debug, Display, Write};
+use std::rc::Rc;
+
 use rustc_hash::FxHashMap;
 
 use super::{BinOp, Constructor, UnOp};
-use crate::{compiler::types::Ty, global::Symbol, span::Span};
-use std::{
-    fmt::{Debug, Display, Write},
-    rc::Rc,
-};
+use crate::compiler::types::Ty;
+use crate::global::Symbol;
+use crate::span::Span;
 
 #[derive(Clone)]
 pub struct TypedModule {
@@ -17,7 +18,7 @@ pub struct TypedModule {
 
 impl TypedModule {
     #[must_use]
-    pub fn new(
+    pub const fn new(
         name: Option<Symbol>,
         declared: FxHashMap<Symbol, Rc<Ty>>,
         exprs: Box<[TypedExpr]>,
@@ -75,7 +76,7 @@ impl Debug for TypedPat {
 }
 impl TypedPat {
     #[must_use]
-    pub fn new(kind: TypedPatKind, span: Span, ty: Rc<Ty>) -> Self {
+    pub const fn new(kind: TypedPatKind, span: Span, ty: Rc<Ty>) -> Self {
         Self { kind, span, ty }
     }
 
@@ -133,7 +134,7 @@ pub struct TypedMatchArm {
 
 impl TypedMatchArm {
     #[must_use]
-    pub fn new(pat: TypedPat, expr: TypedExpr) -> Self {
+    pub const fn new(pat: TypedPat, expr: TypedExpr) -> Self {
         Self { pat, expr }
     }
 
@@ -153,12 +154,12 @@ pub struct TypedParam {
 
 impl TypedParam {
     #[must_use]
-    pub fn new(name: Symbol, ty: Rc<Ty>) -> Self {
+    pub const fn new(name: Symbol, ty: Rc<Ty>) -> Self {
         Self { name, ty }
     }
 
     #[must_use]
-    pub fn ty(&self) -> &Rc<Ty> {
+    pub const fn ty(&self) -> &Rc<Ty> {
         &self.ty
     }
 }
@@ -229,7 +230,7 @@ pub enum TypedExprKind {
 
 impl TypedExpr {
     #[must_use]
-    pub fn new(kind: TypedExprKind, span: Span, ty: Rc<Ty>) -> Self {
+    pub const fn new(kind: TypedExprKind, span: Span, ty: Rc<Ty>) -> Self {
         Self { kind, span, ty }
     }
 

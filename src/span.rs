@@ -1,7 +1,5 @@
-use std::{
-    fmt::{Debug, Display},
-    ops::Index,
-};
+use std::fmt::{Debug, Display};
+use std::ops::Index;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -25,7 +23,7 @@ impl Index<Span> for str {
 
 impl Span {
     #[must_use]
-    pub fn new(start: u32, end: u32) -> Option<Self> {
+    pub const fn new(start: u32, end: u32) -> Option<Self> {
         if start <= end {
             Some(Self { start, end })
         } else {
@@ -101,7 +99,7 @@ impl<T> std::error::Error for Spanned<T> where T: std::error::Error
 }
 
 impl<T> Spanned<T> {
-    pub fn new(data: T, span: Span) -> Self {
+    pub const fn new(data: T, span: Span) -> Self {
         Self { data, span }
     }
 
@@ -112,7 +110,7 @@ impl<T> Spanned<T> {
         }
     }
 
-    pub fn data(&self) -> &T {
+    pub const fn data(&self) -> &T {
         &self.data
     }
 
@@ -130,7 +128,7 @@ impl<T> Spanned<T> {
         other.map(From::from)
     }
 
-    pub fn span(&self) -> Span {
+    pub const fn span(&self) -> Span {
         self.span
     }
 }

@@ -1,9 +1,8 @@
-use super::{BinOp, Constructor, UnOp};
-use crate::{
-    global::Symbol,
-    span::{Span, Spanned},
-};
 use std::fmt::Debug;
+
+use super::{BinOp, Constructor, UnOp};
+use crate::global::Symbol;
+use crate::span::{Span, Spanned};
 
 #[derive(Clone)]
 pub struct Module {
@@ -14,7 +13,7 @@ pub struct Module {
 
 impl Module {
     #[must_use]
-    pub fn new(name: Option<Symbol>, exprs: Box<[Expr]>, span: Span) -> Self {
+    pub const fn new(name: Option<Symbol>, exprs: Box<[Expr]>, span: Span) -> Self {
         Self { name, exprs, span }
     }
 }
@@ -44,20 +43,8 @@ impl Debug for Expr {
 
 impl Expr {
     #[must_use]
-    pub fn new(kind: ExprKind, span: Span) -> Self {
+    pub const fn new(kind: ExprKind, span: Span) -> Self {
         Self { kind, span }
-    }
-
-    #[must_use]
-    pub fn bin_expr(op: BinOp, lhs: Self, rhs: Self, span: Span) -> Self {
-        Self::new(
-            ExprKind::Bin {
-                op,
-                lhs: Box::new(lhs),
-                rhs: Box::new(rhs),
-            },
-            span,
-        )
     }
 }
 

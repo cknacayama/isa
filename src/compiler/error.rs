@@ -1,7 +1,10 @@
-use crate::global::Symbol;
+use std::fmt::Display;
+use std::rc::Rc;
 
-use super::{infer::Constr, token::TokenKind, types::Ty};
-use std::{fmt::Display, rc::Rc};
+use super::infer::Constr;
+use super::token::TokenKind;
+use super::types::Ty;
+use crate::global::Symbol;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LexError {

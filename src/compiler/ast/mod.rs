@@ -1,9 +1,12 @@
 pub mod typed;
 pub mod untyped;
 
-use super::{token::TokenKind, types::Ty};
+use std::fmt::Display;
+use std::rc::Rc;
+
+use super::token::TokenKind;
+use super::types::Ty;
 use crate::global::Symbol;
-use std::{fmt::Display, rc::Rc};
 
 #[derive(Debug, Clone, Copy)]
 pub enum BinOp {
@@ -24,7 +27,7 @@ pub enum BinOp {
 
 impl BinOp {
     #[must_use]
-    pub fn from_token(tk: TokenKind<'_>) -> Option<Self> {
+    pub const fn from_token(tk: TokenKind<'_>) -> Option<Self> {
         match tk {
             TokenKind::Plus => Some(Self::Add),
             TokenKind::Minus => Some(Self::Sub),
@@ -73,7 +76,7 @@ pub enum UnOp {
 
 impl UnOp {
     #[must_use]
-    pub fn from_token(tk: TokenKind<'_>) -> Option<Self> {
+    pub const fn from_token(tk: TokenKind<'_>) -> Option<Self> {
         match tk {
             TokenKind::KwNot => Some(Self::Not),
             TokenKind::Minus => Some(Self::Neg),
@@ -93,7 +96,7 @@ impl Display for UnOp {
 
 impl TokenKind<'_> {
     #[must_use]
-    pub fn can_start_expr(&self) -> bool {
+    pub const fn can_start_expr(&self) -> bool {
         matches!(
             self,
             TokenKind::LParen
@@ -111,14 +114,15 @@ impl TokenKind<'_> {
     }
 
     #[must_use]
-    pub fn can_start_type(&self) -> bool {
+    pub const fn can_start_type(&self) -> bool {
         matches!(
             self,
             TokenKind::LParen | TokenKind::Ident(_) | TokenKind::KwInt | TokenKind::KwBool
         )
     }
+
     #[must_use]
-    pub fn can_start_pat(&self) -> bool {
+    pub const fn can_start_pat(&self) -> bool {
         matches!(
             self,
             TokenKind::LParen
@@ -141,7 +145,7 @@ pub struct Constructor {
 
 impl Constructor {
     #[must_use]
-    pub fn new(id: Symbol, params: Box<[Rc<Ty>]>) -> Self {
+    pub const fn new(id: Symbol, params: Box<[Rc<Ty>]>) -> Self {
         Self { id, params }
     }
 }

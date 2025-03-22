@@ -1,5 +1,7 @@
+use std::fmt::Display;
+use std::rc::Rc;
+
 use crate::global::Symbol;
-use std::{fmt::Display, rc::Rc};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
@@ -54,7 +56,7 @@ impl Ty {
     ///
     /// [`Named`]: Ty::Named
     #[must_use]
-    pub fn is_named(&self) -> bool {
+    pub const fn is_named(&self) -> bool {
         matches!(self, Self::Named { .. })
     }
 }

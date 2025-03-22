@@ -1,9 +1,9 @@
-use std::{path::PathBuf, time::Instant};
+use std::path::PathBuf;
+use std::time::Instant;
 
-use crate::{
-    compiler::{checker::Checker, parser::Parser},
-    report::Report,
-};
+use crate::compiler::checker::Checker;
+use crate::compiler::parser::Parser;
+use crate::report::Report;
 
 /// TODO: add more options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

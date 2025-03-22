@@ -1,9 +1,8 @@
-use super::{
-    error::LexError,
-    token::{Token, TokenKind},
-};
-use crate::span::{Span, Spanned};
 use std::str::Chars;
+
+use super::error::LexError;
+use super::token::{Token, TokenKind};
+use crate::span::{Span, Spanned};
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
@@ -129,9 +128,7 @@ impl<'a> Lexer<'a> {
         let c = self.bump()?;
 
         macro_rules! token {
-            ($tk:ident) => {{
-                Some(Ok(self.make_token(TokenKind::$tk)))
-            }};
+            ($tk:ident) => {{ Some(Ok(self.make_token(TokenKind::$tk))) }};
             ($tk:ident, $c2:expr => $tk2:ident) => {{
                 if self.match_cur($c2) {
                     Some(Ok(self.make_token(TokenKind::$tk2)))
