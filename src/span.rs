@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::fmt::{Debug, Display};
-use std::ops::Index;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
@@ -8,18 +7,26 @@ pub struct Span {
     end:   u32,
 }
 
+impl ariadne::Span for Span {
+    type SourceId = ();
+
+    fn source(&self) -> &Self::SourceId {
+        &()
+    }
+
+    fn start(&self) -> usize {
+        self.start as usize
+    }
+
+    fn end(&self) -> usize {
+        self.end as usize
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Loc {
     line: u32,
     col:  u32,
-}
-
-impl Index<Span> for str {
-    type Output = Self;
-
-    fn index(&self, index: Span) -> &Self::Output {
-        &self[(index.start as usize)..(index.end as usize)]
-    }
 }
 
 impl Span {
@@ -38,24 +45,6 @@ impl Span {
             start: self.start.min(other.start),
             end:   self.end.max(other.end),
         }
-    }
-
-    #[must_use]
-    pub fn start_loc(self, input: &str) -> (Loc, &str) {
-        let mut line = 1;
-        let mut col = 1;
-
-        for c in input.chars().take(self.start as usize) {
-            match c {
-                '\n' => {
-                    line += 1;
-                    col = 1;
-                }
-                _ => col += 1,
-            }
-        }
-
-        (Loc { line, col }, &input[self])
     }
 }
 
@@ -95,13 +84,6 @@ impl<T: Error> Error for Spanned<T> {
 impl<T> Spanned<T> {
     pub const fn new(data: T, span: Span) -> Self {
         Self { data, span }
-    }
-
-    pub fn from_data(data: T) -> Self {
-        Self {
-            data,
-            span: Span::default(),
-        }
     }
 
     pub const fn data(&self) -> &T {

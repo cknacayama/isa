@@ -13,10 +13,6 @@ pub type UntypedMatchArm = MatchArm<()>;
 pub type UntypedParam = Param<()>;
 
 impl UntypedModule {
-    #[allow(
-        clippy::zero_sized_map_values,
-        reason = "Generic Type requires HashMap"
-    )]
     #[must_use]
     pub fn untyped(name: Option<Symbol>, exprs: Box<[UntypedExpr]>, span: Span) -> Self {
         Self::new(name, FxHashMap::default(), exprs, span)
@@ -39,7 +35,7 @@ impl UntypedPat {
 
 impl UntypedParam {
     #[must_use]
-    pub const fn untyped(name: Symbol) -> Self {
-        Self::new(name, ())
+    pub const fn untyped(name: Symbol, span: Span) -> Self {
+        Self::new(name, (), span)
     }
 }

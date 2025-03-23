@@ -4,6 +4,7 @@ use rustc_hash::FxHashMap;
 
 use super::ast::ModuleIdent;
 use super::ctx::TypeCtx;
+use super::error::InferErrorKind;
 use super::infer::Substitute;
 use super::types::Ty;
 use crate::global::Symbol;
@@ -15,14 +16,17 @@ pub struct VarData {
 }
 
 impl VarData {
+    #[must_use]
     pub fn new(constructor: bool, ty: Rc<Ty>) -> Self {
         Self { constructor, ty }
     }
 
+    #[must_use]
     pub const fn constructor(&self) -> bool {
         self.constructor
     }
 
+    #[must_use]
     pub const fn ty(&self) -> &Rc<Ty> {
         &self.ty
     }
@@ -93,21 +97,35 @@ impl Env {
     }
 
     #[must_use]
-    pub fn get_from_module(&self, module_access: &ModuleIdent) -> Option<VarData> {
-        self.modules
-            .get(&module_access.module())
-            .and_then(|module| module.get(&module_access.member()))
-            .cloned()
+    pub fn get_from_module(&self, module_access: &ModuleIdent) -> Result<VarData, InferErrorKind> {
+        let Some(module) = self.modules.get(&module_access.module()) else {
+            return Err(InferErrorKind::UnboundModule(module_access.module()));
+        };
+
+        let Some(var) = module.get(&module_access.member()) else {
+            return Err(InferErrorKind::Unbound(module_access.member()));
+        };
+
+        Ok(var.clone())
     }
 
     #[must_use]
-    pub fn get_constructor_from_module(&self, module_access: &ModuleIdent) -> Option<Rc<Ty>> {
-        let module = self.modules.get(&module_access.module())?;
-        let var = module.get(&module_access.member())?;
+    pub fn get_constructor_from_module(
+        &self,
+        module_access: &ModuleIdent,
+    ) -> Result<Rc<Ty>, InferErrorKind> {
+        let Some(module) = self.modules.get(&module_access.module()) else {
+            return Err(InferErrorKind::UnboundModule(module_access.module()));
+        };
+
+        let Some(var) = module.get(&module_access.member()) else {
+            return Err(InferErrorKind::Unbound(module_access.member()));
+        };
+
         if var.constructor() {
-            Some(var.ty().clone())
+            Ok(var.ty().clone())
         } else {
-            None
+            Err(InferErrorKind::NotConstructor(module_access.member()))
         }
     }
 

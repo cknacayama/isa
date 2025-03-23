@@ -385,12 +385,13 @@ impl<T: Display> MatchArm<T> {
 pub struct Param<T> {
     pub name: Symbol,
     pub ty:   T,
+    pub span: Span,
 }
 
 impl<T> Param<T> {
     #[must_use]
-    pub const fn new(name: Symbol, ty: T) -> Self {
-        Self { name, ty }
+    pub const fn new(name: Symbol, ty: T, span: Span) -> Self {
+        Self { name, ty, span }
     }
 
     #[must_use]

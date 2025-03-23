@@ -3,7 +3,6 @@ use std::time::Instant;
 
 use crate::compiler::checker::Checker;
 use crate::compiler::parser::Parser;
-use crate::report::Report;
 
 /// TODO: add more options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -64,7 +63,7 @@ impl Config {
 
         let modules = match parser.parse_all() {
             Ok(expr) if !expr.is_empty() => expr,
-            Err(err) => return err.panic(&input),
+            Err(err) => return err.report(&input),
             _ => return,
         };
 
@@ -72,7 +71,7 @@ impl Config {
 
         let modules = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
-            Err(err) => return err.panic(&input),
+            Err(err) => return err.report(&input),
         };
 
         let duration = start.elapsed();

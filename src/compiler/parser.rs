@@ -110,7 +110,7 @@ impl<'a> Parser<'a> {
             if t.data == expected {
                 Ok(t.span)
             } else {
-                Err(t.map(|_| ParseError::ExpectedToken(expected)))
+                Err(t.map(|got| ParseError::ExpectedToken { expected, got }))
             }
         })
     }
@@ -118,7 +118,7 @@ impl<'a> Parser<'a> {
     fn expect_id(&mut self) -> ParseResult<Spanned<Symbol>> {
         self.next_or_eof().and_then(|t| match t.data {
             TokenKind::Ident(id) => Ok(t.map(|_| id)),
-            _ => Err(t.map(|_| ParseError::ExpectedId)),
+            _ => Err(t.map(|kind| ParseError::ExpectedId(kind))),
         })
     }
 
@@ -182,7 +182,7 @@ impl<'a> Parser<'a> {
 
         let expr = match self
             .peek()
-            .ok_or_else(|| Spanned::new(ParseError::ExpectedExpr, span))??
+            .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, span))??
             .data
         {
             TokenKind::KwType => self.parse_type_definition(),
@@ -203,7 +203,7 @@ impl<'a> Parser<'a> {
         let span = self.last_span;
         match self
             .peek()
-            .ok_or_else(|| Spanned::new(ParseError::ExpectedExpr, span))??
+            .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, span))??
             .data
         {
             TokenKind::KwLet => self.parse_let(),
@@ -410,7 +410,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::KwTrue => Ok(UntypedExpr::untyped(UntypedExprKind::Bool(true), span)),
             TokenKind::KwFalse => Ok(UntypedExpr::untyped(UntypedExprKind::Bool(false), span)),
-            _ => Err(Spanned::new(ParseError::ExpectedExpr, span)),
+            _ => Err(Spanned::new(ParseError::ExpectedExpr(data), span)),
         }
     }
 
@@ -451,7 +451,7 @@ impl<'a> Parser<'a> {
                 ))
             }
 
-            _ => Err(Spanned::new(ParseError::ExpectedType, span)),
+            _ => Err(Spanned::new(ParseError::ExpectedType(data), span)),
         }
     }
 
@@ -600,6 +600,7 @@ impl<'a> Parser<'a> {
 
         self.expect(TokenKind::KwElse)?;
         let otherwise = self.parse_expr()?;
+        let span = span.union(otherwise.span);
 
         Ok(UntypedExpr::untyped(
             UntypedExprKind::If {
@@ -638,7 +639,7 @@ impl<'a> Parser<'a> {
                 }
             }
             TokenKind::Underscore => Ok(UntypedPat::untyped(UntypedPatKind::Wild, span)),
-            _ => Err(Spanned::new(ParseError::ExpectedPattern, span)),
+            _ => Err(Spanned::new(ParseError::ExpectedPattern(data), span)),
         }
     }
 
@@ -694,8 +695,8 @@ impl<'a> Parser<'a> {
 
         let mut parametes = Vec::new();
         while !self.check(TokenKind::Eq) {
-            let Spanned { data, .. } = self.expect_id()?;
-            let param = UntypedParam::untyped(data);
+            let Spanned { data, span } = self.expect_id()?;
+            let param = UntypedParam::untyped(data, span);
             parametes.push(param);
         }
         self.expect(TokenKind::Eq)?;
@@ -721,7 +722,10 @@ impl<'a> Parser<'a> {
 
     fn parse_fn(&mut self) -> ParseResult<UntypedExpr> {
         let span = self.expect(TokenKind::KwFn)?;
-        let Spanned { data: name, .. } = self.expect_id()?;
+        let Spanned {
+            data: name,
+            span: name_span,
+        } = self.expect_id()?;
 
         self.expect(TokenKind::Arrow)?;
 
@@ -729,7 +733,7 @@ impl<'a> Parser<'a> {
 
         let span = span.union(expr.span);
 
-        let param = UntypedParam::untyped(name);
+        let param = UntypedParam::untyped(name, name_span);
 
         Ok(UntypedExpr::untyped(
             UntypedExprKind::Fn {

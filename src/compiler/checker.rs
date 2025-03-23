@@ -10,11 +10,11 @@ use super::ast::untyped::{
 use super::ast::{BinOp, Constructor, ModuleIdent, PathIdent, UnOp};
 use super::ctx::TypeCtx;
 use super::env::{Env, VarData};
-use super::error::InferError;
-use super::infer::{Constr, ConstrSet, InferResult, Subs, Substitute, unify};
+use super::error::{InferError, InferErrorKind};
+use super::infer::{Constraint, ConstraintSet, InferResult, Subs, Substitute, unify};
 use super::types::Ty;
 use crate::global::Symbol;
-use crate::span::{Span, Spanned};
+use crate::span::Span;
 
 #[derive(Debug, Default)]
 pub struct Checker {
@@ -42,7 +42,7 @@ impl Checker {
 
     fn unify<C>(&mut self, constr: C) -> InferResult<Vec<Subs>>
     where
-        ConstrSet: From<C>,
+        ConstraintSet: From<C>,
     {
         unify(constr, &mut self.type_ctx).inspect(|subs| {
             self.env.substitute_many(subs, &mut self.type_ctx);
@@ -61,8 +61,8 @@ impl Checker {
         self.env.insert_constructor(name, ty)
     }
 
-    fn get_constructor(&self, name: &Symbol) -> Option<Rc<Ty>> {
-        self.env.get_constructor(name)
+    fn get_constructor(&self, name: Symbol) -> Option<Rc<Ty>> {
+        self.env.get_constructor(&name)
     }
 
     fn intern_type(&mut self, ty: Ty) -> Rc<Ty> {
@@ -102,9 +102,10 @@ impl Checker {
 
         let var = self.gen_type_var();
 
-        let c_cond = Constr::new(cond.ty.clone(), self.get_bool(), cond.span);
-        let c_then = Constr::new(var.clone(), then.ty.clone(), then.span);
-        let c_otherwise = Constr::new(var.clone(), otherwise.ty.clone(), otherwise.span);
+        let c_cond = Constraint::new(self.get_bool(), cond.ty.clone(), [cond.span, span]);
+        let c_then = Constraint::new(var.clone(), then.ty.clone(), [then.span, span]);
+        let c_otherwise =
+            Constraint::new(var.clone(), otherwise.ty.clone(), [otherwise.span, span]);
 
         let subs = self.unify([c_cond, c_then, c_otherwise])?;
 
@@ -136,7 +137,7 @@ impl Checker {
         let expr = self.check(expr)?;
         let var = self
             .get_variable(param.name)
-            .ok_or_else(|| Spanned::new(InferError::Unbound(param.name), span))?;
+            .unwrap_or_else(|| unreachable!());
 
         self.env.pop_scope();
 
@@ -146,7 +147,7 @@ impl Checker {
         });
 
         let kind = TypedExprKind::Fn {
-            param: TypedParam::new(param.name, var),
+            param: TypedParam::new(param.name, var, param.span),
             expr:  Box::new(expr),
         };
 
@@ -167,7 +168,11 @@ impl Checker {
             param: arg.ty.clone(),
             ret:   var.clone(),
         });
-        let subs = self.unify(Constr::new(callee.ty.clone(), fn_ty, span))?;
+        let subs = self.unify(Constraint::new(
+            callee.ty.clone(),
+            fn_ty,
+            [callee.span, arg.span, span],
+        ))?;
 
         callee.substitute_many(&subs, &mut self.type_ctx);
         arg.substitute_many(&subs, &mut self.type_ctx);
@@ -206,7 +211,7 @@ impl Checker {
             .map(|p| {
                 let var = self.gen_type_var();
                 self.insert_variable(p.name, var.clone());
-                TypedParam::new(p.name, var)
+                TypedParam::new(p.name, var, p.span)
             })
             .collect::<Box<_>>();
 
@@ -220,9 +225,7 @@ impl Checker {
             let mut expr = self.check(expr)?;
 
             for p in &mut typed_params {
-                p.ty = self
-                    .get_variable(p.name)
-                    .ok_or_else(|| Spanned::new(InferError::Unbound(p.name), Span::default()))?;
+                p.ty = self.get_variable(p.name).unwrap_or_else(|| unreachable!());
             }
 
             expr.ty = self.function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
@@ -354,12 +357,16 @@ impl Checker {
             }
             UntypedPatKind::Or(spanneds) => {
                 let mut patterns = Vec::new();
-                let mut c = ConstrSet::new();
+                let mut c = ConstraintSet::new();
 
                 let var = self.gen_type_var();
                 for pat in spanneds {
                     let pat = self.check_pat(pat)?;
-                    c.push(Constr::new(pat.ty.clone(), var.clone(), pat.span));
+                    c.push(Constraint::new(
+                        pat.ty.clone(),
+                        var.clone(),
+                        [pat.span, span],
+                    ));
                     patterns.push(pat);
                 }
 
@@ -386,32 +393,40 @@ impl Checker {
                     PathIdent::Module(module) => self
                         .env
                         .get_constructor_from_module(&module)
-                        .ok_or_else(|| Spanned::new(InferError::UnboundModule(module), span))?,
+                        .map_err(|err| InferError::new(err, span))?,
 
-                    PathIdent::Ident(name) => match self.get_constructor(&name) {
+                    PathIdent::Ident(name) => match self.get_constructor(name) {
                         Some(ty) => ty,
                         None if args.is_empty() => {
                             let var = self.gen_type_var();
                             self.insert_variable(name, var.clone());
                             return Ok(TypedPat::new(TypedPatKind::Ident(name), span, var));
                         }
-                        None => return Err(Spanned::new(InferError::Unbound(name), span)),
+                        None => return Err(InferError::new(InferErrorKind::Unbound(name), span)),
                     },
                 };
 
                 let mut ty = self.instantiate(ty);
 
-                let mut c = ConstrSet::new();
+                let mut c = ConstraintSet::new();
                 let mut typed_args = Vec::new();
 
                 for arg in args {
                     let arg = self.check_pat(arg)?;
                     let Ty::Fn { param, ret } = ty.as_ref() else {
-                        return Err(Spanned::new(InferError::Kind(ty), arg.span));
+                        return Err(InferError::new(InferErrorKind::Kind(ty), arg.span));
                     };
-                    c.push(Constr::new(arg.ty.clone(), param.clone(), arg.span));
+                    c.push(Constraint::new(
+                        param.clone(),
+                        arg.ty.clone(),
+                        [arg.span, span],
+                    ));
                     ty = ret.clone();
                     typed_args.push(arg);
+                }
+
+                if ty.is_fn() {
+                    return Err(InferError::new(InferErrorKind::Kind(ty), span));
                 }
 
                 let subs = self.unify(c)?;
@@ -466,12 +481,20 @@ impl Checker {
         let var = self.gen_type_var();
         let mut typed_arms = Vec::new();
 
-        let mut c = ConstrSet::new();
+        let mut c = ConstraintSet::new();
 
         for arm in arms {
             let (pat, aexpr) = self.check_match_arm(arm.pat, arm.expr)?;
-            c.push(Constr::new(aexpr.ty.clone(), var.clone(), aexpr.span));
-            c.push(Constr::new(expr.ty.clone(), pat.ty.clone(), expr.span));
+            c.push(Constraint::new(
+                aexpr.ty.clone(),
+                var.clone(),
+                [aexpr.span, span],
+            ));
+            c.push(Constraint::new(
+                expr.ty.clone(),
+                pat.ty.clone(),
+                [expr.span, pat.span, span],
+            ));
             typed_arms.push(TypedMatchArm::new(pat, aexpr));
         }
 
@@ -511,8 +534,8 @@ impl Checker {
 
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
-                let c1 = Constr::new(int.clone(), lhs.ty.clone(), lhs.span);
-                let c2 = Constr::new(int.clone(), rhs.ty.clone(), rhs.span);
+                let c1 = Constraint::new(int.clone(), lhs.ty.clone(), [lhs.span, span]);
+                let c2 = Constraint::new(int.clone(), rhs.ty.clone(), [rhs.span, span]);
 
                 let subs = self.unify([c1, c2])?;
 
@@ -528,8 +551,8 @@ impl Checker {
                 Ok(TypedExpr::new(kind, span, int))
             }
             BinOp::Eq | BinOp::Ne | BinOp::Gt | BinOp::Ge | BinOp::Lt | BinOp::Le => {
-                let c1 = Constr::new(int.clone(), lhs.ty.clone(), lhs.span);
-                let c2 = Constr::new(int, rhs.ty.clone(), rhs.span);
+                let c1 = Constraint::new(int.clone(), lhs.ty.clone(), [lhs.span, span]);
+                let c2 = Constraint::new(int, rhs.ty.clone(), [rhs.span, span]);
 
                 let subs = self.unify([c1, c2])?;
 
@@ -545,8 +568,8 @@ impl Checker {
                 Ok(TypedExpr::new(kind, span, bol))
             }
             BinOp::And | BinOp::Or => {
-                let c1 = Constr::new(bol.clone(), lhs.ty.clone(), lhs.span);
-                let c2 = Constr::new(bol.clone(), rhs.ty.clone(), rhs.span);
+                let c1 = Constraint::new(bol.clone(), lhs.ty.clone(), [lhs.span, span]);
+                let c2 = Constraint::new(bol.clone(), rhs.ty.clone(), [rhs.span, span]);
 
                 let subs = self.unify([c1, c2])?;
 
@@ -573,7 +596,11 @@ impl Checker {
             UnOp::Not => self.get_bool(),
             UnOp::Neg => self.get_int(),
         };
-        let subs = self.unify(Constr::new(ty.clone(), expr.ty.clone(), expr.span))?;
+        let subs = self.unify(Constraint::new(
+            ty.clone(),
+            expr.ty.clone(),
+            [expr.span, span],
+        ))?;
         expr.substitute_many(&subs, &mut self.type_ctx);
 
         let kind = TypedExprKind::Un {
@@ -652,7 +679,7 @@ impl Checker {
                 let t = self
                     .env
                     .get_from_module(&acess)
-                    .ok_or_else(|| Spanned::new(InferError::UnboundModule(acess), span))?;
+                    .map_err(|kind| InferError::new(kind, span))?;
 
                 Ok(TypedExpr::new(
                     TypedExprKind::Acess(acess),
@@ -676,7 +703,7 @@ impl Checker {
             UntypedExprKind::Ident(id) => {
                 let t = self
                     .get_variable(id)
-                    .ok_or_else(|| Spanned::new(InferError::Unbound(id), span))?;
+                    .ok_or_else(|| InferError::new(InferErrorKind::Unbound(id), span))?;
                 Ok(TypedExpr::new(
                     TypedExprKind::Ident(id),
                     span,

@@ -20,7 +20,7 @@ impl Display for Ty {
             Self::Unit => write!(f, "()"),
             Self::Int => write!(f, "int"),
             Self::Bool => write!(f, "bool"),
-            Self::Fn { param, ret } => write!(f, "({param} -> {ret})"),
+            Self::Fn { param, ret } => write!(f, "{param} -> {ret}"),
             Self::Var(var) => write!(f, "'{var}"),
             Self::Scheme { quant, ty } => {
                 for n in quant.iter() {
@@ -29,11 +29,11 @@ impl Display for Ty {
                 write!(f, ". {ty}")
             }
             Self::Named { name, args } => {
-                write!(f, "({name}")?;
+                write!(f, "{name}")?;
                 for arg in args.iter() {
                     write!(f, " {arg}")?;
                 }
-                write!(f, ")")
+                Ok(())
             }
         }
     }
@@ -58,5 +58,13 @@ impl Ty {
     #[must_use]
     pub const fn is_named(&self) -> bool {
         matches!(self, Self::Named { .. })
+    }
+
+    /// Returns `true` if the ty is [`Fn`].
+    ///
+    /// [`Fn`]: Ty::Fn
+    #[must_use]
+    pub const fn is_fn(&self) -> bool {
+        matches!(self, Self::Fn { .. })
     }
 }

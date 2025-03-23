@@ -1,11 +1,11 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
-use super::ast::ModuleIdent;
-use super::infer::Constr;
+use super::infer::Constraint;
 use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;
+use crate::span::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LexError {
@@ -27,11 +27,14 @@ impl std::error::Error for LexError {
 pub enum ParseError {
     LexError(LexError),
     UnexpectedEof,
-    ExpectedToken(TokenKind),
-    ExpectedExpr,
-    ExpectedId,
-    ExpectedType,
-    ExpectedPattern,
+    ExpectedToken {
+        expected: TokenKind,
+        got:      TokenKind,
+    },
+    ExpectedExpr(TokenKind),
+    ExpectedId(TokenKind),
+    ExpectedType(TokenKind),
+    ExpectedPattern(TokenKind),
 }
 
 impl From<LexError> for ParseError {
@@ -45,11 +48,13 @@ impl Display for ParseError {
         match self {
             Self::LexError(lex_error) => lex_error.fmt(f),
             Self::UnexpectedEof => write!(f, "unexpected end-of-file"),
-            Self::ExpectedToken(token_kind) => write!(f, "expected '{token_kind}'"),
-            Self::ExpectedExpr => write!(f, "expected expression"),
-            Self::ExpectedId => write!(f, "expected identifier"),
-            Self::ExpectedType => write!(f, "expected type"),
-            Self::ExpectedPattern => write!(f, "expected pattern"),
+            Self::ExpectedToken { expected, got } => {
+                write!(f, "expected '{expected}', got '{got}'")
+            }
+            Self::ExpectedExpr(got) => write!(f, "expected expression, got '{got}'"),
+            Self::ExpectedId(got) => write!(f, "expected identifier, got '{got}'"),
+            Self::ExpectedType(got) => write!(f, "expected type, got '{got}'"),
+            Self::ExpectedPattern(got) => write!(f, "expected pattern, got '{got}'"),
         }
     }
 }
@@ -57,24 +62,60 @@ impl std::error::Error for ParseError {
 }
 
 #[derive(Debug, Clone)]
-pub enum InferError {
-    Uninferable(Constr),
+pub enum InferErrorKind {
+    Uninferable(Constraint),
     Unbound(Symbol),
-    UnboundModule(ModuleIdent),
+    UnboundModule(Symbol),
+    NotConstructor(Symbol),
     Kind(Rc<Ty>),
+}
+
+impl Display for InferErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Uninferable(constr) => {
+                write!(
+                    f,
+                    "expected expression of type `{}`, got `{}`",
+                    constr.lhs(),
+                    constr.rhs()
+                )
+            }
+            Self::Unbound(id) => write!(f, "unbound identifier: {id}"),
+            Self::UnboundModule(module) => write!(f, "unbound module: {module}"),
+            Self::NotConstructor(name) => write!(f, "'{name}' is not a constructor"),
+            Self::Kind(ty) => write!(f, "`{ty}` is not of kind *"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InferError {
+    kind: InferErrorKind,
+    span: Span,
 }
 
 impl Display for InferError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Uninferable(constr) => {
-                write!(f, "expected '{}', got '{}'", constr.lhs(), constr.rhs())
-            }
-            Self::Unbound(id) => write!(f, "unbound identifier: {id}"),
-            Self::UnboundModule(access) => write!(f, "unbound access: {access}"),
-            Self::Kind(kind) => write!(f, "kind error: {kind}"),
-        }
+        write!(f, "{}", self.kind())
     }
+}
+
+impl InferError {
+    pub fn new(kind: InferErrorKind, span: Span) -> Self {
+        Self { kind, span }
+    }
+
+    pub fn kind(&self) -> &InferErrorKind {
+        &self.kind
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
+}
+
+impl std::error::Error for InferErrorKind {
 }
 
 impl std::error::Error for InferError {

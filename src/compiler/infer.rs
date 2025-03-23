@@ -10,11 +10,11 @@ use super::ast::typed::{
     TypedExpr, TypedExprKind, TypedModule, TypedParam, TypedPat, TypedPatKind,
 };
 use super::ctx::TypeCtx;
-use super::error::InferError;
+use super::error::{InferError, InferErrorKind};
 use super::types::Ty;
-use crate::span::{Span, Spanned};
+use crate::span::Span;
 
-pub type InferResult<T> = Result<T, Spanned<InferError>>;
+pub type InferResult<T> = Result<T, InferError>;
 
 #[derive(Debug, Clone)]
 pub struct Subs {
@@ -214,30 +214,80 @@ impl Substitute for Rc<Ty> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Constr {
-    lhs:  Rc<Ty>,
-    rhs:  Rc<Ty>,
-    span: Span,
+#[derive(Debug, Clone, Copy)]
+pub struct ConstraintSpan {
+    pub lhs:  Option<Span>,
+    pub rhs:  Option<Span>,
+    pub expr: Span,
 }
 
-impl Substitute for Constr {
+impl ConstraintSpan {
+    pub const fn new(lhs: Option<Span>, rhs: Option<Span>, expr: Span) -> Self {
+        Self { lhs, rhs, expr }
+    }
+}
+
+impl From<Span> for ConstraintSpan {
+    fn from(value: Span) -> Self {
+        Self::new(None, None, value)
+    }
+}
+
+impl From<[Span; 2]> for ConstraintSpan {
+    fn from(value: [Span; 2]) -> Self {
+        Self::new(None, Some(value[0]), value[1])
+    }
+}
+
+impl From<[Span; 3]> for ConstraintSpan {
+    fn from(value: [Span; 3]) -> Self {
+        Self::new(Some(value[0]), Some(value[1]), value[2])
+    }
+}
+
+impl From<ConstraintSpan> for Vec<Span> {
+    fn from(value: ConstraintSpan) -> Self {
+        match (value.lhs, value.rhs) {
+            (None, None) => vec![value.expr],
+            (None, Some(rhs)) => vec![rhs, value.expr],
+            (Some(lhs), None) => vec![lhs, value.expr],
+            (Some(lhs), Some(rhs)) => vec![lhs, rhs, value.expr],
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Constraint {
+    lhs: Rc<Ty>,
+    rhs: Rc<Ty>,
+
+    pub spans: ConstraintSpan,
+}
+
+impl Substitute for Constraint {
     fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
         S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         Self {
-            lhs:  self.lhs.substitute(subs, env),
-            rhs:  self.rhs.substitute(subs, env),
-            span: self.span,
+            lhs:   self.lhs.substitute(subs, env),
+            rhs:   self.rhs.substitute(subs, env),
+            spans: self.spans,
         }
     }
 }
 
-impl Constr {
+impl Constraint {
     #[must_use]
-    pub const fn new(lhs: Rc<Ty>, rhs: Rc<Ty>, span: Span) -> Self {
-        Self { lhs, rhs, span }
+    pub fn new<T>(lhs: Rc<Ty>, rhs: Rc<Ty>, spans: T) -> Self
+    where
+        ConstraintSpan: From<T>,
+    {
+        Self {
+            lhs,
+            rhs,
+            spans: ConstraintSpan::from(spans),
+        }
     }
 
     #[must_use]
@@ -257,11 +307,11 @@ impl Constr {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ConstrSet {
-    constrs: Vec<Constr>,
+pub struct ConstraintSet {
+    constrs: Vec<Constraint>,
 }
 
-impl Substitute for &mut ConstrSet {
+impl Substitute for &mut ConstraintSet {
     fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
         S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
@@ -273,9 +323,9 @@ impl Substitute for &mut ConstrSet {
     }
 }
 
-impl<T> From<T> for ConstrSet
+impl<T> From<T> for ConstraintSet
 where
-    Vec<Constr>: From<T>,
+    Vec<Constraint>: From<T>,
 {
     fn from(value: T) -> Self {
         Self {
@@ -284,8 +334,8 @@ where
     }
 }
 
-impl From<Constr> for ConstrSet {
-    fn from(value: Constr) -> Self {
+impl From<Constraint> for ConstraintSet {
+    fn from(value: Constraint) -> Self {
         Self {
             constrs: vec![value],
         }
@@ -294,13 +344,13 @@ impl From<Constr> for ConstrSet {
 
 pub fn unify<C>(cset: C, type_ctx: &mut TypeCtx) -> InferResult<Vec<Subs>>
 where
-    ConstrSet: From<C>,
+    ConstraintSet: From<C>,
 {
-    let mut cset = ConstrSet::from(cset);
+    let mut cset = ConstraintSet::from(cset);
     let mut subs = Vec::new();
 
     while let Some(c) = cset.constrs.pop() {
-        let span = c.span;
+        let spans = c.spans;
         match (c.lhs.as_ref(), c.rhs.as_ref()) {
             (lhs @ (Ty::Int | Ty::Bool | Ty::Var(_)), rhs @ (Ty::Int | Ty::Bool | Ty::Var(_)))
                 if lhs == rhs => {}
@@ -315,8 +365,8 @@ where
                 subs.push(s);
             }
             (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
-                let c1 = Constr::new(i1.clone(), i2.clone(), span);
-                let c2 = Constr::new(o1.clone(), o2.clone(), span);
+                let c1 = Constraint::new(i1.clone(), i2.clone(), spans);
+                let c2 = Constraint::new(o1.clone(), o2.clone(), spans);
 
                 cset.push(c1);
                 cset.push(c2);
@@ -332,17 +382,19 @@ where
                 },
             ) if n1 == n2 && args1.len() == args2.len() => {
                 for (a1, a2) in args1.iter().zip(args2.iter()) {
-                    cset.push(Constr::new(a1.clone(), a2.clone(), span));
+                    cset.push(Constraint::new(a1.clone(), a2.clone(), spans));
                 }
             }
-            _ => return Err(Spanned::new(InferError::Uninferable(c), span)),
+            _ => {
+                return Err(InferError::new(InferErrorKind::Uninferable(c), spans.expr));
+            }
         }
     }
 
     Ok(subs)
 }
 
-impl ConstrSet {
+impl ConstraintSet {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -352,11 +404,11 @@ impl ConstrSet {
         self.constrs.append(&mut other.constrs);
     }
 
-    pub fn push(&mut self, c: Constr) {
+    pub fn push(&mut self, c: Constraint) {
         self.constrs.push(c);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Constr> {
+    pub fn iter(&self) -> impl Iterator<Item = &Constraint> {
         self.constrs.iter()
     }
 }
@@ -367,13 +419,13 @@ impl Display for Subs {
     }
 }
 
-impl Display for Constr {
+impl Display for Constraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} = {}", self.lhs, self.rhs)
     }
 }
 
-impl Display for ConstrSet {
+impl Display for ConstraintSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.constrs.iter().try_for_each(|c| write!(f, "{c}, "))
     }
