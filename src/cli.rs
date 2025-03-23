@@ -83,7 +83,7 @@ impl Config {
                 None => println!("module"),
             }
             for (id, ty) in &module.declared {
-                println!("    val {id}: {ty};");
+                println!("    val {id}: {};", ty.ty());
             }
         }
 

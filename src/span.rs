@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::fmt::{Debug, Display};
 use std::ops::Index;
 
@@ -76,26 +77,19 @@ pub struct Spanned<T> {
     pub span: Span,
 }
 
-impl<T> Debug for Spanned<T>
-where
-    T: Debug,
-{
+impl<T: Debug> Debug for Spanned<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.data.fmt(f)
     }
 }
 
-impl<T> Display for Spanned<T>
-where
-    T: Display,
-{
+impl<T: Display> Display for Spanned<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.data.fmt(f)
     }
 }
 
-impl<T> std::error::Error for Spanned<T> where T: std::error::Error
-{
+impl<T: Error> Error for Spanned<T> {
 }
 
 impl<T> Spanned<T> {

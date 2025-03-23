@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use crate::span::Spanned;
 
 pub trait Report {
@@ -8,10 +10,7 @@ pub trait Report {
     }
 }
 
-impl<T> Report for Spanned<T>
-where
-    T: std::error::Error,
-{
+impl<T: Error> Report for Spanned<T> {
     fn report(&self, input: &str) -> String {
         let (loc, s) = self.span.start_loc(input);
         format!(

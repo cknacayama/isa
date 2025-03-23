@@ -1,24 +1,25 @@
 use std::fmt::Display;
 
+use crate::global::Symbol;
 use crate::span::Spanned;
 
-pub type Token<'a> = Spanned<TokenKind<'a>>;
+pub type Token = Spanned<TokenKind>;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum TokenKind<'a> {
+pub enum TokenKind {
     Plus,
     Minus,
     Star,
     Slash,
     Percent,
     Eq,
-    EqEq,
     Bang,
     BangEq,
     Gt,
     Ge,
     Lt,
     Le,
+    Pipe,
 
     Underscore,
 
@@ -30,9 +31,11 @@ pub enum TokenKind<'a> {
     Arrow,
     Comma,
     Semicolon,
+    Colon,
+    Dot,
 
-    Integer(&'a str),
-    Ident(&'a str),
+    Integer(i64),
+    Ident(Symbol),
 
     KwTrue,
     KwFalse,
@@ -58,76 +61,79 @@ pub enum TokenKind<'a> {
     KwElse,
 }
 
-impl TokenKind<'_> {
+impl TokenKind {
     #[must_use]
-    pub fn keyword(s: &str) -> Option<TokenKind<'static>> {
+    pub fn keyword(s: &str) -> Option<Self> {
         match s {
-            "true" => Some(TokenKind::KwTrue),
-            "false" => Some(TokenKind::KwFalse),
-            "type" => Some(TokenKind::KwType),
-            "let" => Some(TokenKind::KwLet),
-            "val" => Some(TokenKind::KwVal),
-            "fn" => Some(TokenKind::KwFn),
-            "and" => Some(TokenKind::KwAnd),
-            "or" => Some(TokenKind::KwOr),
-            "not" => Some(TokenKind::KwNot),
-            "match" => Some(TokenKind::KwMatch),
-            "if" => Some(TokenKind::KwIf),
-            "then" => Some(TokenKind::KwThen),
-            "else" => Some(TokenKind::KwElse),
-            "in" => Some(TokenKind::KwIn),
-            "with" => Some(TokenKind::KwWith),
-            "module" => Some(TokenKind::KwModule),
-            "int" => Some(TokenKind::KwInt),
-            "bool" => Some(TokenKind::KwBool),
-            "_" => Some(TokenKind::Underscore),
+            "true" => Some(Self::KwTrue),
+            "false" => Some(Self::KwFalse),
+            "type" => Some(Self::KwType),
+            "let" => Some(Self::KwLet),
+            "val" => Some(Self::KwVal),
+            "fn" => Some(Self::KwFn),
+            "and" => Some(Self::KwAnd),
+            "or" => Some(Self::KwOr),
+            "not" => Some(Self::KwNot),
+            "match" => Some(Self::KwMatch),
+            "if" => Some(Self::KwIf),
+            "then" => Some(Self::KwThen),
+            "else" => Some(Self::KwElse),
+            "in" => Some(Self::KwIn),
+            "with" => Some(Self::KwWith),
+            "module" => Some(Self::KwModule),
+            "int" => Some(Self::KwInt),
+            "bool" => Some(Self::KwBool),
+            "_" => Some(Self::Underscore),
             _ => None,
         }
     }
 }
 
-impl Display for TokenKind<'_> {
+impl Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TokenKind::Plus => write!(f, "+"),
-            TokenKind::Minus => write!(f, "-"),
-            TokenKind::Star => write!(f, "*"),
-            TokenKind::Slash => write!(f, "/"),
-            TokenKind::Percent => write!(f, "%"),
-            TokenKind::Eq => write!(f, "="),
-            TokenKind::EqEq => write!(f, "=="),
-            TokenKind::Bang => write!(f, "!"),
-            TokenKind::BangEq => write!(f, "!="),
-            TokenKind::Gt => write!(f, ">"),
-            TokenKind::Ge => write!(f, ">="),
-            TokenKind::Lt => write!(f, "<"),
-            TokenKind::Le => write!(f, "<="),
-            TokenKind::Underscore => write!(f, "_"),
-            TokenKind::LParen => write!(f, "("),
-            TokenKind::RParen => write!(f, ")"),
-            TokenKind::Bar => write!(f, "|"),
-            TokenKind::Comma => write!(f, ","),
-            TokenKind::Semicolon => write!(f, ";"),
-            TokenKind::Arrow => write!(f, "->"),
-            TokenKind::Integer(v) | TokenKind::Ident(v) => write!(f, "{v}"),
-            TokenKind::KwTrue => write!(f, "true"),
-            TokenKind::KwFalse => write!(f, "false"),
-            TokenKind::KwType => write!(f, "type"),
-            TokenKind::KwLet => write!(f, "let"),
-            TokenKind::KwVal => write!(f, "val"),
-            TokenKind::KwIn => write!(f, "in"),
-            TokenKind::KwFn => write!(f, "fn"),
-            TokenKind::KwModule => write!(f, "module"),
-            TokenKind::KwInt => write!(f, "int"),
-            TokenKind::KwBool => write!(f, "bool"),
-            TokenKind::KwAnd => write!(f, "and"),
-            TokenKind::KwOr => write!(f, "or"),
-            TokenKind::KwNot => write!(f, "not"),
-            TokenKind::KwMatch => write!(f, "match"),
-            TokenKind::KwWith => write!(f, "with"),
-            TokenKind::KwIf => write!(f, "if"),
-            TokenKind::KwThen => write!(f, "then"),
-            TokenKind::KwElse => write!(f, "else"),
+            Self::Plus => write!(f, "+"),
+            Self::Minus => write!(f, "-"),
+            Self::Star => write!(f, "*"),
+            Self::Slash => write!(f, "/"),
+            Self::Percent => write!(f, "%"),
+            Self::Eq => write!(f, "="),
+            Self::Bang => write!(f, "!"),
+            Self::BangEq => write!(f, "!="),
+            Self::Gt => write!(f, ">"),
+            Self::Ge => write!(f, ">="),
+            Self::Lt => write!(f, "<"),
+            Self::Le => write!(f, "<="),
+            Self::Pipe => write!(f, "|>"),
+            Self::Underscore => write!(f, "_"),
+            Self::LParen => write!(f, "("),
+            Self::RParen => write!(f, ")"),
+            Self::Bar => write!(f, "|"),
+            Self::Comma => write!(f, ","),
+            Self::Semicolon => write!(f, ";"),
+            Self::Colon => write!(f, ":"),
+            Self::Dot => write!(f, "."),
+            Self::Arrow => write!(f, "->"),
+            Self::Integer(v) => write!(f, "{v}"),
+            Self::Ident(v) => write!(f, "{v}"),
+            Self::KwTrue => write!(f, "true"),
+            Self::KwFalse => write!(f, "false"),
+            Self::KwType => write!(f, "type"),
+            Self::KwLet => write!(f, "let"),
+            Self::KwVal => write!(f, "val"),
+            Self::KwIn => write!(f, "in"),
+            Self::KwFn => write!(f, "fn"),
+            Self::KwModule => write!(f, "module"),
+            Self::KwInt => write!(f, "int"),
+            Self::KwBool => write!(f, "bool"),
+            Self::KwAnd => write!(f, "and"),
+            Self::KwOr => write!(f, "or"),
+            Self::KwNot => write!(f, "not"),
+            Self::KwMatch => write!(f, "match"),
+            Self::KwWith => write!(f, "with"),
+            Self::KwIf => write!(f, "if"),
+            Self::KwThen => write!(f, "then"),
+            Self::KwElse => write!(f, "else"),
         }
     }
 }

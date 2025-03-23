@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
-use crate::global::Symbol;
+use super::ast::PathIdent;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
@@ -11,7 +11,7 @@ pub enum Ty {
     Var(u64),
     Fn { param: Rc<Ty>, ret: Rc<Ty> },
     Scheme { quant: Rc<[u64]>, ty: Rc<Ty> },
-    Named { name: Symbol, args: Rc<[Rc<Ty>]> },
+    Named { name: PathIdent, args: Rc<[Rc<Ty>]> },
 }
 
 impl Display for Ty {

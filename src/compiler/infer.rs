@@ -129,7 +129,8 @@ impl Substitute for &mut TypedExpr {
             TypedExprKind::Unit
             | TypedExprKind::Int(_)
             | TypedExprKind::Bool(_)
-            | TypedExprKind::Ident(_) => (),
+            | TypedExprKind::Ident(_)
+            | TypedExprKind::Acess(_) => (),
         }
 
         self.ty = self.ty.clone().substitute(subs, env);
@@ -145,8 +146,8 @@ impl Substitute for &mut TypedModule {
         self.exprs.iter_mut().for_each(|e| {
             e.substitute(subs, env);
         });
-        self.declared.values_mut().for_each(|ty| {
-            *ty = ty.clone().substitute(subs, env);
+        self.declared.values_mut().for_each(|var| {
+            *var.ty_mut() = var.ty().clone().substitute(subs, env);
         });
         self
     }
@@ -158,7 +159,7 @@ impl Substitute for &mut TypedPat {
         S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         match &mut self.kind {
-            TypedPatKind::Or(args) | TypedPatKind::Type { args, .. } => {
+            TypedPatKind::Or(args) | TypedPatKind::Constructor { args, .. } => {
                 args.iter_mut().for_each(|p| {
                     p.substitute(subs, env);
                 });
@@ -168,7 +169,8 @@ impl Substitute for &mut TypedPat {
             | TypedPatKind::Unit
             | TypedPatKind::Int(_)
             | TypedPatKind::Bool(_)
-            | TypedPatKind::Ident(_) => (),
+            | TypedPatKind::Ident(_)
+            | TypedPatKind::Module(_) => (),
         }
         self.ty = self.ty.clone().substitute(subs, env);
         self
@@ -176,9 +178,9 @@ impl Substitute for &mut TypedPat {
 }
 
 impl Substitute for Rc<Ty> {
-    fn substitute<Subs>(self, subs: &mut Subs, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
-        Subs: FnMut(&Ty, &mut TypeCtx) -> Option<Self>,
+        S: FnMut(&Ty, &mut TypeCtx) -> Option<Self>,
     {
         let ty = match self.as_ref() {
             Ty::Fn { param, ret } => {
@@ -220,9 +222,9 @@ pub struct Constr {
 }
 
 impl Substitute for Constr {
-    fn substitute<Subs>(self, subs: &mut Subs, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
-        Subs: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         Self {
             lhs:  self.lhs.substitute(subs, env),
@@ -260,9 +262,9 @@ pub struct ConstrSet {
 }
 
 impl Substitute for &mut ConstrSet {
-    fn substitute<Subs>(self, subs: &mut Subs, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
     where
-        Subs: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
     {
         for c in &mut self.constrs {
             *c = c.clone().substitute(subs, env);

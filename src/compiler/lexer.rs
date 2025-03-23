@@ -2,6 +2,7 @@ use std::str::Chars;
 
 use super::error::LexError;
 use super::token::{Token, TokenKind};
+use crate::global;
 use crate::span::{Span, Spanned};
 
 #[derive(Debug)]
@@ -77,7 +78,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn make_token(&self, kind: TokenKind<'a>) -> Token<'a> {
+    fn make_token(&self, kind: TokenKind) -> Token {
         let start: u32 = self.start.try_into().expect("span fields must be u32");
         let cur: u32 = self.cur.try_into().expect("span fields must be u32");
         let span = Span::new(start, cur).unwrap();
@@ -106,22 +107,24 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn number(&mut self) -> Token<'a> {
+    fn number(&mut self) -> Token {
         self.eat_while(|c| c.is_ascii_digit());
         let s = &self.input[self.start..self.cur];
-        self.make_token(TokenKind::Integer(s))
+        self.make_token(TokenKind::Integer(
+            s.parse().unwrap_or_else(|_| unreachable!()),
+        ))
     }
 
-    fn identifier_or_keyword(&mut self) -> Token<'a> {
+    fn identifier_or_keyword(&mut self) -> Token {
         self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_' || c == '\'');
         let s = &self.input[self.start..self.cur];
         TokenKind::keyword(s).map_or_else(
-            || self.make_token(TokenKind::Ident(s)),
+            || self.make_token(TokenKind::Ident(global::intern_symbol(s))),
             |kw| self.make_token(kw),
         )
     }
 
-    pub fn next_token(&mut self) -> Option<LexResult<Token<'a>>> {
+    pub fn next_token(&mut self) -> Option<LexResult<Token>> {
         self.skip_whitespace();
 
         self.start = self.cur;
@@ -156,13 +159,15 @@ impl<'a> Lexer<'a> {
             ')' => token!(RParen),
             ',' => token!(Comma),
             ';' => token!(Semicolon),
+            ':' => token!(Colon),
+            '.' => token!(Dot),
             '*' => token!(Star),
             '/' => token!(Slash),
             '%' => token!(Percent),
             '+' => token!(Plus),
-            '|' => token!(Bar),
+            '=' => token!(Eq),
+            '|' => token!(Bar, '>' => Pipe),
             '-' => token!(Minus, '>' => Arrow),
-            '=' => token!(Eq, '=' => EqEq),
             '!' => token!(Bang, '=' => BangEq),
             '<' => token!(Lt, '=' => Le),
             '>' => token!(Gt, '=' => Ge),
@@ -173,8 +178,8 @@ impl<'a> Lexer<'a> {
     }
 }
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = LexResult<Token<'a>>;
+impl Iterator for Lexer<'_> {
+    type Item = LexResult<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.next_token()

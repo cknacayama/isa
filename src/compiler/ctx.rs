@@ -1,9 +1,8 @@
 use std::rc::Rc;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 
 use super::types::Ty;
-use crate::global::Symbol;
 
 #[derive(Debug, Clone)]
 struct BuiltinTypes {
@@ -26,7 +25,6 @@ impl Default for BuiltinTypes {
 pub struct TypeCtx {
     builtin:      BuiltinTypes,
     types:        FxHashSet<Rc<Ty>>,
-    constructors: FxHashMap<Symbol, Rc<Ty>>,
     id_generator: u64,
 }
 
@@ -41,11 +39,6 @@ impl TypeCtx {
         }
     }
 
-    #[must_use]
-    pub fn get_constructor(&self, name: &Symbol) -> Option<&Rc<Ty>> {
-        self.constructors.get(name)
-    }
-
     pub const fn gen_id(&mut self) -> u64 {
         let cur = self.id_generator;
         self.id_generator += 1;
@@ -55,10 +48,6 @@ impl TypeCtx {
     pub fn gen_type_var(&mut self) -> Rc<Ty> {
         let id = self.gen_id();
         self.intern_type(Ty::Var(id))
-    }
-
-    pub fn insert_constructor(&mut self, name: Symbol, ty: Rc<Ty>) {
-        self.constructors.insert(name, ty);
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Rc<Ty>> {

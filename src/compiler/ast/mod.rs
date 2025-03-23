@@ -6,6 +6,7 @@ use std::rc::Rc;
 
 use rustc_hash::FxHashMap;
 
+use super::env::VarData;
 use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;
@@ -26,18 +27,19 @@ pub enum BinOp {
     Le,
     And,
     Or,
+    Pipe,
 }
 
 impl BinOp {
     #[must_use]
-    pub const fn from_token(tk: TokenKind<'_>) -> Option<Self> {
+    pub const fn from_token(tk: TokenKind) -> Option<Self> {
         match tk {
             TokenKind::Plus => Some(Self::Add),
             TokenKind::Minus => Some(Self::Sub),
             TokenKind::Star => Some(Self::Mul),
             TokenKind::Slash => Some(Self::Div),
             TokenKind::Percent => Some(Self::Rem),
-            TokenKind::EqEq => Some(Self::Eq),
+            TokenKind::Eq => Some(Self::Eq),
             TokenKind::BangEq => Some(Self::Ne),
             TokenKind::Gt => Some(Self::Gt),
             TokenKind::Ge => Some(Self::Ge),
@@ -45,9 +47,18 @@ impl BinOp {
             TokenKind::Le => Some(Self::Le),
             TokenKind::KwAnd => Some(Self::And),
             TokenKind::KwOr => Some(Self::Or),
+            TokenKind::Pipe => Some(Self::Pipe),
 
             _ => None,
         }
+    }
+
+    /// Returns `true` if the bin op is [`Pipe`].
+    ///
+    /// [`Pipe`]: BinOp::Pipe
+    #[must_use]
+    pub const fn is_pipe(&self) -> bool {
+        matches!(self, Self::Pipe)
     }
 }
 
@@ -59,7 +70,7 @@ impl Display for BinOp {
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
             Self::Rem => write!(f, "%"),
-            Self::Eq => write!(f, "=="),
+            Self::Eq => write!(f, "="),
             Self::Ne => write!(f, "!="),
             Self::Gt => write!(f, ">"),
             Self::Ge => write!(f, ">="),
@@ -67,6 +78,7 @@ impl Display for BinOp {
             Self::Le => write!(f, "<="),
             Self::And => write!(f, "and"),
             Self::Or => write!(f, "or"),
+            Self::Pipe => write!(f, "|>"),
         }
     }
 }
@@ -79,7 +91,7 @@ pub enum UnOp {
 
 impl UnOp {
     #[must_use]
-    pub const fn from_token(tk: TokenKind<'_>) -> Option<Self> {
+    pub const fn from_token(tk: TokenKind) -> Option<Self> {
         match tk {
             TokenKind::KwNot => Some(Self::Not),
             TokenKind::Minus => Some(Self::Neg),
@@ -97,22 +109,22 @@ impl Display for UnOp {
     }
 }
 
-impl TokenKind<'_> {
+impl TokenKind {
     #[must_use]
     pub const fn can_start_expr(&self) -> bool {
         matches!(
             self,
-            TokenKind::LParen
-                | TokenKind::Integer(_)
-                | TokenKind::Ident(_)
-                | TokenKind::KwTrue
-                | TokenKind::KwFalse
-                | TokenKind::KwLet
-                | TokenKind::KwFn
-                | TokenKind::KwNot
-                | TokenKind::KwType
-                | TokenKind::KwMatch
-                | TokenKind::KwIf
+            Self::LParen
+                | Self::Integer(_)
+                | Self::Ident(_)
+                | Self::KwTrue
+                | Self::KwFalse
+                | Self::KwLet
+                | Self::KwFn
+                | Self::KwNot
+                | Self::KwType
+                | Self::KwMatch
+                | Self::KwIf
         )
     }
 
@@ -120,7 +132,7 @@ impl TokenKind<'_> {
     pub const fn can_start_type(&self) -> bool {
         matches!(
             self,
-            TokenKind::LParen | TokenKind::Ident(_) | TokenKind::KwInt | TokenKind::KwBool
+            Self::LParen | Self::Ident(_) | Self::KwInt | Self::KwBool
         )
     }
 
@@ -128,34 +140,34 @@ impl TokenKind<'_> {
     pub const fn can_start_pat(&self) -> bool {
         matches!(
             self,
-            TokenKind::LParen
-                | TokenKind::Underscore
-                | TokenKind::Ident(_)
-                | TokenKind::Integer(_)
-                | TokenKind::KwTrue
-                | TokenKind::KwFalse
-                | TokenKind::KwNot
-                | TokenKind::Minus
+            Self::LParen
+                | Self::Underscore
+                | Self::Ident(_)
+                | Self::Integer(_)
+                | Self::KwTrue
+                | Self::KwFalse
+                | Self::KwNot
+                | Self::Minus
         )
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Constructor {
-    pub id:     Symbol,
+    pub name:   Symbol,
     pub params: Box<[Rc<Ty>]>,
 }
 
 impl Constructor {
     #[must_use]
-    pub const fn new(id: Symbol, params: Box<[Rc<Ty>]>) -> Self {
-        Self { id, params }
+    pub const fn new(name: Symbol, params: Box<[Rc<Ty>]>) -> Self {
+        Self { name, params }
     }
 }
 
 impl Display for Constructor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.id)?;
+        write!(f, "{}", self.name)?;
         self.params.iter().try_for_each(|p| write!(f, " {p}"))
     }
 }
@@ -163,7 +175,7 @@ impl Display for Constructor {
 #[derive(Clone)]
 pub struct Module<T> {
     pub name:     Option<Symbol>,
-    pub declared: FxHashMap<Symbol, T>,
+    pub declared: FxHashMap<Symbol, VarData>,
     pub exprs:    Box<[Expr<T>]>,
     pub span:     Span,
 }
@@ -172,7 +184,7 @@ impl<T> Module<T> {
     #[must_use]
     pub const fn new(
         name: Option<Symbol>,
-        declared: FxHashMap<Symbol, T>,
+        declared: FxHashMap<Symbol, VarData>,
         exprs: Box<[Expr<T>]>,
         span: Span,
     ) -> Self {
@@ -194,9 +206,55 @@ impl<T: Debug> Debug for Module<T> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ModuleIdent {
+    module: Symbol,
+    member: Symbol,
+}
+
+impl ModuleIdent {
+    #[must_use]
+    pub const fn new(module: Symbol, member: Symbol) -> Self {
+        Self { module, member }
+    }
+
+    #[must_use]
+    pub const fn module(&self) -> Symbol {
+        self.module
+    }
+
+    #[must_use]
+    pub const fn member(&self) -> Symbol {
+        self.member
+    }
+}
+
+impl Display for ModuleIdent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.module, self.member)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PathIdent {
+    Module(ModuleIdent),
+    Ident(Symbol),
+}
+
+impl Display for PathIdent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Module(module) => write!(f, "{module}"),
+            Self::Ident(id) => write!(f, "{id}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum PatKind<T> {
     Wild,
+
+    Module(ModuleIdent),
 
     Ident(Symbol),
 
@@ -208,7 +266,28 @@ pub enum PatKind<T> {
 
     Bool(bool),
 
-    Type { name: Symbol, args: Box<[Pat<T>]> },
+    Constructor {
+        name: PathIdent,
+        args: Box<[Pat<T>]>,
+    },
+}
+
+impl<T> PatKind<T> {
+    /// Returns `true` if the pat kind is [`Module`].
+    ///
+    /// [`Module`]: PatKind::Module
+    #[must_use]
+    pub const fn is_module(&self) -> bool {
+        matches!(self, Self::Module(..))
+    }
+
+    /// Returns `true` if the pat kind is [`Ident`].
+    ///
+    /// [`Ident`]: PatKind::Ident
+    #[must_use]
+    pub const fn is_ident(&self) -> bool {
+        matches!(self, Self::Ident(..))
+    }
 }
 
 #[derive(Clone)]
@@ -226,6 +305,7 @@ impl<T: Debug> Debug for Pat<T> {
             .finish_non_exhaustive()
     }
 }
+
 impl<T> Pat<T> {
     #[must_use]
     pub const fn new(kind: PatKind<T>, span: Span, ty: T) -> Self {
@@ -235,6 +315,7 @@ impl<T> Pat<T> {
     fn format_helper(&self, f: &mut impl Write) -> std::fmt::Result {
         match &self.kind {
             PatKind::Wild => write!(f, "_"),
+            PatKind::Module(module) => write!(f, "{module}"),
             PatKind::Ident(id) => write!(f, "{id}"),
             PatKind::Or(typed_pats) => {
                 let mut iter = typed_pats.iter();
@@ -250,7 +331,7 @@ impl<T> Pat<T> {
             PatKind::Unit => write!(f, "()"),
             PatKind::Int(i) => write!(f, "{i}"),
             PatKind::Bool(b) => write!(f, "{b}"),
-            PatKind::Type { name, args } => {
+            PatKind::Constructor { name, args } => {
                 write!(f, "({name}")?;
                 for pat in args {
                     write!(f, " ")?;
@@ -333,6 +414,8 @@ pub enum ExprKind<T> {
     Bool(bool),
 
     Ident(Symbol),
+
+    Acess(ModuleIdent),
 
     Bin {
         op:  BinOp,
@@ -492,6 +575,7 @@ impl<T: Display> Expr<T> {
                 arg.format_helper(f, indentation + 1)?;
                 write!(f, ")")
             }
+            ExprKind::Acess(module_access) => write!(f, "{module_access}"),
         }
         .and_then(|()| write!(f, ": {}", self.ty))
     }

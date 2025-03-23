@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
+use super::ast::ModuleIdent;
 use super::infer::Constr;
 use super::token::TokenKind;
 use super::types::Ty;
@@ -26,7 +27,7 @@ impl std::error::Error for LexError {
 pub enum ParseError {
     LexError(LexError),
     UnexpectedEof,
-    ExpectedToken(TokenKind<'static>),
+    ExpectedToken(TokenKind),
     ExpectedExpr,
     ExpectedId,
     ExpectedType,
@@ -59,6 +60,7 @@ impl std::error::Error for ParseError {
 pub enum InferError {
     Uninferable(Constr),
     Unbound(Symbol),
+    UnboundModule(ModuleIdent),
     Kind(Rc<Ty>),
 }
 
@@ -69,6 +71,7 @@ impl Display for InferError {
                 write!(f, "expected '{}', got '{}'", constr.lhs(), constr.rhs())
             }
             Self::Unbound(id) => write!(f, "unbound identifier: {id}"),
+            Self::UnboundModule(access) => write!(f, "unbound access: {access}"),
             Self::Kind(kind) => write!(f, "kind error: {kind}"),
         }
     }

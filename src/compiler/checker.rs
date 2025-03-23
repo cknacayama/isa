@@ -7,9 +7,9 @@ use super::ast::untyped::{
     UntypedExpr, UntypedExprKind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat,
     UntypedPatKind,
 };
-use super::ast::{BinOp, Constructor, UnOp};
+use super::ast::{BinOp, Constructor, ModuleIdent, PathIdent, UnOp};
 use super::ctx::TypeCtx;
-use super::env::Env;
+use super::env::{Env, VarData};
 use super::error::InferError;
 use super::infer::{Constr, ConstrSet, InferResult, Subs, Substitute, unify};
 use super::types::Ty;
@@ -49,15 +49,20 @@ impl Checker {
         })
     }
 
-    fn insert_variable(&mut self, id: Symbol, ty: Rc<Ty>) -> Option<Rc<Ty>> {
+    fn insert_variable(&mut self, id: Symbol, ty: Rc<Ty>) -> Option<VarData> {
         self.env.insert(id, ty)
     }
 
-    fn get_variable(&self, id: Symbol) -> InferResult<Rc<Ty>> {
-        self.env
-            .get(&id)
-            .cloned()
-            .ok_or_else(|| Spanned::new(InferError::Unbound(id), Span::default()))
+    fn get_variable(&self, id: Symbol) -> Option<Rc<Ty>> {
+        self.env.get(&id).map(VarData::ty).cloned()
+    }
+
+    fn insert_constructor(&mut self, name: Symbol, ty: Rc<Ty>) -> Option<VarData> {
+        self.env.insert_constructor(name, ty)
+    }
+
+    fn get_constructor(&self, name: &Symbol) -> Option<Rc<Ty>> {
+        self.env.get_constructor(name)
     }
 
     fn intern_type(&mut self, ty: Ty) -> Rc<Ty> {
@@ -129,7 +134,9 @@ impl Checker {
         self.insert_variable(param.name, var);
 
         let expr = self.check(expr)?;
-        let var = self.get_variable(param.name)?;
+        let var = self
+            .get_variable(param.name)
+            .ok_or_else(|| Spanned::new(InferError::Unbound(param.name), span))?;
 
         self.env.pop_scope();
 
@@ -213,7 +220,9 @@ impl Checker {
             let mut expr = self.check(expr)?;
 
             for p in &mut typed_params {
-                p.ty = self.get_variable(p.name)?;
+                p.ty = self
+                    .get_variable(p.name)
+                    .ok_or_else(|| Spanned::new(InferError::Unbound(p.name), Span::default()))?;
             }
 
             expr.ty = self.function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
@@ -274,9 +283,12 @@ impl Checker {
             *param = param.clone().substitute(
                 &mut |ty, _| {
                     subs.iter().find_map(|(old, new)| {
-                        let ty = std::ptr::from_ref(ty);
                         let old = Rc::as_ptr(old);
-                        if ty == old { Some(new.clone()) } else { None }
+                        if std::ptr::eq(ty, old) {
+                            Some(new.clone())
+                        } else {
+                            None
+                        }
                     })
                 },
                 &mut self.type_ctx,
@@ -289,8 +301,8 @@ impl Checker {
         if !quant.is_empty() {
             ret = self.intern_type(Ty::Scheme { quant, ty: ret });
         }
-        self.insert_variable(constructor.id, ret.clone());
-        self.type_ctx.insert_constructor(constructor.id, ret);
+        self.insert_variable(constructor.name, ret.clone());
+        self.insert_constructor(constructor.name, ret);
     }
 
     fn check_type(
@@ -317,7 +329,7 @@ impl Checker {
         self.declared_types.push(name);
 
         let ty = self.intern_type(Ty::Named {
-            name,
+            name: PathIdent::Ident(name),
             args: args.clone().into(),
         });
 
@@ -339,24 +351,6 @@ impl Checker {
             UntypedPatKind::Wild => {
                 let var = self.gen_type_var();
                 Ok(TypedPat::new(TypedPatKind::Wild, span, var))
-            }
-            UntypedPatKind::Ident(name) => {
-                if let Some(constructor) = self.type_ctx.get_constructor(&name).cloned() {
-                    let ty = self.instantiate(constructor);
-                    if ty.is_named() {
-                        let kind = TypedPatKind::Type {
-                            name,
-                            args: Box::from([]),
-                        };
-                        Ok(TypedPat::new(kind, span, ty))
-                    } else {
-                        Err(Spanned::new(InferError::Kind(ty), span))
-                    }
-                } else {
-                    let var = self.gen_type_var();
-                    self.insert_variable(name, var.clone());
-                    Ok(TypedPat::new(TypedPatKind::Ident(name), span, var))
-                }
             }
             UntypedPatKind::Or(spanneds) => {
                 let mut patterns = Vec::new();
@@ -387,43 +381,61 @@ impl Checker {
             UntypedPatKind::Bool(b) => {
                 Ok(TypedPat::new(TypedPatKind::Bool(b), span, self.get_bool()))
             }
-            UntypedPatKind::Type { name, args } => {
-                match self.type_ctx.get_constructor(&name).cloned() {
-                    Some(mut ty) => {
-                        ty = self.instantiate(ty);
-                        let mut c = ConstrSet::new();
-                        let mut typed_args = Vec::new();
+            UntypedPatKind::Constructor { name, args } => {
+                let ty = match name {
+                    PathIdent::Module(module) => self
+                        .env
+                        .get_constructor_from_module(&module)
+                        .ok_or_else(|| Spanned::new(InferError::UnboundModule(module), span))?,
 
-                        for arg in args {
-                            let arg = self.check_pat(arg)?;
-                            let Ty::Fn { param, ret } = ty.as_ref() else {
-                                return Err(Spanned::new(InferError::Kind(ty), arg.span));
-                            };
-                            c.push(Constr::new(arg.ty.clone(), param.clone(), arg.span));
-                            ty = ret.clone();
-                            typed_args.push(arg);
+                    PathIdent::Ident(name) => match self.get_constructor(&name) {
+                        Some(ty) => ty,
+                        None if args.is_empty() => {
+                            let var = self.gen_type_var();
+                            self.insert_variable(name, var.clone());
+                            return Ok(TypedPat::new(TypedPatKind::Ident(name), span, var));
                         }
+                        None => return Err(Spanned::new(InferError::Unbound(name), span)),
+                    },
+                };
 
-                        let subs = self.unify(c)?;
-                        for arg in &mut typed_args {
-                            arg.substitute_many(&subs, &mut self.type_ctx);
-                        }
-                        ty = ty.substitute_many(&subs, &mut self.type_ctx);
+                let mut ty = self.instantiate(ty);
 
-                        let kind = TypedPatKind::Type {
-                            name,
-                            args: typed_args.into_boxed_slice(),
-                        };
+                let mut c = ConstrSet::new();
+                let mut typed_args = Vec::new();
 
-                        Ok(TypedPat::new(kind, span, ty))
-                    }
-                    None if args.is_empty() => {
-                        let var = self.gen_type_var();
-                        self.insert_variable(name, var.clone());
-                        Ok(TypedPat::new(TypedPatKind::Ident(name), span, var))
-                    }
-                    None => Err(Spanned::new(InferError::Unbound(name), span)),
+                for arg in args {
+                    let arg = self.check_pat(arg)?;
+                    let Ty::Fn { param, ret } = ty.as_ref() else {
+                        return Err(Spanned::new(InferError::Kind(ty), arg.span));
+                    };
+                    c.push(Constr::new(arg.ty.clone(), param.clone(), arg.span));
+                    ty = ret.clone();
+                    typed_args.push(arg);
                 }
+
+                let subs = self.unify(c)?;
+                for arg in &mut typed_args {
+                    arg.substitute_many(&subs, &mut self.type_ctx);
+                }
+                ty = ty.substitute_many(&subs, &mut self.type_ctx);
+
+                let kind = TypedPatKind::Constructor {
+                    name,
+                    args: typed_args.into_boxed_slice(),
+                };
+
+                Ok(TypedPat::new(kind, span, ty))
+            }
+
+            UntypedPatKind::Ident(name) => {
+                let var = self.gen_type_var();
+                self.insert_variable(name, var.clone());
+                Ok(TypedPat::new(TypedPatKind::Ident(name), span, var))
+            }
+
+            UntypedPatKind::Module(_) => {
+                unreachable!()
             }
         }
     }
@@ -487,6 +499,10 @@ impl Checker {
         rhs: UntypedExpr,
         span: Span,
     ) -> InferResult<TypedExpr> {
+        if op.is_pipe() {
+            return self.check_call(rhs, lhs, span);
+        }
+
         let mut lhs = self.check(lhs)?;
         let mut rhs = self.check(rhs)?;
 
@@ -545,6 +561,8 @@ impl Checker {
 
                 Ok(TypedExpr::new(kind, span, bol))
             }
+
+            BinOp::Pipe => unreachable!(),
         }
     }
 
@@ -599,7 +617,8 @@ impl Checker {
 
         if let Some(mod_name) = module.name {
             while let Some(decl) = self.declared_types.pop() {
-                let new_name = mod_name.concat(decl, '.');
+                let new_name = PathIdent::Module(ModuleIdent::new(mod_name, decl));
+                let decl = PathIdent::Ident(decl);
                 let mut subs = |ty: &Ty, env: &mut TypeCtx| match ty {
                     Ty::Named { name, args } if *name == decl => Some(env.intern_type(Ty::Named {
                         name: new_name,
@@ -609,7 +628,10 @@ impl Checker {
                 };
                 typed.substitute(&mut subs, &mut self.type_ctx);
             }
+            self.env.insert_module(mod_name, typed.declared.clone());
         } else {
+            self.env
+                .extend_global(typed.declared.iter().map(|(k, v)| (*k, v.clone())));
             self.declared_types.clear();
         }
 
@@ -626,47 +648,69 @@ impl Checker {
     pub fn check(&mut self, expr: UntypedExpr) -> InferResult<TypedExpr> {
         let span = expr.span;
         match expr.kind {
+            UntypedExprKind::Acess(acess) => {
+                let t = self
+                    .env
+                    .get_from_module(&acess)
+                    .ok_or_else(|| Spanned::new(InferError::UnboundModule(acess), span))?;
+
+                Ok(TypedExpr::new(
+                    TypedExprKind::Acess(acess),
+                    span,
+                    self.instantiate(t.ty().clone()),
+                ))
+            }
+
             UntypedExprKind::Unit => Ok(TypedExpr::new(TypedExprKind::Unit, span, self.get_unit())),
+
             UntypedExprKind::Int(i) => {
                 Ok(TypedExpr::new(TypedExprKind::Int(i), span, self.get_int()))
             }
+
             UntypedExprKind::Bool(b) => Ok(TypedExpr::new(
                 TypedExprKind::Bool(b),
                 span,
                 self.get_bool(),
             )),
+
             UntypedExprKind::Ident(id) => {
                 let t = self
-                    .env
-                    .get(&id)
-                    .ok_or_else(|| Spanned::new(InferError::Unbound(id), span))?
-                    .clone();
+                    .get_variable(id)
+                    .ok_or_else(|| Spanned::new(InferError::Unbound(id), span))?;
                 Ok(TypedExpr::new(
                     TypedExprKind::Ident(id),
                     span,
                     self.instantiate(t),
                 ))
             }
+
             UntypedExprKind::Bin { op, lhs, rhs } => self.check_bin(op, *lhs, *rhs, span),
+
             UntypedExprKind::Un { op, expr } => self.check_un(op, *expr, span),
+
             UntypedExprKind::If {
                 cond,
                 then,
                 otherwise,
             } => self.check_if(*cond, *then, *otherwise, span),
+
             UntypedExprKind::Fn { param, expr } => self.check_fn(param, *expr, span),
+
             UntypedExprKind::Call { callee, arg } => self.check_call(*callee, *arg, span),
+
             UntypedExprKind::Let {
                 id,
                 params,
                 expr,
                 body,
             } => self.check_let(id, params, *expr, body.map(|body| *body), span),
+
             UntypedExprKind::Semi(expr) => {
                 let mut expr = self.check(*expr)?;
                 expr.ty = self.get_unit();
                 Ok(expr)
             }
+
             UntypedExprKind::Type {
                 id,
                 parameters,
