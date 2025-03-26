@@ -36,7 +36,8 @@ impl<'a> Ctx<'a> {
                 let variants = NonZeroUsize::new(variants)?;
                 Some(CtorSet::Type { variants })
             }
-            _ => None,
+            Ty::Var(_) => Some(CtorSet::Unlistable),
+            Ty::Fn { .. } => None,
         }
     }
 

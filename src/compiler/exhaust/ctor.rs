@@ -12,6 +12,7 @@ pub enum Ctor {
     Missing,
     Or,
     Wildcard,
+    NonExhaustive,
 }
 
 impl Ctor {
@@ -203,6 +204,7 @@ pub enum CtorSet {
     Type { variants: NonZeroUsize },
     Integers,
     Bool,
+    Unlistable,
 }
 
 impl CtorSet {
@@ -276,6 +278,10 @@ impl CtorSet {
                 } else {
                     missing.push(Ctor::Bool(true));
                 }
+            }
+            Self::Unlistable => {
+                present.extend(seen);
+                missing.push(Ctor::NonExhaustive);
             }
         }
 

@@ -635,12 +635,21 @@ impl Checker {
 
     fn instantiate(&mut self, ty: Rc<Ty>) -> Rc<Ty> {
         match ty.as_ref() {
-            Ty::Scheme { quant, ty } => quant.iter().copied().fold(ty.clone(), |ty, quant| {
-                let old = quant;
-                let new = self.gen_type_var();
-                let subs = Subs::new(old, new);
-                ty.substitute_eq(&subs, &mut self.type_ctx)
-            }),
+            Ty::Scheme { quant, ty } => {
+                let subs: Vec<_> = (0..quant.len()).map(|_| self.gen_type_var()).collect();
+
+                ty.clone().substitute(
+                    &mut |ty, _| {
+                        let v = ty.as_var()?;
+                        quant
+                            .iter()
+                            .copied()
+                            .enumerate()
+                            .find_map(|(i, n)| if v == n { Some(subs[i].clone()) } else { None })
+                    },
+                    &mut self.type_ctx,
+                )
+            }
             _ => ty,
         }
     }
