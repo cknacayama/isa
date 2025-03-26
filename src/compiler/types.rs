@@ -68,11 +68,46 @@ impl Ty {
         matches!(self, Self::Fn { .. })
     }
 
-    #[must_use] pub const fn as_var(&self) -> Option<u64> {
+    #[must_use]
+    pub const fn as_var(&self) -> Option<u64> {
         if let Self::Var(v) = self {
             Some(*v)
         } else {
             None
+        }
+    }
+
+    pub fn free_type_variables(&self) -> Vec<u64> {
+        match self {
+            Ty::Unit | Ty::Int | Ty::Bool => Vec::new(),
+            Ty::Named { args, .. } if args.is_empty() => Vec::new(),
+            Ty::Var(id) => vec![*id],
+            Ty::Fn { param, ret } => {
+                let mut param = param.free_type_variables();
+                for r in ret.free_type_variables() {
+                    if !param.contains(&r) {
+                        param.push(r);
+                    }
+                }
+                param
+            }
+            Ty::Scheme { quant, ty } => {
+                let mut ty = ty.free_type_variables();
+                ty.retain(|t| !quant.contains(t));
+                ty
+            }
+            Ty::Named { args, .. } => {
+                let mut iter = args.iter();
+                let first = iter.next().unwrap().free_type_variables();
+                iter.fold(first, |mut acc, arg| {
+                    for t in arg.free_type_variables() {
+                        if !acc.contains(&t) {
+                            acc.push(t);
+                        }
+                    }
+                    acc
+                })
+            }
         }
     }
 }

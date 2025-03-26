@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::ast::ModuleIdent;
 use super::ctx::TypeCtx;
@@ -143,57 +143,31 @@ impl Env {
         self.env.pop()
     }
 
-    #[must_use]
-    fn contains_type(&self, id: u64) -> bool {
-        self.env
-            .iter()
-            .flat_map(FxHashMap::values)
-            .any(|t| t.ty.occurs(id))
-    }
-
     pub fn iter(&self) -> impl Iterator<Item = (&Symbol, &VarData)> {
         self.env.iter().flat_map(FxHashMap::iter)
     }
 
-    #[must_use]
-    fn gen_helper(&self, ty: &Ty) -> Vec<u64> {
-        match ty {
-            Ty::Fn { param, ret } => {
-                let mut res = self.gen_helper(param);
-                for n in self.gen_helper(ret) {
-                    if !res.contains(&n) {
-                        res.push(n);
-                    }
-                }
-                res
-            }
-            Ty::Var(n) if !self.contains_type(*n) => {
-                vec![*n]
-            }
-            Ty::Scheme { quant, ty } => {
-                let mut res = self.gen_helper(ty);
-                for n in quant.iter() {
-                    if !res.contains(n) {
-                        res.push(*n);
-                    }
-                }
-                res
-            }
-            Ty::Named { args, .. } => args
-                .iter()
-                .map(|t| self.gen_helper(t))
-                .reduce(|mut acc, mut e| {
-                    acc.append(&mut e);
-                    acc
-                })
-                .unwrap_or_else(Vec::new),
-            _ => Vec::new(),
+    fn free_type_variables(&self) -> FxHashSet<u64> {
+        let mut free = FxHashSet::default();
+        for t in self.env.iter().flat_map(FxHashMap::values) {
+            free.extend(t.ty.free_type_variables());
         }
+        free
     }
 
     #[must_use]
-    pub fn generalize(&self, ty: Rc<Ty>, type_env: &mut TypeCtx) -> Rc<Ty> {
-        let mut quantifiers = self.gen_helper(&ty);
+    pub fn generalize(&self, ty: Rc<Ty>, ctx: &mut TypeCtx) -> Rc<Ty> {
+        let mut quantifiers = ty.free_type_variables();
+
+        if quantifiers.is_empty() {
+            return ty;
+        }
+
+        let free = self.free_type_variables();
+
+        if !free.is_empty() {
+            quantifiers.retain(|q| !free.contains(q));
+        }
 
         if quantifiers.is_empty() {
             return ty;
@@ -213,7 +187,7 @@ impl Env {
             },
         };
 
-        type_env.intern_type(ty)
+        ctx.intern_type(ty)
     }
 }
 

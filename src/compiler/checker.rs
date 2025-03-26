@@ -677,14 +677,18 @@ impl Checker {
             while let Some(decl) = self.declared_types.pop() {
                 let new_name = PathIdent::Module(ModuleIdent::new(mod_name, decl));
                 let decl = PathIdent::Ident(decl);
-                let mut subs = |ty: &Ty, env: &mut TypeCtx| match ty {
-                    Ty::Named { name, args } if *name == decl => Some(env.intern_type(Ty::Named {
-                        name: new_name,
-                        args: args.clone(),
-                    })),
-                    _ => None,
-                };
-                typed.substitute(&mut subs, &mut self.type_ctx);
+                typed.substitute(
+                    &mut |ty, ctx| match ty {
+                        Ty::Named { name, args } if *name == decl => {
+                            Some(ctx.intern_type(Ty::Named {
+                                name: new_name,
+                                args: args.clone(),
+                            }))
+                        }
+                        _ => None,
+                    },
+                    &mut self.type_ctx,
+                );
             }
             self.env.insert_module(mod_name, typed.declared.clone());
         } else {
