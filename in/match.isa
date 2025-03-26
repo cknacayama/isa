@@ -1,0 +1,4 @@
+let fib n = match n with
+    0 | 1 | 2 -> n,
+    3.. -> fib (n - 1) + fib (n - 2)
+;

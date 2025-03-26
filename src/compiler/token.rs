@@ -33,6 +33,8 @@ pub enum TokenKind {
     Semicolon,
     Colon,
     Dot,
+    DotDot,
+    DotDotEq,
 
     Integer(i64),
     Ident(Symbol),
@@ -113,6 +115,8 @@ impl Display for TokenKind {
             Self::Semicolon => write!(f, ";"),
             Self::Colon => write!(f, ":"),
             Self::Dot => write!(f, "."),
+            Self::DotDot => write!(f, ".."),
+            Self::DotDotEq => write!(f, "..="),
             Self::Arrow => write!(f, "->"),
             Self::Integer(v) => write!(f, "{v}"),
             Self::Ident(v) => write!(f, "{v}"),

@@ -48,11 +48,12 @@ pub trait Substitute {
         )
     }
 
-    fn substitute_many(self, subs: &[Subs], env: &mut TypeCtx) -> Self
+    fn substitute_many<'a, T>(self, subs: T, env: &mut TypeCtx) -> Self
     where
         Self: Sized,
+        T: IntoIterator<Item = &'a Subs>,
     {
-        subs.iter()
+        subs.into_iter()
             .fold(self, |res, subs| res.substitute_eq(subs, env))
     }
 }
@@ -170,7 +171,8 @@ impl Substitute for &mut TypedPat {
             | TypedPatKind::Int(_)
             | TypedPatKind::Bool(_)
             | TypedPatKind::Ident(_)
-            | TypedPatKind::Module(_) => (),
+            | TypedPatKind::Module(_)
+            | TypedPatKind::IntRange(_) => (),
         }
         self.ty = self.ty.clone().substitute(subs, env);
         self
@@ -222,7 +224,7 @@ pub struct ConstraintSpan {
 }
 
 impl ConstraintSpan {
-    pub const fn new(lhs: Option<Span>, rhs: Option<Span>, expr: Span) -> Self {
+    #[must_use] pub const fn new(lhs: Option<Span>, rhs: Option<Span>, expr: Span) -> Self {
         Self { lhs, rhs, expr }
     }
 }

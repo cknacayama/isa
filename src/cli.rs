@@ -1,7 +1,9 @@
+use std::fmt::Debug;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::compiler::checker::Checker;
+use crate::compiler::exhaust::check_matches;
 use crate::compiler::parser::Parser;
 
 /// TODO: add more options
@@ -77,6 +79,10 @@ impl Config {
         let duration = start.elapsed();
 
         for module in modules {
+            if let Err(err) = check_matches(&module.exprs, checker.type_ctx_mut()) {
+                return err.report(checker.type_ctx(), &input);
+            }
+
             match module.name {
                 Some(name) => println!("module {name}"),
                 None => println!("module"),

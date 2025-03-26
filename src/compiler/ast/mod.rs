@@ -163,6 +163,11 @@ impl Constructor {
     pub const fn new(name: Symbol, params: Box<[Rc<Ty>]>) -> Self {
         Self { name, params }
     }
+
+    #[must_use]
+    pub const fn params(&self) -> &[Rc<Ty>] {
+        &self.params
+    }
 }
 
 impl Display for Constructor {
@@ -241,11 +246,42 @@ pub enum PathIdent {
     Ident(Symbol),
 }
 
+impl PathIdent {
+    #[must_use]
+    pub fn ident(&self) -> Symbol {
+        match self {
+            Self::Module(module_ident) => module_ident.member(),
+            Self::Ident(symbol) => *symbol,
+        }
+    }
+}
+
 impl Display for PathIdent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Module(module) => write!(f, "{module}"),
             Self::Ident(id) => write!(f, "{id}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum IntRangePat {
+    From(i64),
+    To(i64),
+    ToInclusive(i64),
+    Exclusive(i64, i64),
+    Inclusive(i64, i64),
+}
+
+impl Display for IntRangePat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::From(i) => write!(f, "{i}.."),
+            Self::To(i) => write!(f, "..{i}"),
+            Self::ToInclusive(i) => write!(f, "..={i}"),
+            Self::Exclusive(lo, hi) => write!(f, "{lo}..{hi}"),
+            Self::Inclusive(lo, hi) => write!(f, "{lo}..={hi}"),
         }
     }
 }
@@ -263,6 +299,8 @@ pub enum PatKind<T> {
     Unit,
 
     Int(i64),
+
+    IntRange(IntRangePat),
 
     Bool(bool),
 
@@ -330,6 +368,7 @@ impl<T> Pat<T> {
             }
             PatKind::Unit => write!(f, "()"),
             PatKind::Int(i) => write!(f, "{i}"),
+            PatKind::IntRange(i) => write!(f, "{i}"),
             PatKind::Bool(b) => write!(f, "{b}"),
             PatKind::Constructor { name, args } => {
                 write!(f, "({name}")?;
@@ -361,14 +400,22 @@ impl<T: Debug> Debug for Expr<T> {
 
 #[derive(Debug, Clone)]
 pub struct MatchArm<T> {
-    pub pat:  Pat<T>,
-    pub expr: Expr<T>,
+    pub(crate) pat:  Pat<T>,
+    pub(crate) expr: Expr<T>,
 }
 
 impl<T> MatchArm<T> {
     #[must_use]
     pub const fn new(pat: Pat<T>, expr: Expr<T>) -> Self {
         Self { pat, expr }
+    }
+
+    pub fn pat(&self) -> &Pat<T> {
+        &self.pat
+    }
+
+    pub fn expr(&self) -> &Expr<T> {
+        &self.expr
     }
 }
 
@@ -383,9 +430,9 @@ impl<T: Display> MatchArm<T> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Param<T> {
-    pub name: Symbol,
-    pub ty:   T,
-    pub span: Span,
+    pub(crate) name: Symbol,
+    pub(crate) ty:   T,
+    pub(crate) span: Span,
 }
 
 impl<T> Param<T> {
@@ -464,6 +511,16 @@ pub enum ExprKind<T> {
         callee: Box<Expr<T>>,
         arg:    Box<Expr<T>>,
     },
+}
+
+impl<T> ExprKind<T> {
+    /// Returns `true` if the expr kind is [`Match`].
+    ///
+    /// [`Match`]: ExprKind::Match
+    #[must_use]
+    pub fn is_match(&self) -> bool {
+        matches!(self, Self::Match { .. })
+    }
 }
 
 impl<T> Expr<T> {

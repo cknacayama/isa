@@ -67,4 +67,12 @@ impl Ty {
     pub const fn is_fn(&self) -> bool {
         matches!(self, Self::Fn { .. })
     }
+
+    #[must_use] pub const fn as_var(&self) -> Option<u64> {
+        if let Self::Var(v) = self {
+            Some(*v)
+        } else {
+            None
+        }
+    }
 }

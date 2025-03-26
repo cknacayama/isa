@@ -49,6 +49,11 @@ impl Checker {
         })
     }
 
+    #[must_use]
+    pub fn type_ctx(&self) -> &TypeCtx {
+        &self.type_ctx
+    }
+
     fn insert_variable(&mut self, id: Symbol, ty: Rc<Ty>) -> Option<VarData> {
         self.env.insert(id, ty)
     }
@@ -336,8 +341,19 @@ impl Checker {
             args: args.clone().into(),
         });
 
+        let ty_with_module = self.cur_module.map_or_else(
+            || ty.clone(),
+            |module| {
+                self.intern_type(Ty::Named {
+                    name: PathIdent::Module(ModuleIdent::new(module, name)),
+                    args: args.clone().into(),
+                })
+            },
+        );
+
         for c in &mut constructors {
             self.check_constructor(c, &subs, quant.clone(), ty.clone());
+            self.type_ctx.insert_constructor(&ty_with_module, c.clone());
         }
 
         let kind = TypedExprKind::Type {
@@ -452,6 +468,12 @@ impl Checker {
             UntypedPatKind::Module(_) => {
                 unreachable!()
             }
+
+            UntypedPatKind::IntRange(range) => Ok(TypedPat::new(
+                TypedPatKind::IntRange(range),
+                span,
+                self.type_ctx().get_int(),
+            )),
         }
     }
 
@@ -746,5 +768,9 @@ impl Checker {
 
             UntypedExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
         }
+    }
+
+    pub fn type_ctx_mut(&mut self) -> &mut TypeCtx {
+        &mut self.type_ctx
     }
 }

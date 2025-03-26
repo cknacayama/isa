@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
+use super::exhaust::pat::WitnessPat;
 use super::infer::Constraint;
 use super::token::TokenKind;
 use super::types::Ty;
@@ -33,6 +34,7 @@ pub enum ParseError {
     },
     ExpectedExpr(TokenKind),
     ExpectedId(TokenKind),
+    ExpectedInt(TokenKind),
     ExpectedType(TokenKind),
     ExpectedPattern(TokenKind),
 }
@@ -53,6 +55,7 @@ impl Display for ParseError {
             }
             Self::ExpectedExpr(got) => write!(f, "expected expression, got '{got}'"),
             Self::ExpectedId(got) => write!(f, "expected identifier, got '{got}'"),
+            Self::ExpectedInt(got) => write!(f, "expected integer literal, got '{got}'"),
             Self::ExpectedType(got) => write!(f, "expected type, got '{got}'"),
             Self::ExpectedPattern(got) => write!(f, "expected pattern, got '{got}'"),
         }
@@ -102,16 +105,53 @@ impl Display for InferError {
 }
 
 impl InferError {
+    #[must_use]
     pub fn new(kind: InferErrorKind, span: Span) -> Self {
         Self { kind, span }
     }
 
+    #[must_use]
     pub fn kind(&self) -> &InferErrorKind {
         &self.kind
     }
 
+    #[must_use]
     pub fn span(&self) -> Span {
         self.span
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchNonExhaustive {
+    witnesses: Vec<WitnessPat>,
+    span:      Span,
+}
+
+impl MatchNonExhaustive {
+    #[must_use]
+    pub fn new(witnesses: Vec<WitnessPat>, span: Span) -> Self {
+        Self { witnesses, span }
+    }
+
+    #[must_use]
+    pub fn witnessess(&self) -> &[WitnessPat] {
+        &self.witnesses
+    }
+
+    #[must_use]
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+}
+
+impl Display for MatchNonExhaustive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.witnessess().len() > 1 {
+            write!(f, "patterns")?;
+        } else {
+            write!(f, "pattern")?;
+        }
+        write!(f, " not covered")
     }
 }
 
@@ -119,4 +159,7 @@ impl std::error::Error for InferErrorKind {
 }
 
 impl std::error::Error for InferError {
+}
+
+impl std::error::Error for MatchNonExhaustive {
 }

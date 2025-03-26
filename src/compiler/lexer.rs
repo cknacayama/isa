@@ -160,7 +160,6 @@ impl<'a> Lexer<'a> {
             ',' => token!(Comma),
             ';' => token!(Semicolon),
             ':' => token!(Colon),
-            '.' => token!(Dot),
             '*' => token!(Star),
             '/' => token!(Slash),
             '%' => token!(Percent),
@@ -173,6 +172,17 @@ impl<'a> Lexer<'a> {
             '>' => token!(Gt, '=' => Ge),
             '0'..='9' => Some(Ok(self.number())),
             '\'' | '_' | 'a'..='z' | 'A'..='Z' => Some(Ok(self.identifier_or_keyword())),
+            '.' => match (self.peek(), self.peek_next()) {
+                (Some('.'), Some('=')) => {
+                    self.bump_twice();
+                    Some(Ok(self.make_token(TokenKind::DotDotEq)))
+                }
+                (Some('.'), _) => {
+                    self.bump();
+                    Some(Ok(self.make_token(TokenKind::DotDot)))
+                }
+                _ => Some(Ok(self.make_token(TokenKind::Dot))),
+            },
             _ => Some(Err(self.make_err(LexError::InvalidChar(c)))),
         }
     }

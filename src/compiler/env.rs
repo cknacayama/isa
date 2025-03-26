@@ -96,7 +96,6 @@ impl Env {
             .and_then(|env| env.insert(id, VarData::new(true, ty)))
     }
 
-    #[must_use]
     pub fn get_from_module(&self, module_access: &ModuleIdent) -> Result<VarData, InferErrorKind> {
         let Some(module) = self.modules.get(&module_access.module()) else {
             return Err(InferErrorKind::UnboundModule(module_access.module()));
@@ -109,7 +108,6 @@ impl Env {
         Ok(var.clone())
     }
 
-    #[must_use]
     pub fn get_constructor_from_module(
         &self,
         module_access: &ModuleIdent,
