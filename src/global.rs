@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::fmt::Display;
 
 use crate::IndexSet;
-use crate::index::IndexVec;
 use crate::span::{Span, SpanData};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -26,9 +25,14 @@ impl Symbol {
 }
 
 impl Span {
-    #[must_use] pub fn union(self, other: Self) -> Self {
-        let (self_data, other_data) =
-            GLOBAL_DATA.with_borrow(|e| (e.spans.get(self), e.spans.get(other)));
+    #[must_use]
+    pub fn union(self, other: Self) -> Self {
+        let (self_data, other_data) = GLOBAL_DATA.with_borrow(|e| {
+            (
+                e.spans.get(self).unwrap_or_default(),
+                e.spans.get(other).unwrap_or_default(),
+            )
+        });
         let new_data = self_data.union(&other_data);
         intern_span(new_data)
     }
@@ -42,12 +46,12 @@ impl ariadne::Span for Span {
     }
 
     fn start(&self) -> usize {
-        let data = GLOBAL_DATA.with_borrow(|e| e.spans.get(*self));
+        let data = GLOBAL_DATA.with_borrow(|e| e.spans.get(*self).unwrap_or_default());
         data.start()
     }
 
     fn end(&self) -> usize {
-        let data = GLOBAL_DATA.with_borrow(|e| e.spans.get(*self));
+        let data = GLOBAL_DATA.with_borrow(|e| e.spans.get(*self).unwrap_or_default());
         data.end()
     }
 }
@@ -120,15 +124,16 @@ impl SymbolInterner {
 
 #[derive(Debug, Clone, Default)]
 struct SpanInterner {
-    spans: IndexVec<Span, SpanData>,
+    spans: IndexSet<SpanData>,
 }
 
 impl SpanInterner {
-    fn get(&self, span: Span) -> SpanData {
-        self.spans[span]
+    fn get(&self, span: Span) -> Option<SpanData> {
+        self.spans.get_index(span.index()).copied()
     }
 
     fn intern(&mut self, span: SpanData) -> Span {
-        self.spans.push(span)
+        let (idx, _) = self.spans.insert_full(span);
+        Span::new(idx)
     }
 }

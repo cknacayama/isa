@@ -1,16 +1,15 @@
 use std::error::Error;
 use std::fmt::{Debug, Display};
 
-use crate::index::Idx;
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SpanData {
     start: usize,
     end:   usize,
 }
 
 impl SpanData {
-    #[must_use] pub const fn new(start: usize, end: usize) -> Option<Self> {
+    #[must_use]
+    pub const fn new(start: usize, end: usize) -> Option<Self> {
         if start > end {
             None
         } else {
@@ -18,18 +17,21 @@ impl SpanData {
         }
     }
 
-    #[must_use] pub fn union(&self, other: &Self) -> Self {
+    #[must_use]
+    pub fn union(&self, other: &Self) -> Self {
         Self {
             start: std::cmp::min(self.start, other.start),
             end:   std::cmp::max(self.end, other.end),
         }
     }
 
-    #[must_use] pub const fn start(&self) -> usize {
+    #[must_use]
+    pub const fn start(&self) -> usize {
         self.start
     }
 
-    #[must_use] pub const fn end(&self) -> usize {
+    #[must_use]
+    pub const fn end(&self) -> usize {
         self.end
     }
 }
@@ -37,12 +39,12 @@ impl SpanData {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span(u32);
 
-impl Idx for Span {
-    fn new(idx: usize) -> Self {
+impl Span {
+    pub fn new(idx: usize) -> Self {
         Self(idx.try_into().unwrap())
     }
 
-    fn index(self) -> usize {
+    pub const fn index(self) -> usize {
         self.0 as usize
     }
 }

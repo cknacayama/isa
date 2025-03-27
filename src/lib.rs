@@ -9,7 +9,6 @@
 pub mod cli;
 pub mod compiler;
 pub mod global;
-pub mod index;
 pub mod report;
 pub mod span;
 
