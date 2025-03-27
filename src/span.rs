@@ -40,10 +40,15 @@ impl SpanData {
 pub struct Span(u32);
 
 impl Span {
+    /// # Panics
+    ///
+    /// Panics if idx excedes `u32::MAX`
+    #[must_use]
     pub fn new(idx: usize) -> Self {
-        Self(idx.try_into().unwrap())
+        Self(idx.try_into().expect("Should have at max u32::MAX spans"))
     }
 
+    #[must_use]
     pub const fn index(self) -> usize {
         self.0 as usize
     }
