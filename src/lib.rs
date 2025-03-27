@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 #![deny(clippy::enum_glob_use, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::missing_const_for_fn, reason = "false positive")]
 #![allow(
@@ -9,6 +9,7 @@
 pub mod cli;
 pub mod compiler;
 pub mod global;
+pub mod index;
 pub mod report;
 pub mod span;
 

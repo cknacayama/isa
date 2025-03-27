@@ -2,8 +2,8 @@ use std::str::Chars;
 
 use super::error::LexError;
 use super::token::{Token, TokenKind};
-use crate::global;
-use crate::span::{Span, Spanned};
+use crate::global::{self, intern_span};
+use crate::span::{SpanData, Spanned};
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
@@ -79,16 +79,14 @@ impl<'a> Lexer<'a> {
     }
 
     fn make_token(&self, kind: TokenKind) -> Token {
-        let start: u32 = self.start.try_into().expect("span fields must be u32");
-        let cur: u32 = self.cur.try_into().expect("span fields must be u32");
-        let span = Span::new(start, cur).unwrap();
+        let span = SpanData::new(self.start, self.cur).unwrap();
+        let span = intern_span(span);
         Token::new(kind, span)
     }
 
     fn make_err(&self, kind: LexError) -> Spanned<LexError> {
-        let start: u32 = self.start.try_into().expect("span fields must be u32");
-        let cur: u32 = self.cur.try_into().expect("span fields must be u32");
-        let span = Span::new(start, cur).unwrap();
+        let span = SpanData::new(self.start, self.cur).unwrap();
+        let span = intern_span(span);
         Spanned::new(kind, span)
     }
 

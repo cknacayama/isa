@@ -1,13 +1,53 @@
 use std::error::Error;
 use std::fmt::{Debug, Display};
 
+use crate::index::Idx;
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct Span {
-    start: u32,
-    end:   u32,
+pub struct SpanData {
+    start: usize,
+    end:   usize,
 }
 
-impl ariadne::Span for Span {
+impl SpanData {
+    #[must_use] pub const fn new(start: usize, end: usize) -> Option<Self> {
+        if start > end {
+            None
+        } else {
+            Some(Self { start, end })
+        }
+    }
+
+    #[must_use] pub fn union(&self, other: &Self) -> Self {
+        Self {
+            start: std::cmp::min(self.start, other.start),
+            end:   std::cmp::max(self.end, other.end),
+        }
+    }
+
+    #[must_use] pub const fn start(&self) -> usize {
+        self.start
+    }
+
+    #[must_use] pub const fn end(&self) -> usize {
+        self.end
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Span(u32);
+
+impl Idx for Span {
+    fn new(idx: usize) -> Self {
+        Self(idx.try_into().unwrap())
+    }
+
+    fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl ariadne::Span for SpanData {
     type SourceId = ();
 
     fn source(&self) -> &Self::SourceId {
@@ -15,48 +55,17 @@ impl ariadne::Span for Span {
     }
 
     fn start(&self) -> usize {
-        self.start as usize
+        self.start
     }
 
     fn end(&self) -> usize {
-        self.end as usize
+        self.end
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Loc {
-    line: u32,
-    col:  u32,
-}
-
-impl Span {
-    #[must_use]
-    pub const fn new(start: u32, end: u32) -> Option<Self> {
-        if start <= end {
-            Some(Self { start, end })
-        } else {
-            None
-        }
-    }
-
-    #[must_use]
-    pub fn union(self, other: Self) -> Self {
-        Self {
-            start: self.start.min(other.start),
-            end:   self.end.max(other.end),
-        }
-    }
-}
-
-impl Display for Span {
+impl Display for SpanData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}..{}", self.start, self.end)
-    }
-}
-
-impl Display for Loc {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.line, self.col)
     }
 }
 

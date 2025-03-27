@@ -77,12 +77,13 @@ impl Ty {
         }
     }
 
+    #[must_use]
     pub fn free_type_variables(&self) -> Vec<u64> {
         match self {
-            Ty::Unit | Ty::Int | Ty::Bool => Vec::new(),
-            Ty::Named { args, .. } if args.is_empty() => Vec::new(),
-            Ty::Var(id) => vec![*id],
-            Ty::Fn { param, ret } => {
+            Self::Unit | Self::Int | Self::Bool => Vec::new(),
+            Self::Named { args, .. } if args.is_empty() => Vec::new(),
+            Self::Var(id) => vec![*id],
+            Self::Fn { param, ret } => {
                 let mut param = param.free_type_variables();
                 for r in ret.free_type_variables() {
                     if !param.contains(&r) {
@@ -91,14 +92,17 @@ impl Ty {
                 }
                 param
             }
-            Ty::Scheme { quant, ty } => {
+            Self::Scheme { quant, ty } => {
                 let mut ty = ty.free_type_variables();
                 ty.retain(|t| !quant.contains(t));
                 ty
             }
-            Ty::Named { args, .. } => {
+            Self::Named { args, .. } => {
                 let mut iter = args.iter();
-                let first = iter.next().unwrap().free_type_variables();
+                let first = iter
+                    .next()
+                    .unwrap_or_else(|| unreachable!())
+                    .free_type_variables();
                 iter.fold(first, |mut acc, arg| {
                     for t in arg.free_type_variables() {
                         if !acc.contains(&t) {

@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::fmt::Display;
 
 use crate::IndexSet;
+use crate::index::IndexVec;
+use crate::span::{Span, SpanData};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(usize);
@@ -23,9 +25,37 @@ impl Symbol {
     }
 }
 
+impl Span {
+    #[must_use] pub fn union(self, other: Self) -> Self {
+        let (self_data, other_data) =
+            GLOBAL_DATA.with_borrow(|e| (e.spans.get(self), e.spans.get(other)));
+        let new_data = self_data.union(&other_data);
+        intern_span(new_data)
+    }
+}
+
+impl ariadne::Span for Span {
+    type SourceId = ();
+
+    fn source(&self) -> &Self::SourceId {
+        &()
+    }
+
+    fn start(&self) -> usize {
+        let data = GLOBAL_DATA.with_borrow(|e| e.spans.get(*self));
+        data.start()
+    }
+
+    fn end(&self) -> usize {
+        let data = GLOBAL_DATA.with_borrow(|e| e.spans.get(*self));
+        data.end()
+    }
+}
+
 #[derive(Debug, Default)]
 struct GlobalEnv {
-    symbols: SymbolEnv,
+    symbols: SymbolInterner,
+    spans:   SpanInterner,
 }
 
 impl GlobalEnv {
@@ -44,6 +74,11 @@ pub fn intern_symbol(symbol: &str) -> Symbol {
 }
 
 #[must_use]
+pub fn intern_span(span: SpanData) -> Span {
+    GLOBAL_DATA.with_borrow_mut(|e| e.spans.intern(span))
+}
+
+#[must_use]
 fn intern_static_symbol(symbol: &'static str) -> Symbol {
     GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern_static(symbol))
 }
@@ -54,11 +89,11 @@ pub fn symbol_count() -> usize {
 }
 
 #[derive(Debug, Clone, Default)]
-struct SymbolEnv {
+struct SymbolInterner {
     symbols: IndexSet<&'static str>,
 }
 
-impl SymbolEnv {
+impl SymbolInterner {
     fn get(&self, symbol: Symbol) -> Option<&'static str> {
         self.symbols.get_index(symbol.0).copied()
     }
@@ -80,5 +115,20 @@ impl SymbolEnv {
     fn intern_static(&mut self, symbol: &'static str) -> Symbol {
         let (idx, _) = self.symbols.insert_full(symbol);
         Symbol(idx)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct SpanInterner {
+    spans: IndexVec<Span, SpanData>,
+}
+
+impl SpanInterner {
+    fn get(&self, span: Span) -> SpanData {
+        self.spans[span]
+    }
+
+    fn intern(&mut self, span: SpanData) -> Span {
+        self.spans.push(span)
     }
 }
