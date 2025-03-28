@@ -2,7 +2,6 @@ pub mod ctor;
 pub mod pat;
 
 use std::num::NonZeroUsize;
-use std::rc::Rc;
 
 use ctor::{Ctor, CtorSet, IntRange, MaybeInfinite};
 use pat::{Pat, PatMatrix, PatMatrixRow, PatOrWild, PatVector, WitnessPat};
@@ -15,11 +14,11 @@ use super::types::Ty;
 
 #[derive(Debug)]
 pub struct Ctx<'a> {
-    ctx: &'a mut TypeCtx,
+    ctx: &'a TypeCtx,
 }
 
 impl<'a> Ctx<'a> {
-    fn new(ctx: &'a mut TypeCtx) -> Self {
+    fn new(ctx: &'a TypeCtx) -> Self {
         Self { ctx }
     }
 
@@ -41,11 +40,11 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    fn ctor_arity(&mut self, ty: &Ty, ctor: &Ctor) -> usize {
+    fn ctor_arity(&self, ty: &Ty, ctor: &Ctor) -> usize {
         self.ctor_subtypes(ty, ctor).len()
     }
 
-    fn ctor_subtypes(&mut self, ty: &Ty, ctor: &Ctor) -> Box<[Rc<Ty>]> {
+    fn ctor_subtypes(&self, ty: &Ty, ctor: &Ctor) -> Box<[Ty]> {
         match ctor {
             Ctor::Type(idx) => self.ctx.get_constructor_subtypes(ty, *idx),
             _ => Box::default(),
@@ -152,7 +151,7 @@ impl IntRange {
 }
 
 impl TypeCtx {
-    fn check_single_match(&mut self, expr: &TypedExpr) -> Result<(), MatchNonExhaustive> {
+    fn check_single_match(&self, expr: &TypedExpr) -> Result<(), MatchNonExhaustive> {
         let span = expr.span;
         match &expr.kind {
             ExprKind::Bin { lhs, rhs, .. } => {
@@ -202,7 +201,7 @@ impl TypeCtx {
     }
 }
 
-pub fn check_matches(exprs: &[TypedExpr], ctx: &mut TypeCtx) -> Result<(), MatchNonExhaustive> {
+pub fn check_matches(exprs: &[TypedExpr], ctx: &TypeCtx) -> Result<(), MatchNonExhaustive> {
     for expr in exprs {
         ctx.check_single_match(expr)?;
     }
@@ -211,8 +210,8 @@ pub fn check_matches(exprs: &[TypedExpr], ctx: &mut TypeCtx) -> Result<(), Match
 
 fn check_match_pats<'a>(
     typed_pats: impl Iterator<Item = &'a TypedPat>,
-    ty: Rc<Ty>,
-    ctx: &mut TypeCtx,
+    ty: Ty,
+    ctx: &TypeCtx,
 ) -> Vec<WitnessPat> {
     let pats = typed_pats
         .map(|p| Pat::from_ast_pat(p, ctx))
@@ -233,7 +232,7 @@ fn check_match_pats<'a>(
         matrix.push(row);
     }
 
-    let mut ctx = Ctx::new(ctx);
+    let ctx = Ctx::new(ctx);
 
-    matrix.compute_exhaustiveness(&mut ctx).single_column()
+    matrix.compute_exhaustiveness(&ctx).single_column()
 }

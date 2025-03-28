@@ -1,12 +1,11 @@
-use std::rc::Rc;
 
 use super::{Expr, ExprKind, MatchArm, Module, Param, Pat, PatKind};
 use crate::compiler::types::Ty;
 
-pub type TypedModule = Module<Rc<Ty>>;
-pub type TypedExpr = Expr<Rc<Ty>>;
-pub type TypedPatKind = PatKind<Rc<Ty>>;
-pub type TypedPat = Pat<Rc<Ty>>;
-pub type TypedExprKind = ExprKind<Rc<Ty>>;
-pub type TypedMatchArm = MatchArm<Rc<Ty>>;
-pub type TypedParam = Param<Rc<Ty>>;
+pub type TypedModule = Module<Ty>;
+pub type TypedExpr = Expr<Ty>;
+pub type TypedPatKind = PatKind<Ty>;
+pub type TypedPat = Pat<Ty>;
+pub type TypedExprKind = ExprKind<Ty>;
+pub type TypedMatchArm = MatchArm<Ty>;
+pub type TypedParam = Param<Ty>;

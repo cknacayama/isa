@@ -1,4 +1,3 @@
-use std::rc::Rc;
 
 use super::Ctx;
 use super::ctor::Ctor;
@@ -9,7 +8,7 @@ use crate::compiler::types::Ty;
 pub struct WitnessPat {
     ctor:   Ctor,
     fields: Vec<WitnessPat>,
-    ty:     Rc<Ty>,
+    ty:     Ty,
 }
 
 impl CtxFmt for &WitnessPat {
@@ -21,15 +20,15 @@ impl CtxFmt for &WitnessPat {
 }
 
 impl WitnessPat {
-    fn new(ctor: Ctor, fields: Vec<Self>, ty: Rc<Ty>) -> Self {
+    fn new(ctor: Ctor, fields: Vec<Self>, ty: Ty) -> Self {
         Self { ctor, fields, ty }
     }
 
-    fn wildcard(ty: Rc<Ty>) -> Self {
+    fn wildcard(ty: Ty) -> Self {
         Self::new(Ctor::Wildcard, Vec::new(), ty)
     }
 
-    fn wild_from_ctor(ctor: Ctor, ty: Rc<Ty>, cx: &mut Ctx) -> Self {
+    fn wild_from_ctor(ctor: Ctor, ty: Ty, cx: &Ctx) -> Self {
         if matches!(ctor, Ctor::Wildcard) {
             return Self::wildcard(ty);
         }
@@ -61,7 +60,7 @@ impl WitnessVector {
         self.0.push(pat);
     }
 
-    fn apply_constructor(&mut self, ctor: Ctor, ty: Rc<Ty>, ctx: &mut Ctx) {
+    fn apply_constructor(&mut self, ctor: Ctor, ty: Ty, ctx: &Ctx) {
         let len = self.0.len();
         let arity = ctx.ctor_arity(&ty, &ctor);
         let fields = self.0.drain((len - arity)..).rev().collect();
@@ -98,13 +97,7 @@ impl WitnessMatrix {
         }
     }
 
-    fn apply_constructor(
-        &mut self,
-        ty: &Rc<Ty>,
-        missing_ctors: &[Ctor],
-        ctor: &Ctor,
-        ctx: &mut Ctx,
-    ) {
+    fn apply_constructor(&mut self, ty: &Ty, missing_ctors: &[Ctor], ctor: &Ctor, ctx: &Ctx) {
         if self.is_empty() || matches!(ctor, Ctor::Or) {
             return;
         }
@@ -277,7 +270,7 @@ impl<'a> PatMatrixRow<'a> {
 #[derive(Debug, Clone)]
 pub struct PatMatrix<'a> {
     rows:                     Vec<PatMatrixRow<'a>>,
-    pub(super) types:         Vec<Rc<Ty>>,
+    pub(super) types:         Vec<Ty>,
     wildcard_row_is_relevant: bool,
 }
 
@@ -292,7 +285,7 @@ impl Default for PatMatrix<'_> {
 }
 
 impl<'a> PatMatrix<'a> {
-    fn specialize(&self, ctor: &Ctor, ctx: &mut Ctx, ctor_is_relevant: bool) -> Self {
+    fn specialize(&self, ctor: &Ctor, ctx: &Ctx, ctor_is_relevant: bool) -> Self {
         if ctor.is_or() {
             let mut matrix = Self {
                 rows:                     Vec::new(),
@@ -349,7 +342,7 @@ impl<'a> PatMatrix<'a> {
         self.rows.push(row);
     }
 
-    fn head_type(&self) -> Option<&Rc<Ty>> {
+    fn head_type(&self) -> Option<&Ty> {
         self.types.first()
     }
 
@@ -361,7 +354,7 @@ impl<'a> PatMatrix<'a> {
         }
     }
 
-    pub(super) fn compute_exhaustiveness(&mut self, ctx: &mut Ctx) -> WitnessMatrix {
+    pub(super) fn compute_exhaustiveness(&mut self, ctx: &Ctx) -> WitnessMatrix {
         let Some(ty) = self.head_type().cloned() else {
             let mut useful = true; // Whether the next row is useful.
 

@@ -69,7 +69,7 @@ impl Config {
             _ => return,
         };
 
-        let mut checker = Checker::with_types(parser.types());
+        let mut checker = Checker::new();
 
         let modules = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
@@ -79,7 +79,7 @@ impl Config {
         let duration = start.elapsed();
 
         for module in modules {
-            if let Err(err) = check_matches(&module.exprs, checker.type_ctx_mut()) {
+            if let Err(err) = check_matches(&module.exprs, checker.type_ctx()) {
                 return err.report(checker.type_ctx(), &input);
             }
 

@@ -2,7 +2,6 @@ pub mod typed;
 pub mod untyped;
 
 use std::fmt::{Debug, Display, Write};
-use std::rc::Rc;
 
 use rustc_hash::FxHashMap;
 
@@ -155,17 +154,17 @@ impl TokenKind {
 #[derive(Debug, Clone)]
 pub struct Constructor {
     pub name:   Symbol,
-    pub params: Box<[Rc<Ty>]>,
+    pub params: Box<[Ty]>,
 }
 
 impl Constructor {
     #[must_use]
-    pub const fn new(name: Symbol, params: Box<[Rc<Ty>]>) -> Self {
+    pub const fn new(name: Symbol, params: Box<[Ty]>) -> Self {
         Self { name, params }
     }
 
     #[must_use]
-    pub const fn params(&self) -> &[Rc<Ty>] {
+    pub const fn params(&self) -> &[Ty] {
         &self.params
     }
 }
@@ -487,7 +486,7 @@ pub enum ExprKind<T> {
 
     Type {
         id:           Symbol,
-        parameters:   Box<[Rc<Ty>]>,
+        parameters:   Box<[Ty]>,
         constructors: Box<[Constructor]>,
     },
 

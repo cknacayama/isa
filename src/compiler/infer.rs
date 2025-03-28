@@ -9,7 +9,6 @@ use std::rc::Rc;
 use super::ast::typed::{
     TypedExpr, TypedExprKind, TypedModule, TypedParam, TypedPat, TypedPatKind,
 };
-use super::ctx::TypeCtx;
 use super::error::{InferError, InferErrorKind};
 use super::types::Ty;
 use crate::span::Span;
@@ -19,112 +18,108 @@ pub type InferResult<T> = Result<T, InferError>;
 #[derive(Debug, Clone)]
 pub struct Subs {
     old: u64,
-    new: Rc<Ty>,
+    new: Ty,
 }
 
 impl Subs {
     #[must_use]
-    pub const fn new(old: u64, new: Rc<Ty>) -> Self {
+    pub const fn new(old: u64, new: Ty) -> Self {
         Self { old, new }
     }
 }
 
 pub trait Substitute {
-    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S) -> Self
     where
-        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>;
+        S: FnMut(&Ty) -> Option<Ty>;
 
     /// Used mainly for type inference and unification of constraint sets
-    fn substitute_eq(self, subs: &Subs, env: &mut TypeCtx) -> Self
+    fn substitute_eq(self, subs: &Subs) -> Self
     where
         Self: Sized,
     {
-        self.substitute(
-            &mut |t, _| match t {
-                Ty::Var(id) if *id == subs.old => Some(subs.new.clone()),
-                _ => None,
-            },
-            env,
-        )
+        self.substitute(&mut |t| match t {
+            Ty::Var(id) if *id == subs.old => Some(subs.new.clone()),
+            _ => None,
+        })
     }
 
-    fn substitute_many<'a, T>(self, subs: T, env: &mut TypeCtx) -> Self
+    fn substitute_many<'a, T>(self, subs: T) -> Self
     where
         Self: Sized,
         T: IntoIterator<Item = &'a Subs>,
     {
-        subs.into_iter()
-            .fold(self, |res, subs| res.substitute_eq(subs, env))
+        subs.into_iter().fold(self, Self::substitute_eq)
     }
 }
 
 impl Substitute for &mut TypedParam {
-    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S) -> Self
     where
-        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        S: FnMut(&Ty) -> Option<Ty>,
     {
-        self.ty = self.ty.clone().substitute(subs, env);
+        self.ty = self.ty.clone().substitute(subs);
         self
     }
 }
 
 impl Substitute for &mut TypedExpr {
-    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S) -> Self
     where
-        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        S: FnMut(&Ty) -> Option<Ty>,
     {
         match &mut self.kind {
             TypedExprKind::Let {
                 params, expr, body, ..
             } => {
                 params.iter_mut().for_each(|p| {
-                    p.substitute(subs, env);
+                    p.substitute(subs);
                 });
-                expr.substitute(subs, env);
+                expr.substitute(subs);
                 if let Some(body) = body.as_mut() {
-                    body.substitute(subs, env);
+                    body.substitute(subs);
                 }
             }
             TypedExprKind::Fn { param, expr } => {
-                param.substitute(subs, env);
-                expr.substitute(subs, env);
+                param.substitute(subs);
+                expr.substitute(subs);
             }
             TypedExprKind::If {
                 cond,
                 then,
                 otherwise,
             } => {
-                cond.substitute(subs, env);
-                then.substitute(subs, env);
-                otherwise.substitute(subs, env);
+                cond.substitute(subs);
+                then.substitute(subs);
+                otherwise.substitute(subs);
             }
             TypedExprKind::Call { callee, arg } => {
-                callee.substitute(subs, env);
-                arg.substitute(subs, env);
+                callee.substitute(subs);
+                arg.substitute(subs);
             }
             TypedExprKind::Match { expr, arms } => {
-                expr.substitute(subs, env);
+                expr.substitute(subs);
                 arms.iter_mut().for_each(|arm| {
-                    arm.pat.substitute(subs, env);
-                    arm.expr.substitute(subs, env);
+                    arm.pat.substitute(subs);
+                    arm.expr.substitute(subs);
                 });
             }
             TypedExprKind::Semi(semi) => {
-                semi.substitute(subs, env);
+                semi.substitute(subs);
             }
             TypedExprKind::Type { constructors, .. } => {
                 constructors.iter_mut().for_each(|c| {
                     c.params.iter_mut().for_each(|t| {
-                        *t = t.clone().substitute(subs, env);
+                        *t = t.clone().substitute(subs);
                     });
                 });
             }
             TypedExprKind::Bin { lhs, rhs, .. } => {
-                lhs.substitute(subs, env);
-                rhs.substitute(subs, env);
+                lhs.substitute(subs);
+                rhs.substitute(subs);
             }
             TypedExprKind::Un { expr, .. } => {
-                expr.substitute(subs, env);
+                expr.substitute(subs);
             }
 
             TypedExprKind::Unit
@@ -134,35 +129,35 @@ impl Substitute for &mut TypedExpr {
             | TypedExprKind::Acess(_) => (),
         }
 
-        self.ty = self.ty.clone().substitute(subs, env);
+        self.ty = self.ty.clone().substitute(subs);
         self
     }
 }
 
 impl Substitute for &mut TypedModule {
-    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S) -> Self
     where
-        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        S: FnMut(&Ty) -> Option<Ty>,
     {
         self.exprs.iter_mut().for_each(|e| {
-            e.substitute(subs, env);
+            e.substitute(subs);
         });
         self.declared.values_mut().for_each(|var| {
-            *var.ty_mut() = var.ty().clone().substitute(subs, env);
+            *var.ty_mut() = var.ty().clone().substitute(subs);
         });
         self
     }
 }
 
 impl Substitute for &mut TypedPat {
-    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S) -> Self
     where
-        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        S: FnMut(&Ty) -> Option<Ty>,
     {
         match &mut self.kind {
             TypedPatKind::Or(args) | TypedPatKind::Constructor { args, .. } => {
                 args.iter_mut().for_each(|p| {
-                    p.substitute(subs, env);
+                    p.substitute(subs);
                 });
             }
 
@@ -174,29 +169,58 @@ impl Substitute for &mut TypedPat {
             | TypedPatKind::Module(_)
             | TypedPatKind::IntRange(_) => (),
         }
-        self.ty = self.ty.clone().substitute(subs, env);
+        self.ty = self.ty.clone().substitute(subs);
         self
     }
 }
 
-impl Substitute for Rc<Ty> {
-    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+impl Substitute for Ty {
+    fn substitute<S>(self, subs: &mut S) -> Self
     where
-        S: FnMut(&Ty, &mut TypeCtx) -> Option<Self>,
+        S: FnMut(&Self) -> Option<Self>,
+    {
+        let ty = match self {
+            Self::Fn { param, ret } => Self::Fn {
+                param: param.substitute(subs),
+                ret:   ret.substitute(subs),
+            },
+            Self::Scheme { quant, ty } => {
+                let ty = ty.substitute(subs);
+                Self::Scheme { quant, ty }
+            }
+            Self::Named { name, args } => Self::Named {
+                name,
+                args: args
+                    .iter()
+                    .cloned()
+                    .map(|arg| arg.substitute(subs))
+                    .collect(),
+            },
+            _ => self,
+        };
+
+        subs(&ty).unwrap_or(ty)
+    }
+}
+
+impl Substitute for Rc<Ty> {
+    fn substitute<S>(self, subs: &mut S) -> Self
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
     {
         let ty = match self.as_ref() {
             Ty::Fn { param, ret } => {
                 let ty = Ty::Fn {
-                    param: param.clone().substitute(subs, env),
-                    ret:   ret.clone().substitute(subs, env),
+                    param: param.clone().substitute(subs),
+                    ret:   ret.clone().substitute(subs),
                 };
-                env.intern_type(ty)
+                Self::new(ty)
             }
             Ty::Scheme { quant, ty } => {
-                let ty = ty.clone().substitute(subs, env);
+                let ty = ty.clone().substitute(subs);
                 let quant = quant.clone();
                 let ty = Ty::Scheme { quant, ty };
-                env.intern_type(ty)
+                Self::new(ty)
             }
             Ty::Named { name, args } => {
                 let ty = Ty::Named {
@@ -204,15 +228,15 @@ impl Substitute for Rc<Ty> {
                     args: args
                         .iter()
                         .cloned()
-                        .map(|arg| arg.substitute(subs, env))
+                        .map(|arg| arg.substitute(subs))
                         .collect(),
                 };
-                env.intern_type(ty)
+                Self::new(ty)
             }
             _ => self,
         };
 
-        subs(ty.as_ref(), env).unwrap_or(ty)
+        subs(ty.as_ref()).map(Self::new).unwrap_or(ty)
     }
 }
 
@@ -224,7 +248,8 @@ pub struct ConstraintSpan {
 }
 
 impl ConstraintSpan {
-    #[must_use] pub const fn new(lhs: Option<Span>, rhs: Option<Span>, expr: Span) -> Self {
+    #[must_use]
+    pub const fn new(lhs: Option<Span>, rhs: Option<Span>, expr: Span) -> Self {
         Self { lhs, rhs, expr }
     }
 }
@@ -260,20 +285,20 @@ impl From<ConstraintSpan> for Vec<Span> {
 
 #[derive(Debug, Clone)]
 pub struct Constraint {
-    lhs: Rc<Ty>,
-    rhs: Rc<Ty>,
+    lhs: Ty,
+    rhs: Ty,
 
     pub spans: ConstraintSpan,
 }
 
 impl Substitute for Constraint {
-    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S) -> Self
     where
-        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        S: FnMut(&Ty) -> Option<Ty>,
     {
         Self {
-            lhs:   self.lhs.substitute(subs, env),
-            rhs:   self.rhs.substitute(subs, env),
+            lhs:   self.lhs.substitute(subs),
+            rhs:   self.rhs.substitute(subs),
             spans: self.spans,
         }
     }
@@ -281,7 +306,7 @@ impl Substitute for Constraint {
 
 impl Constraint {
     #[must_use]
-    pub fn new<T>(lhs: Rc<Ty>, rhs: Rc<Ty>, spans: T) -> Self
+    pub fn new<T>(lhs: Ty, rhs: Ty, spans: T) -> Self
     where
         ConstraintSpan: From<T>,
     {
@@ -314,12 +339,12 @@ pub struct ConstraintSet {
 }
 
 impl Substitute for &mut ConstraintSet {
-    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S) -> Self
     where
-        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        S: FnMut(&Ty) -> Option<Ty>,
     {
         for c in &mut self.constrs {
-            *c = c.clone().substitute(subs, env);
+            *c = c.clone().substitute(subs);
         }
         self
     }
@@ -344,7 +369,7 @@ impl From<Constraint> for ConstraintSet {
     }
 }
 
-pub fn unify<C>(cset: C, type_ctx: &mut TypeCtx) -> InferResult<Vec<Subs>>
+pub fn unify<C>(cset: C) -> InferResult<Vec<Subs>>
 where
     ConstraintSet: From<C>,
 {
@@ -353,22 +378,19 @@ where
 
     while let Some(c) = cset.constrs.pop() {
         let spans = c.spans;
-        match (c.lhs.as_ref(), c.rhs.as_ref()) {
+        match (c.lhs, c.rhs) {
             (lhs @ (Ty::Int | Ty::Bool | Ty::Var(_)), rhs @ (Ty::Int | Ty::Bool | Ty::Var(_)))
                 if lhs == rhs => {}
-            (Ty::Var(var), new) | (new, Ty::Var(var)) if !new.occurs(*var) => {
-                let old = *var;
-                let new = type_ctx.intern_type(new.clone());
-
+            (Ty::Var(old), new) | (new, Ty::Var(old)) if !new.occurs(old) => {
                 let s = Subs { old, new };
 
-                cset.substitute_eq(&s, type_ctx);
+                cset.substitute_eq(&s);
 
                 subs.push(s);
             }
             (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
-                let c1 = Constraint::new(i1.clone(), i2.clone(), spans);
-                let c2 = Constraint::new(o1.clone(), o2.clone(), spans);
+                let c1 = Constraint::new(i1.as_ref().clone(), i2.as_ref().clone(), spans);
+                let c2 = Constraint::new(o1.as_ref().clone(), o2.as_ref().clone(), spans);
 
                 cset.push(c1);
                 cset.push(c2);
@@ -387,8 +409,11 @@ where
                     cset.push(Constraint::new(a1.clone(), a2.clone(), spans));
                 }
             }
-            _ => {
-                return Err(InferError::new(InferErrorKind::Uninferable(c), spans.expr));
+            (lhs, rhs) => {
+                return Err(InferError::new(
+                    InferErrorKind::Uninferable(Constraint::new(lhs, rhs, spans)),
+                    spans.expr,
+                ));
             }
         }
     }

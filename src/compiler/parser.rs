@@ -6,7 +6,6 @@ use super::ast::untyped::{
     UntypedPatKind,
 };
 use super::ast::{BinOp, Constructor, IntRangePat, ModuleIdent, PathIdent, UnOp};
-use super::ctx::TypeCtx;
 use super::error::ParseError;
 use super::lexer::Lexer;
 use super::token::{Token, TokenKind};
@@ -19,7 +18,6 @@ pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
 #[derive(Debug)]
 pub struct Parser<'a> {
     lexer:     Peekable<Lexer<'a>>,
-    types:     TypeCtx,
     last_span: Span,
 }
 
@@ -33,14 +31,8 @@ impl<'a> Parser<'a> {
     pub fn new(lexer: Lexer<'a>) -> Self {
         Self {
             lexer:     lexer.peekable(),
-            types:     TypeCtx::default(),
             last_span: Span::default(),
         }
-    }
-
-    #[must_use]
-    pub fn types(self) -> TypeCtx {
-        self.types
     }
 
     fn check(&mut self, t: TokenKind) -> bool {
@@ -127,10 +119,6 @@ impl<'a> Parser<'a> {
             TokenKind::Integer(int) => Ok(t.map(|_| int)),
             _ => Err(t.map(ParseError::ExpectedId)),
         })
-    }
-
-    fn get_type(&mut self, ty: Ty) -> Rc<Ty> {
-        self.types.intern_type(ty)
     }
 
     pub fn try_parse_module(&mut self) -> Option<ParseResult<UntypedModule>> {
@@ -472,7 +460,7 @@ impl<'a> Parser<'a> {
             while self.peek_and(TokenKind::can_start_type)? {
                 let ty = self.parse_simple_type()?;
                 span = span.union(ty.span);
-                params.push(self.get_type(ty.data));
+                params.push(ty.data);
             }
 
             let args = params.into();
@@ -491,8 +479,8 @@ impl<'a> Parser<'a> {
 
             Ok(Spanned::new(
                 Ty::Fn {
-                    param: self.get_type(simple.data),
-                    ret:   self.get_type(ret.data),
+                    param: Rc::new(simple.data),
+                    ret:   Rc::new(ret.data),
                 },
                 span,
             ))
@@ -512,7 +500,7 @@ impl<'a> Parser<'a> {
         while self.peek_and(TokenKind::can_start_type)? {
             let ty = self.parse_simple_type()?;
             span = span.union(ty.span);
-            params.push(self.get_type(ty.data));
+            params.push(ty.data);
         }
 
         Ok(Spanned::new(
@@ -532,10 +520,10 @@ impl<'a> Parser<'a> {
 
         while !self.check(TokenKind::Eq) {
             let Spanned { data, .. } = self.expect_id()?;
-            params.push(self.types.intern_type(Ty::Named {
+            params.push(Ty::Named {
                 name: PathIdent::Ident(data),
                 args: Rc::from([]),
-            }));
+            });
         }
 
         self.expect(TokenKind::Eq)?;

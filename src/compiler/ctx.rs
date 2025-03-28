@@ -1,7 +1,7 @@
 use std::fmt;
 use std::rc::Rc;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use super::ast::{Constructor, PathIdent};
 use super::infer::{Subs, Substitute};
@@ -20,32 +20,15 @@ pub trait CtxFmt {
     }
 }
 
-#[derive(Debug, Clone)]
-struct BuiltinTypes {
-    integer: Rc<Ty>,
-    boolean: Rc<Ty>,
-    unit:    Rc<Ty>,
-}
-
-impl Default for BuiltinTypes {
-    fn default() -> Self {
-        Self {
-            integer: Rc::new(Ty::Int),
-            boolean: Rc::new(Ty::Bool),
-            unit:    Rc::new(Ty::Unit),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct TyData {
-    params:       Rc<[Rc<Ty>]>,
+    params:       Rc<[Ty]>,
     constructors: Vec<Constructor>,
 }
 
 impl TyData {
     #[must_use]
-    pub fn new(params: Rc<[Rc<Ty>]>, constructors: Vec<Constructor>) -> Self {
+    pub fn new(params: Rc<[Ty]>, constructors: Vec<Constructor>) -> Self {
         Self {
             params,
             constructors,
@@ -55,23 +38,11 @@ impl TyData {
 
 #[derive(Debug, Clone, Default)]
 pub struct TypeCtx {
-    builtin:      BuiltinTypes,
-    types:        FxHashSet<Rc<Ty>>,
     constructors: FxHashMap<PathIdent, TyData>,
     id_generator: u64,
 }
 
 impl TypeCtx {
-    pub fn intern_type(&mut self, ty: Ty) -> Rc<Ty> {
-        if let Some(ty) = self.types.get(&ty) {
-            ty.clone()
-        } else {
-            let ty = Rc::new(ty);
-            self.types.insert(ty.clone());
-            ty
-        }
-    }
-
     pub fn insert_constructor(&mut self, ty: &Ty, ctor: Constructor) {
         let (name, args) = match ty {
             Ty::Named { name, args } => (*name, args),
@@ -94,7 +65,7 @@ impl TypeCtx {
             .map_or(&[], |data| data.constructors.as_slice())
     }
 
-    pub fn get_constructor_subtypes(&mut self, ty: &Ty, idx: usize) -> Box<[Rc<Ty>]> {
+    #[must_use] pub fn get_constructor_subtypes(&self, ty: &Ty, idx: usize) -> Box<[Ty]> {
         let Ty::Named { name, args } = ty else {
             return Box::default();
         };
@@ -114,7 +85,7 @@ impl TypeCtx {
         let mut ctors = data.constructors.swap_remove(idx);
 
         for param in &mut ctors.params {
-            *param = param.clone().substitute_many(&subs, self);
+            *param = param.clone().substitute_many(&subs);
         }
 
         ctors.params
@@ -126,28 +97,9 @@ impl TypeCtx {
         cur
     }
 
-    pub fn gen_type_var(&mut self) -> Rc<Ty> {
+    pub fn gen_type_var(&mut self) -> Ty {
         let id = self.gen_id();
-        self.intern_type(Ty::Var(id))
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Rc<Ty>> {
-        self.types.iter()
-    }
-
-    #[must_use]
-    pub fn get_unit(&self) -> Rc<Ty> {
-        self.builtin.unit.clone()
-    }
-
-    #[must_use]
-    pub fn get_int(&self) -> Rc<Ty> {
-        self.builtin.integer.clone()
-    }
-
-    #[must_use]
-    pub fn get_bool(&self) -> Rc<Ty> {
-        self.builtin.boolean.clone()
+        Ty::Var(id)
     }
 
     pub fn write_variant_name(

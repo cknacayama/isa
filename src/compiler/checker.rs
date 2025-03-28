@@ -44,8 +44,8 @@ impl Checker {
     where
         ConstraintSet: From<C>,
     {
-        unify(constr, &mut self.type_ctx).inspect(|subs| {
-            self.env.substitute_many(subs, &mut self.type_ctx);
+        unify(constr).inspect(|subs| {
+            self.env.substitute_many(subs);
         })
     }
 
@@ -54,44 +54,28 @@ impl Checker {
         &self.type_ctx
     }
 
-    fn insert_variable(&mut self, id: Symbol, ty: Rc<Ty>) -> Option<VarData> {
+    fn insert_variable(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
         self.env.insert(id, ty)
     }
 
-    fn get_variable(&self, id: Symbol) -> Option<Rc<Ty>> {
+    fn get_variable(&self, id: Symbol) -> Option<Ty> {
         self.env.get(&id).map(VarData::ty).cloned()
     }
 
-    fn insert_constructor(&mut self, name: Symbol, ty: Rc<Ty>) -> Option<VarData> {
+    fn insert_constructor(&mut self, name: Symbol, ty: Ty) -> Option<VarData> {
         self.env.insert_constructor(name, ty)
     }
 
-    fn get_constructor(&self, name: Symbol) -> Option<Rc<Ty>> {
+    fn get_constructor(&self, name: Symbol) -> Option<Ty> {
         self.env.get_constructor(&name)
-    }
-
-    fn intern_type(&mut self, ty: Ty) -> Rc<Ty> {
-        self.type_ctx.intern_type(ty)
     }
 
     const fn gen_id(&mut self) -> u64 {
         self.type_ctx.gen_id()
     }
 
-    fn gen_type_var(&mut self) -> Rc<Ty> {
+    fn gen_type_var(&mut self) -> Ty {
         self.type_ctx.gen_type_var()
-    }
-
-    fn get_int(&self) -> Rc<Ty> {
-        self.type_ctx.get_int()
-    }
-
-    fn get_unit(&self) -> Rc<Ty> {
-        self.type_ctx.get_unit()
-    }
-
-    fn get_bool(&self) -> Rc<Ty> {
-        self.type_ctx.get_bool()
     }
 
     fn check_if(
@@ -107,17 +91,17 @@ impl Checker {
 
         let var = self.gen_type_var();
 
-        let c_cond = Constraint::new(self.get_bool(), cond.ty.clone(), [cond.span, span]);
+        let c_cond = Constraint::new(Ty::Bool, cond.ty.clone(), [cond.span, span]);
         let c_then = Constraint::new(var.clone(), then.ty.clone(), [then.span, span]);
         let c_otherwise =
             Constraint::new(var.clone(), otherwise.ty.clone(), [otherwise.span, span]);
 
         let subs = self.unify([c_cond, c_then, c_otherwise])?;
 
-        cond.substitute_many(&subs, &mut self.type_ctx);
-        then.substitute_many(&subs, &mut self.type_ctx);
-        otherwise.substitute_many(&subs, &mut self.type_ctx);
-        let var = var.substitute_many(&subs, &mut self.type_ctx);
+        cond.substitute_many(&subs);
+        then.substitute_many(&subs);
+        otherwise.substitute_many(&subs);
+        let var = var.substitute_many(&subs);
 
         let kind = TypedExprKind::If {
             cond:      Box::new(cond),
@@ -146,10 +130,10 @@ impl Checker {
 
         self.env.pop_scope();
 
-        let ty = self.intern_type(Ty::Fn {
-            param: var.clone(),
-            ret:   expr.ty.clone(),
-        });
+        let ty = Ty::Fn {
+            param: Rc::new(var.clone()),
+            ret:   Rc::new(expr.ty.clone()),
+        };
 
         let kind = TypedExprKind::Fn {
             param: TypedParam::new(param.name, var, param.span),
@@ -169,20 +153,20 @@ impl Checker {
         let mut arg = self.check(arg)?;
 
         let var = self.gen_type_var();
-        let fn_ty = self.intern_type(Ty::Fn {
-            param: arg.ty.clone(),
-            ret:   var.clone(),
-        });
+        let fn_ty = Ty::Fn {
+            param: Rc::new(arg.ty.clone()),
+            ret:   Rc::new(var.clone()),
+        };
         let subs = self.unify(Constraint::new(
             callee.ty.clone(),
             fn_ty,
             [callee.span, arg.span, span],
         ))?;
 
-        callee.substitute_many(&subs, &mut self.type_ctx);
-        arg.substitute_many(&subs, &mut self.type_ctx);
+        callee.substitute_many(&subs);
+        arg.substitute_many(&subs);
 
-        let var = var.substitute_many(&subs, &mut self.type_ctx);
+        let var = var.substitute_many(&subs);
 
         let kind = TypedExprKind::Call {
             callee: Box::new(callee),
@@ -192,15 +176,15 @@ impl Checker {
         Ok(TypedExpr::new(kind, span, var))
     }
 
-    fn function_type<I>(&mut self, params: I, ret: Rc<Ty>) -> Rc<Ty>
+    fn function_type<I>(params: I, ret: Ty) -> Ty
     where
-        I: IntoIterator<Item = Rc<Ty>>,
+        I: IntoIterator<Item = Ty>,
         I::IntoIter: DoubleEndedIterator,
     {
-        params
-            .into_iter()
-            .rev()
-            .fold(ret, |ret, param| self.intern_type(Ty::Fn { param, ret }))
+        params.into_iter().rev().fold(ret, |ret, param| Ty::Fn {
+            param: Rc::new(param),
+            ret:   Rc::new(ret),
+        })
     }
 
     fn check_let_value(
@@ -224,7 +208,7 @@ impl Checker {
             self.check(expr)?
         } else {
             let var_id = self.gen_id();
-            let var = self.intern_type(Ty::Var(var_id));
+            let var = Ty::Var(var_id);
             self.insert_variable(id, var);
 
             let mut expr = self.check(expr)?;
@@ -233,11 +217,12 @@ impl Checker {
                 p.ty = self.get_variable(p.name).unwrap_or_else(|| unreachable!());
             }
 
-            expr.ty = self.function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
+            expr.ty =
+                Self::function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
 
             let subs = Subs::new(var_id, expr.ty.clone());
 
-            expr.substitute_eq(&subs, &mut self.type_ctx);
+            expr.substitute_eq(&subs);
             expr
         };
 
@@ -255,7 +240,7 @@ impl Checker {
     ) -> InferResult<TypedExpr> {
         let (expr, params) = self.check_let_value(id, params, expr)?;
 
-        let u1 = self.env.generalize(expr.ty.clone(), &mut self.type_ctx);
+        let u1 = self.env.generalize(expr.ty.clone());
         let mut env1 = self.env.clone();
         std::mem::swap(&mut self.env, &mut env1);
         self.insert_variable(id, u1);
@@ -267,7 +252,7 @@ impl Checker {
                 let ty = body.ty.clone();
                 (Some(body), ty)
             }
-            None => (None, self.get_unit()),
+            None => (None, Ty::Unit),
         };
 
         let kind = TypedExprKind::Let {
@@ -283,31 +268,28 @@ impl Checker {
     fn check_constructor(
         &mut self,
         constructor: &mut Constructor,
-        subs: &[(Rc<Ty>, Rc<Ty>)],
+        subs: &[(Ty, Ty)],
         quant: Rc<[u64]>,
-        mut ret: Rc<Ty>,
+        mut ret: Ty,
     ) {
         for param in constructor.params.iter_mut().rev() {
-            *param = param.clone().substitute(
-                &mut |ty, _| {
-                    subs.iter().find_map(|(old, new)| {
-                        let old = Rc::as_ptr(old);
-                        if std::ptr::eq(ty, old) {
-                            Some(new.clone())
-                        } else {
-                            None
-                        }
-                    })
-                },
-                &mut self.type_ctx,
-            );
-            ret = self.intern_type(Ty::Fn {
-                param: param.clone(),
-                ret,
+            *param = param.clone().substitute(&mut |ty| {
+                subs.iter().find_map(
+                    |(old, new)| {
+                        if ty == old { Some(new.clone()) } else { None }
+                    },
+                )
             });
+            ret = Ty::Fn {
+                param: Rc::new(param.clone()),
+                ret:   Rc::new(ret),
+            };
         }
         if !quant.is_empty() {
-            ret = self.intern_type(Ty::Scheme { quant, ty: ret });
+            ret = Ty::Scheme {
+                quant,
+                ty: Rc::new(ret),
+            };
         }
         self.insert_variable(constructor.name, ret.clone());
         self.insert_constructor(constructor.name, ret);
@@ -316,7 +298,7 @@ impl Checker {
     fn check_type(
         &mut self,
         name: Symbol,
-        parameters: Box<[Rc<Ty>]>,
+        parameters: Box<[Ty]>,
         mut constructors: Box<[Constructor]>,
         span: Span,
     ) -> TypedExpr {
@@ -326,7 +308,7 @@ impl Checker {
 
         for param in parameters {
             let id = self.gen_id();
-            let new = self.intern_type(Ty::Var(id));
+            let new = Ty::Var(id);
             subs.push((param, new.clone()));
             args.push(new);
             quant.push(id);
@@ -336,18 +318,16 @@ impl Checker {
 
         self.declared_types.push(name);
 
-        let ty = self.intern_type(Ty::Named {
+        let ty = Ty::Named {
             name: PathIdent::Ident(name),
             args: args.clone().into(),
-        });
+        };
 
         let ty_with_module = self.cur_module.map_or_else(
             || ty.clone(),
-            |module| {
-                self.intern_type(Ty::Named {
-                    name: PathIdent::Module(ModuleIdent::new(module, name)),
-                    args: args.clone().into(),
-                })
+            |module| Ty::Named {
+                name: PathIdent::Module(ModuleIdent::new(module, name)),
+                args: args.clone().into(),
             },
         );
 
@@ -362,7 +342,7 @@ impl Checker {
             constructors,
         };
 
-        TypedExpr::new(kind, span, self.get_unit())
+        TypedExpr::new(kind, span, Ty::Unit)
     }
 
     fn check_pat(&mut self, UntypedPat { kind, span, .. }: UntypedPat) -> InferResult<TypedPat> {
@@ -389,9 +369,9 @@ impl Checker {
                 let subs = self.unify(c)?;
 
                 for p in &mut patterns {
-                    p.substitute_many(&subs, &mut self.type_ctx);
+                    p.substitute_many(&subs);
                 }
-                let var = var.substitute_many(&subs, &mut self.type_ctx);
+                let var = var.substitute_many(&subs);
 
                 Ok(TypedPat::new(
                     TypedPatKind::Or(patterns.into_boxed_slice()),
@@ -399,11 +379,9 @@ impl Checker {
                     var,
                 ))
             }
-            UntypedPatKind::Unit => Ok(TypedPat::new(TypedPatKind::Unit, span, self.get_unit())),
-            UntypedPatKind::Int(i) => Ok(TypedPat::new(TypedPatKind::Int(i), span, self.get_int())),
-            UntypedPatKind::Bool(b) => {
-                Ok(TypedPat::new(TypedPatKind::Bool(b), span, self.get_bool()))
-            }
+            UntypedPatKind::Unit => Ok(TypedPat::new(TypedPatKind::Unit, span, Ty::Unit)),
+            UntypedPatKind::Int(i) => Ok(TypedPat::new(TypedPatKind::Int(i), span, Ty::Int)),
+            UntypedPatKind::Bool(b) => Ok(TypedPat::new(TypedPatKind::Bool(b), span, Ty::Bool)),
             UntypedPatKind::Constructor { name, args } => {
                 let ty = match name {
                     PathIdent::Module(module) => self
@@ -429,15 +407,15 @@ impl Checker {
 
                 for arg in args {
                     let arg = self.check_pat(arg)?;
-                    let Ty::Fn { param, ret } = ty.as_ref() else {
+                    let Ty::Fn { param, ret } = &ty else {
                         return Err(InferError::new(InferErrorKind::Kind(ty), arg.span));
                     };
                     c.push(Constraint::new(
-                        param.clone(),
+                        param.as_ref().clone(),
                         arg.ty.clone(),
                         [arg.span, span],
                     ));
-                    ty = ret.clone();
+                    ty = ret.as_ref().clone();
                     typed_args.push(arg);
                 }
 
@@ -447,9 +425,9 @@ impl Checker {
 
                 let subs = self.unify(c)?;
                 for arg in &mut typed_args {
-                    arg.substitute_many(&subs, &mut self.type_ctx);
+                    arg.substitute_many(&subs);
                 }
-                ty = ty.substitute_many(&subs, &mut self.type_ctx);
+                ty = ty.substitute_many(&subs);
 
                 let kind = TypedPatKind::Constructor {
                     name,
@@ -469,11 +447,9 @@ impl Checker {
                 unreachable!()
             }
 
-            UntypedPatKind::IntRange(range) => Ok(TypedPat::new(
-                TypedPatKind::IntRange(range),
-                span,
-                self.type_ctx().get_int(),
-            )),
+            UntypedPatKind::IntRange(range) => {
+                Ok(TypedPat::new(TypedPatKind::IntRange(range), span, Ty::Int))
+            }
         }
     }
 
@@ -522,12 +498,12 @@ impl Checker {
 
         let subs = self.unify(c)?;
 
-        expr.substitute_many(&subs, &mut self.type_ctx);
+        expr.substitute_many(&subs);
         for arm in &mut typed_arms {
-            arm.pat.substitute_many(&subs, &mut self.type_ctx);
-            arm.expr.substitute_many(&subs, &mut self.type_ctx);
+            arm.pat.substitute_many(&subs);
+            arm.expr.substitute_many(&subs);
         }
-        let var = var.substitute_many(&subs, &mut self.type_ctx);
+        let var = var.substitute_many(&subs);
 
         let kind = TypedExprKind::Match {
             expr: Box::new(expr),
@@ -551,18 +527,15 @@ impl Checker {
         let mut lhs = self.check(lhs)?;
         let mut rhs = self.check(rhs)?;
 
-        let int = self.get_int();
-        let bol = self.get_bool();
-
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
-                let c1 = Constraint::new(int.clone(), lhs.ty.clone(), [lhs.span, span]);
-                let c2 = Constraint::new(int.clone(), rhs.ty.clone(), [rhs.span, span]);
+                let c1 = Constraint::new(Ty::Int, lhs.ty.clone(), [lhs.span, span]);
+                let c2 = Constraint::new(Ty::Int, rhs.ty.clone(), [rhs.span, span]);
 
                 let subs = self.unify([c1, c2])?;
 
-                lhs.substitute_many(&subs, &mut self.type_ctx);
-                rhs.substitute_many(&subs, &mut self.type_ctx);
+                lhs.substitute_many(&subs);
+                rhs.substitute_many(&subs);
 
                 let kind = TypedExprKind::Bin {
                     op,
@@ -570,16 +543,16 @@ impl Checker {
                     rhs: Box::new(rhs),
                 };
 
-                Ok(TypedExpr::new(kind, span, int))
+                Ok(TypedExpr::new(kind, span, Ty::Int))
             }
             BinOp::Eq | BinOp::Ne | BinOp::Gt | BinOp::Ge | BinOp::Lt | BinOp::Le => {
-                let c1 = Constraint::new(int.clone(), lhs.ty.clone(), [lhs.span, span]);
-                let c2 = Constraint::new(int, rhs.ty.clone(), [rhs.span, span]);
+                let c1 = Constraint::new(Ty::Int, lhs.ty.clone(), [lhs.span, span]);
+                let c2 = Constraint::new(Ty::Int, rhs.ty.clone(), [rhs.span, span]);
 
                 let subs = self.unify([c1, c2])?;
 
-                lhs.substitute_many(&subs, &mut self.type_ctx);
-                rhs.substitute_many(&subs, &mut self.type_ctx);
+                lhs.substitute_many(&subs);
+                rhs.substitute_many(&subs);
 
                 let kind = TypedExprKind::Bin {
                     op,
@@ -587,16 +560,16 @@ impl Checker {
                     rhs: Box::new(rhs),
                 };
 
-                Ok(TypedExpr::new(kind, span, bol))
+                Ok(TypedExpr::new(kind, span, Ty::Bool))
             }
             BinOp::And | BinOp::Or => {
-                let c1 = Constraint::new(bol.clone(), lhs.ty.clone(), [lhs.span, span]);
-                let c2 = Constraint::new(bol.clone(), rhs.ty.clone(), [rhs.span, span]);
+                let c1 = Constraint::new(Ty::Bool, lhs.ty.clone(), [lhs.span, span]);
+                let c2 = Constraint::new(Ty::Bool, rhs.ty.clone(), [rhs.span, span]);
 
                 let subs = self.unify([c1, c2])?;
 
-                lhs.substitute_many(&subs, &mut self.type_ctx);
-                rhs.substitute_many(&subs, &mut self.type_ctx);
+                lhs.substitute_many(&subs);
+                rhs.substitute_many(&subs);
 
                 let kind = TypedExprKind::Bin {
                     op,
@@ -604,7 +577,7 @@ impl Checker {
                     rhs: Box::new(rhs),
                 };
 
-                Ok(TypedExpr::new(kind, span, bol))
+                Ok(TypedExpr::new(kind, span, Ty::Bool))
             }
 
             BinOp::Pipe => unreachable!(),
@@ -615,15 +588,15 @@ impl Checker {
         let mut expr = self.check(expr)?;
 
         let ty = match op {
-            UnOp::Not => self.get_bool(),
-            UnOp::Neg => self.get_int(),
+            UnOp::Not => Ty::Bool,
+            UnOp::Neg => Ty::Int,
         };
         let subs = self.unify(Constraint::new(
             ty.clone(),
             expr.ty.clone(),
             [expr.span, span],
         ))?;
-        expr.substitute_many(&subs, &mut self.type_ctx);
+        expr.substitute_many(&subs);
 
         let kind = TypedExprKind::Un {
             op,
@@ -633,22 +606,19 @@ impl Checker {
         Ok(TypedExpr::new(kind, span, ty))
     }
 
-    fn instantiate(&mut self, ty: Rc<Ty>) -> Rc<Ty> {
-        match ty.as_ref() {
+    fn instantiate(&mut self, ty: Ty) -> Ty {
+        match ty {
             Ty::Scheme { quant, ty } => {
                 let subs: Vec<_> = (0..quant.len()).map(|_| self.gen_type_var()).collect();
 
-                ty.clone().substitute(
-                    &mut |ty, _| {
-                        let v = ty.as_var()?;
-                        quant
-                            .iter()
-                            .copied()
-                            .enumerate()
-                            .find_map(|(i, n)| if v == n { Some(subs[i].clone()) } else { None })
-                    },
-                    &mut self.type_ctx,
-                )
+                ty.as_ref().clone().substitute(&mut |ty| {
+                    let v = ty.as_var()?;
+                    quant
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .find_map(|(i, n)| if v == n { Some(subs[i].clone()) } else { None })
+                })
             }
             _ => ty,
         }
@@ -677,18 +647,13 @@ impl Checker {
             while let Some(decl) = self.declared_types.pop() {
                 let new_name = PathIdent::Module(ModuleIdent::new(mod_name, decl));
                 let decl = PathIdent::Ident(decl);
-                typed.substitute(
-                    &mut |ty, ctx| match ty {
-                        Ty::Named { name, args } if *name == decl => {
-                            Some(ctx.intern_type(Ty::Named {
-                                name: new_name,
-                                args: args.clone(),
-                            }))
-                        }
-                        _ => None,
-                    },
-                    &mut self.type_ctx,
-                );
+                typed.substitute(&mut |ty| match ty {
+                    Ty::Named { name, args } if *name == decl => Some(Ty::Named {
+                        name: new_name,
+                        args: args.clone(),
+                    }),
+                    _ => None,
+                });
             }
             self.env.insert_module(mod_name, typed.declared.clone());
         } else {
@@ -723,17 +688,11 @@ impl Checker {
                 ))
             }
 
-            UntypedExprKind::Unit => Ok(TypedExpr::new(TypedExprKind::Unit, span, self.get_unit())),
+            UntypedExprKind::Unit => Ok(TypedExpr::new(TypedExprKind::Unit, span, Ty::Unit)),
 
-            UntypedExprKind::Int(i) => {
-                Ok(TypedExpr::new(TypedExprKind::Int(i), span, self.get_int()))
-            }
+            UntypedExprKind::Int(i) => Ok(TypedExpr::new(TypedExprKind::Int(i), span, Ty::Int)),
 
-            UntypedExprKind::Bool(b) => Ok(TypedExpr::new(
-                TypedExprKind::Bool(b),
-                span,
-                self.get_bool(),
-            )),
+            UntypedExprKind::Bool(b) => Ok(TypedExpr::new(TypedExprKind::Bool(b), span, Ty::Bool)),
 
             UntypedExprKind::Ident(id) => {
                 let t = self
@@ -769,7 +728,7 @@ impl Checker {
 
             UntypedExprKind::Semi(expr) => {
                 let mut expr = self.check(*expr)?;
-                expr.ty = self.get_unit();
+                expr.ty = Ty::Unit;
                 Ok(expr)
             }
 

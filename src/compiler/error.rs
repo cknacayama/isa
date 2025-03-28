@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use std::rc::Rc;
 
 use super::exhaust::pat::WitnessPat;
 use super::infer::Constraint;
@@ -70,7 +69,7 @@ pub enum InferErrorKind {
     Unbound(Symbol),
     UnboundModule(Symbol),
     NotConstructor(Symbol),
-    Kind(Rc<Ty>),
+    Kind(Ty),
 }
 
 impl Display for InferErrorKind {

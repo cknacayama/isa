@@ -3,7 +3,6 @@ use std::rc::Rc;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::ast::ModuleIdent;
-use super::ctx::TypeCtx;
 use super::error::InferErrorKind;
 use super::infer::Substitute;
 use super::types::Ty;
@@ -12,12 +11,12 @@ use crate::global::Symbol;
 #[derive(Debug, Clone)]
 pub struct VarData {
     constructor: bool,
-    ty:          Rc<Ty>,
+    ty:          Ty,
 }
 
 impl VarData {
     #[must_use]
-    pub fn new(constructor: bool, ty: Rc<Ty>) -> Self {
+    pub fn new(constructor: bool, ty: Ty) -> Self {
         Self { constructor, ty }
     }
 
@@ -27,11 +26,11 @@ impl VarData {
     }
 
     #[must_use]
-    pub const fn ty(&self) -> &Rc<Ty> {
+    pub const fn ty(&self) -> &Ty {
         &self.ty
     }
 
-    pub const fn ty_mut(&mut self) -> &mut Rc<Ty> {
+    pub const fn ty_mut(&mut self) -> &mut Ty {
         &mut self.ty
     }
 }
@@ -70,7 +69,7 @@ impl Env {
     }
 
     #[must_use]
-    pub fn get_constructor(&self, id: &Symbol) -> Option<Rc<Ty>> {
+    pub fn get_constructor(&self, id: &Symbol) -> Option<Ty> {
         self.env
             .iter()
             .rev()
@@ -84,13 +83,13 @@ impl Env {
             })
     }
 
-    pub fn insert(&mut self, id: Symbol, ty: Rc<Ty>) -> Option<VarData> {
+    pub fn insert(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
         self.env
             .last_mut()
             .and_then(|env| env.insert(id, VarData::new(false, ty)))
     }
 
-    pub fn insert_constructor(&mut self, id: Symbol, ty: Rc<Ty>) -> Option<VarData> {
+    pub fn insert_constructor(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
         self.env
             .last_mut()
             .and_then(|env| env.insert(id, VarData::new(true, ty)))
@@ -111,7 +110,7 @@ impl Env {
     pub fn get_constructor_from_module(
         &self,
         module_access: &ModuleIdent,
-    ) -> Result<Rc<Ty>, InferErrorKind> {
+    ) -> Result<Ty, InferErrorKind> {
         let Some(module) = self.modules.get(&module_access.module()) else {
             return Err(InferErrorKind::UnboundModule(module_access.module()));
         };
@@ -156,7 +155,7 @@ impl Env {
     }
 
     #[must_use]
-    pub fn generalize(&self, ty: Rc<Ty>, ctx: &mut TypeCtx) -> Rc<Ty> {
+    pub fn generalize(&self, ty: Ty) -> Ty {
         let mut quantifiers = ty.free_type_variables();
 
         if quantifiers.is_empty() {
@@ -173,41 +172,39 @@ impl Env {
             return ty;
         }
 
-        let ty = match ty.as_ref() {
+        match ty {
             Ty::Scheme { quant, ty } => {
-                quantifiers.extend_from_slice(quant);
+                quantifiers.extend_from_slice(&quant);
                 Ty::Scheme {
                     quant: quantifiers.into(),
-                    ty:    ty.clone(),
+                    ty,
                 }
             }
             _ => Ty::Scheme {
                 quant: quantifiers.into(),
-                ty,
+                ty:    Rc::new(ty),
             },
-        };
-
-        ctx.intern_type(ty)
+        }
     }
 }
 
 impl Substitute for &mut Env {
-    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S) -> Self
     where
-        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        S: FnMut(&Ty) -> Option<Ty>,
     {
         for t in self.env.iter_mut().flat_map(FxHashMap::values_mut) {
-            t.ty = t.ty.clone().substitute(subs, env);
+            t.ty = t.ty.clone().substitute(subs);
         }
         self
     }
 }
 impl Substitute for &mut VarData {
-    fn substitute<S>(self, subs: &mut S, env: &mut TypeCtx) -> Self
+    fn substitute<S>(self, subs: &mut S) -> Self
     where
-        S: FnMut(&Ty, &mut TypeCtx) -> Option<Rc<Ty>>,
+        S: FnMut(&Ty) -> Option<Ty>,
     {
-        self.ty = self.ty.clone().substitute(subs, env);
+        self.ty = self.ty.clone().substitute(subs);
         self
     }
 }
