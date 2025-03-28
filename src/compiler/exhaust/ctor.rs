@@ -136,7 +136,7 @@ impl IntRange {
         other.lo <= self.lo && self.hi <= other.hi
     }
 
-    const fn infite() -> Self {
+    const fn infinite() -> Self {
         Self {
             lo: MaybeInfinite::NegInfinity,
             hi: MaybeInfinite::PosInfinity,
@@ -243,14 +243,9 @@ impl CtorSet {
                 }
             }
             Self::Integers => {
-                let seen_ranges: Vec<_> = seen
-                    .iter()
-                    .filter_map(|ctor| ctor.as_int_range())
-                    .copied()
-                    .collect();
+                let seen_ranges = seen.iter().filter_map(Ctor::as_int_range).copied();
 
-                for (seen, splitted_range) in IntRange::infite().split(seen_ranges.iter().copied())
-                {
+                for (seen, splitted_range) in IntRange::infinite().split(seen_ranges) {
                     if seen {
                         present.push(Ctor::IntRange(splitted_range));
                     } else {
