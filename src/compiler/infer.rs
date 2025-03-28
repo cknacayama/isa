@@ -283,9 +283,9 @@ impl From<ConstraintSpan> for Vec<Span> {
 
 #[derive(Debug, Clone)]
 pub struct Constraint {
-    lhs: Ty,
-    rhs: Ty,
-
+    lhs:       Ty,
+    rhs:       Ty,
+    parent:    Option<Rc<Constraint>>,
     pub spans: ConstraintSpan,
 }
 
@@ -295,9 +295,10 @@ impl Substitute for Constraint {
         S: FnMut(&Ty) -> Option<Ty>,
     {
         Self {
-            lhs:   self.lhs.substitute(subs),
-            rhs:   self.rhs.substitute(subs),
-            spans: self.spans,
+            lhs:    self.lhs.substitute(subs),
+            rhs:    self.rhs.substitute(subs),
+            parent: self.parent,
+            spans:  self.spans,
         }
     }
 }
@@ -311,6 +312,7 @@ impl Constraint {
         Self {
             lhs,
             rhs,
+            parent: None,
             spans: ConstraintSpan::from(spans),
         }
     }
@@ -328,6 +330,24 @@ impl Constraint {
     #[must_use]
     pub fn rhs(&self) -> &Ty {
         &self.rhs
+    }
+
+    pub fn parent(&self) -> Option<&Self> {
+        self.parent.as_ref().map(Rc::as_ref)
+    }
+
+    fn with_parent(self, parent: Rc<Self>) -> Self {
+        Self {
+            parent: Some(Self::eldest(parent)),
+            ..self
+        }
+    }
+
+    fn eldest(mut parent: Rc<Self>) -> Rc<Self> {
+        while let Some(ref grand) = parent.parent {
+            parent = grand.clone();
+        }
+        parent
     }
 }
 
@@ -376,11 +396,14 @@ where
 
     while let Some(c) = cset.constrs.pop() {
         let spans = c.spans;
-        match (c.lhs, c.rhs) {
+        match (&c.lhs, &c.rhs) {
             (lhs @ (Ty::Int | Ty::Bool | Ty::Var(_)), rhs @ (Ty::Int | Ty::Bool | Ty::Var(_)))
                 if lhs == rhs => {}
-            (Ty::Var(old), new) | (new, Ty::Var(old)) if !new.occurs(old) => {
-                let s = Subs { old, new };
+            (Ty::Var(old), new) | (new, Ty::Var(old)) if !new.occurs(*old) => {
+                let s = Subs {
+                    old: *old,
+                    new: new.clone(),
+                };
 
                 cset.substitute_eq(&s);
 
@@ -389,9 +412,10 @@ where
             (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
                 let c1 = Constraint::new(i1.as_ref().clone(), i2.as_ref().clone(), spans);
                 let c2 = Constraint::new(o1.as_ref().clone(), o2.as_ref().clone(), spans);
+                let parent = Rc::new(c);
 
-                cset.push(c1);
-                cset.push(c2);
+                cset.push(c1.with_parent(parent.clone()));
+                cset.push(c2.with_parent(parent));
             }
             (
                 Ty::Named {
@@ -403,15 +427,22 @@ where
                     args: args2,
                 },
             ) if n1 == n2 && args1.len() == args2.len() => {
+                let args1 = args1.clone();
+                let args2 = args2.clone();
+                let parent = Rc::new(c);
                 for (a1, a2) in args1.iter().zip(args2.iter()) {
-                    cset.push(Constraint::new(a1.clone(), a2.clone(), spans));
+                    cset.push(
+                        Constraint::new(a1.clone(), a2.clone(), spans).with_parent(parent.clone()),
+                    );
                 }
             }
-            (lhs, rhs) => {
-                return Err(InferError::new(
-                    InferErrorKind::Uninferable(Constraint::new(lhs, rhs, spans)),
-                    spans.expr,
-                ));
+            _ => {
+                let c = if let Some(parent) = c.parent {
+                    parent.as_ref().clone().substitute_many(&subs)
+                } else {
+                    c
+                };
+                return Err(InferError::new(InferErrorKind::Uninferable(c), spans.expr));
             }
         }
     }

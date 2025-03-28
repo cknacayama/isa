@@ -484,8 +484,8 @@ impl Checker {
         for arm in arms {
             let (pat, aexpr) = self.check_match_arm(arm.pat, arm.expr)?;
             c.push(Constraint::new(
-                aexpr.ty.clone(),
                 var.clone(),
+                aexpr.ty.clone(),
                 [aexpr.span, span],
             ));
             c.push(Constraint::new(

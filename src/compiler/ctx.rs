@@ -65,7 +65,8 @@ impl TypeCtx {
             .map_or(&[], |data| data.constructors.as_slice())
     }
 
-    #[must_use] pub fn get_constructor_subtypes(&self, ty: &Ty, idx: usize) -> Box<[Ty]> {
+    #[must_use]
+    pub fn get_constructor_subtypes(&self, ty: &Ty, idx: usize) -> Box<[Ty]> {
         let Ty::Named { name, args } = ty else {
             return Box::default();
         };

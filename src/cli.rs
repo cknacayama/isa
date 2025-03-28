@@ -78,7 +78,7 @@ impl Config {
     where
         E: Report,
     {
-        let writer = StandardStream::stderr(ColorChoice::Always);
+        let writer = StandardStream::stderr(ColorChoice::Auto);
         let config = term::Config {
             chars: term::Chars::ascii(),
             ..Default::default()
