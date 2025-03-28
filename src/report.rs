@@ -1,84 +1,70 @@
 use std::error::Error;
 use std::fmt::Write;
 
-use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
+use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::compiler::ctx::{CtxFmt, TypeCtx};
 use crate::compiler::error::{InferError, InferErrorKind, MatchNonExhaustive};
 use crate::span::Spanned;
 
-impl<T: Error> Spanned<T> {
-    pub fn report(&self, input: &str) {
-        Report::build(ReportKind::Error, self.span)
-            .with_label(Label::new(self.span).with_color(Color::BrightRed))
-            .with_message(self.data.to_string())
-            .finish()
-            .eprint(Source::from(input))
-            .unwrap_or_else(|_| unreachable!());
+pub trait Report {
+    fn diagnostic(&self, file_id: usize, ctx: &TypeCtx) -> Diagnostic<usize>;
+}
+
+impl<T: Error> Report for Spanned<T> {
+    fn diagnostic(&self, file_id: usize, _: &TypeCtx) -> Diagnostic<usize> {
+        Diagnostic::error()
+            .with_message(self.data())
+            .with_label(Label::primary(file_id, self.span))
     }
 }
 
-impl InferError {
-    pub fn report(&self, input: &str) {
-        let mut builder = Report::build(ReportKind::Error, self.span());
+impl Report for InferError {
+    fn diagnostic(&self, file_id: usize, _: &TypeCtx) -> Diagnostic<usize> {
+        let mut diagnostic = Diagnostic::error();
 
-        match self.kind() {
+        let primary_span = match self.kind() {
             InferErrorKind::Uninferable(constr) => {
-                match (constr.spans.lhs, constr.spans.rhs) {
-                    (None, None) => (),
-                    (None, Some(rhs)) => {
-                        builder = builder.with_label(
-                            Label::new(rhs)
-                                .with_color(Color::BrightCyan)
-                                .with_message(format!(
-                                    "this is of type `{}`",
-                                    constr.rhs().fg(Color::BrightCyan)
-                                )),
-                        );
-                    }
-                    (Some(lhs), None) => {
-                        builder = builder.with_label(
-                            Label::new(lhs)
-                                .with_color(Color::BrightCyan)
-                                .with_message(format!(
-                                    "this is of type `{}`",
-                                    constr.lhs().fg(Color::BrightCyan)
-                                )),
-                        );
-                    }
-                    (Some(lhs), Some(rhs)) => {
-                        builder = builder
-                            .with_label(Label::new(lhs).with_color(Color::BrightCyan).with_message(
-                                format!("this is of type `{}`", constr.lhs().fg(Color::BrightCyan)),
-                            ))
+                diagnostic = diagnostic.with_message("type mismatch");
+                match constr.spans.sub_exprs {
+                    None => self.span(),
+                    Some((None, rhs)) => rhs,
+                    Some((Some(lhs), rhs)) => {
+                        diagnostic = diagnostic
                             .with_label(
-                                Label::new(rhs).with_color(Color::BrightBlue).with_message(
-                                    format!(
-                                        "this is of type `{}`",
-                                        constr.rhs().fg(Color::BrightBlue)
-                                    ),
-                                ),
+                                Label::secondary(file_id, lhs)
+                                    .with_message(format!("this is of type `{}`", constr.lhs())),
+                            )
+                            .with_label(
+                                Label::secondary(file_id, rhs)
+                                    .with_message(format!("this is of type `{}`", constr.rhs())),
                             );
+                        rhs
                     }
                 }
-                builder = builder.with_message("type mismatch");
             }
 
-            InferErrorKind::Unbound(_) => builder = builder.with_message("undefined variable"),
-            InferErrorKind::UnboundModule(_) => builder = builder.with_message("undefined module"),
-            InferErrorKind::NotConstructor(_) => builder = builder.with_message("type mismatch"),
+            InferErrorKind::Unbound(_) => {
+                diagnostic = diagnostic.with_message("undefined variable");
+                self.span()
+            }
+            InferErrorKind::UnboundModule(_) => {
+                diagnostic = diagnostic.with_message("undefined module");
+                self.span()
+            }
+            InferErrorKind::NotConstructor(_) => {
+                diagnostic = diagnostic.with_message("type mismatch");
+                self.span()
+            }
             InferErrorKind::Kind(_) => {
-                builder = builder
+                diagnostic = diagnostic
                     .with_message("type mismatch")
                     .with_note("constructor pattern must have kind *");
+                self.span()
             }
-        }
+        };
 
-        builder
-            .with_label(Label::new(self.span()).with_message(self.kind().fg(Color::Red)))
-            .finish()
-            .eprint(Source::from(input))
-            .unwrap_or_else(|_| unreachable!());
+        diagnostic.with_label(Label::primary(file_id, primary_span).with_message(self.kind()))
     }
 }
 
@@ -98,17 +84,12 @@ impl MatchNonExhaustive {
         let _ = write!(out, " not covered");
         out
     }
+}
 
-    pub fn report(&self, ctx: &TypeCtx, input: &str) {
-        Report::build(ReportKind::Error, self.span())
+impl Report for MatchNonExhaustive {
+    fn diagnostic(&self, file_id: usize, ctx: &TypeCtx) -> Diagnostic<usize> {
+        Diagnostic::error()
             .with_message("non-exhaustive pattern")
-            .with_label(
-                Label::new(self.span())
-                    .with_message(self.fmt_witnesses(ctx))
-                    .with_color(Color::Red),
-            )
-            .finish()
-            .eprint(Source::from(input))
-            .unwrap_or_else(|_| unreachable!());
+            .with_label(Label::primary(file_id, self.span()).with_message(self.fmt_witnesses(ctx)))
     }
 }

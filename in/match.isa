@@ -1,5 +1,7 @@
 let fib n = match n with
-    ..0 -> 0,
+    ..=0 -> 0,
     1 -> 1,
-    2.. -> fib (n - 1) + fib (n - 2)
+    _ -> fib (n - 1) + fib (n - 2)
 ;
+
+let foo = if true then if 10 then 10 else 10 else 10;

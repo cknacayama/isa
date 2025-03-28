@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::fmt::Display;
+use std::ops::Range;
 
 use crate::IndexSet;
 use crate::span::{Span, SpanData};
@@ -38,21 +39,10 @@ impl Span {
     }
 }
 
-impl ariadne::Span for Span {
-    type SourceId = ();
-
-    fn source(&self) -> &Self::SourceId {
-        &()
-    }
-
-    fn start(&self) -> usize {
-        let data = GLOBAL_DATA.with_borrow(|e| e.spans.get(*self).unwrap_or_default());
-        data.start()
-    }
-
-    fn end(&self) -> usize {
-        let data = GLOBAL_DATA.with_borrow(|e| e.spans.get(*self).unwrap_or_default());
-        data.end()
+impl From<Span> for Range<usize> {
+    fn from(value: Span) -> Self {
+        let data = GLOBAL_DATA.with_borrow(|e| e.spans.get(value).unwrap_or_default());
+        data.start()..data.end()
     }
 }
 

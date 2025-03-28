@@ -1,10 +1,17 @@
+use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::time::Instant;
 
+use codespan_reporting::files::SimpleFiles;
+use codespan_reporting::term;
+use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+
 use crate::compiler::checker::Checker;
+use crate::compiler::ctx::TypeCtx;
 use crate::compiler::exhaust::check_matches;
 use crate::compiler::parser::Parser;
+use crate::report::Report;
 
 /// TODO: add more options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -13,12 +20,14 @@ pub enum Opt {
     Infer,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default)]
 pub struct Config {
     opt:        Opt,
     input_path: PathBuf,
     bin_path:   PathBuf,
-    input:      String,
+    files:      SimpleFiles<String, String>,
+    file_id:    usize,
 }
 
 impl Config {
@@ -40,6 +49,14 @@ impl Config {
 
         let input = std::fs::read_to_string(&input_path).expect("Should have valid path as input");
 
+        let mut files = SimpleFiles::new();
+        let input_file_name = input_path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .unwrap_or_default()
+            .to_owned();
+        let file_id = files.add(input_file_name, input);
+
         let opt = env
             .next()
             .and_then(|opt| match opt.as_str() {
@@ -52,20 +69,39 @@ impl Config {
             opt,
             input_path,
             bin_path,
-            input,
+            files,
+            file_id,
         }
     }
 
-    pub fn run(self) {
-        let input = self.input;
+    fn report<E>(&self, err: &E, ctx: &TypeCtx)
+    where
+        E: Report,
+    {
+        let writer = StandardStream::stderr(ColorChoice::Always);
+        let config = term::Config {
+            chars: term::Chars::ascii(),
+            ..Default::default()
+        };
+        let diagnostic = err.diagnostic(self.file_id, ctx);
+
+        let _ = term::emit(&mut writer.lock(), &config, &self.files, &diagnostic);
+    }
+
+    pub fn run(&self) {
+        let input = self
+            .files
+            .get(self.file_id)
+            .unwrap_or_else(|_| unreachable!())
+            .source();
 
         let start = Instant::now();
 
-        let mut parser = Parser::from_input(&input);
+        let mut parser = Parser::from_input(input);
 
         let modules = match parser.parse_all() {
             Ok(expr) if !expr.is_empty() => expr,
-            Err(err) => return err.report(&input),
+            Err(err) => return self.report(&err, &TypeCtx::default()),
             _ => return,
         };
 
@@ -73,14 +109,14 @@ impl Config {
 
         let modules = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
-            Err(err) => return err.report(&input),
+            Err(err) => return self.report(&err, checker.type_ctx()),
         };
 
         let duration = start.elapsed();
 
         for module in modules {
             if let Err(err) = check_matches(&module.exprs, checker.type_ctx()) {
-                return err.report(checker.type_ctx(), &input);
+                return self.report(&err, checker.type_ctx());
             }
 
             match module.name {

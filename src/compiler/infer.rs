@@ -242,43 +242,41 @@ impl Substitute for Rc<Ty> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConstraintSpan {
-    pub lhs:  Option<Span>,
-    pub rhs:  Option<Span>,
-    pub expr: Span,
+    pub sub_exprs: Option<(Option<Span>, Span)>,
+    pub expr:      Span,
 }
 
 impl ConstraintSpan {
     #[must_use]
-    pub const fn new(lhs: Option<Span>, rhs: Option<Span>, expr: Span) -> Self {
-        Self { lhs, rhs, expr }
+    pub fn new(sub_exprs: Option<(Option<Span>, Span)>, expr: Span) -> Self {
+        Self { sub_exprs, expr }
     }
 }
 
 impl From<Span> for ConstraintSpan {
     fn from(value: Span) -> Self {
-        Self::new(None, None, value)
+        Self::new(None, value)
     }
 }
 
 impl From<[Span; 2]> for ConstraintSpan {
     fn from(value: [Span; 2]) -> Self {
-        Self::new(None, Some(value[0]), value[1])
+        Self::new(Some((None, value[0])), value[1])
     }
 }
 
 impl From<[Span; 3]> for ConstraintSpan {
     fn from(value: [Span; 3]) -> Self {
-        Self::new(Some(value[0]), Some(value[1]), value[2])
+        Self::new(Some((Some(value[0]), value[1])), value[2])
     }
 }
 
 impl From<ConstraintSpan> for Vec<Span> {
     fn from(value: ConstraintSpan) -> Self {
-        match (value.lhs, value.rhs) {
-            (None, None) => vec![value.expr],
-            (None, Some(rhs)) => vec![rhs, value.expr],
-            (Some(lhs), None) => vec![lhs, value.expr],
-            (Some(lhs), Some(rhs)) => vec![lhs, rhs, value.expr],
+        match value.sub_exprs {
+            None => vec![value.expr],
+            Some((None, rhs)) => vec![rhs, value.expr],
+            Some((Some(lhs), rhs)) => vec![lhs, rhs, value.expr],
         }
     }
 }
