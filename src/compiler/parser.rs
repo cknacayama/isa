@@ -669,6 +669,22 @@ impl<'a> Parser<'a> {
         let Token { data, span } = self.next_or_eof()?;
 
         match data {
+            TokenKind::DotDot => {
+                let int = self.expect_integer()?;
+                let span = span.union(int.span);
+                Ok(UntypedPat::untyped(
+                    UntypedPatKind::IntRange(IntRangePat::To(int.data)),
+                    span,
+                ))
+            }
+            TokenKind::DotDotEq => {
+                let int = self.expect_integer()?;
+                let span = span.union(int.span);
+                Ok(UntypedPat::untyped(
+                    UntypedPatKind::IntRange(IntRangePat::ToInclusive(int.data)),
+                    span,
+                ))
+            }
             TokenKind::KwTrue => Ok(UntypedPat::untyped(UntypedPatKind::Bool(true), span)),
             TokenKind::KwFalse => Ok(UntypedPat::untyped(UntypedPatKind::Bool(false), span)),
             TokenKind::LParen => {

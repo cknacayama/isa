@@ -140,6 +140,8 @@ impl TokenKind {
         matches!(
             self,
             Self::LParen
+                | Self::DotDot
+                | Self::DotDotEq
                 | Self::Underscore
                 | Self::Ident(_)
                 | Self::Integer(_)
