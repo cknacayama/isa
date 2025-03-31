@@ -480,19 +480,20 @@ pub enum ExprKind<T> {
     Semi(Box<Expr<T>>),
 
     Let {
-        id:     Symbol,
+        name:   Symbol,
         params: Box<[Param<T>]>,
         expr:   Box<Expr<T>>,
         body:   Option<Box<Expr<T>>>,
     },
 
     Val {
-        id: Symbol,
-        ty: Ty,
+        name:       Symbol,
+        parameters: Box<[Ty]>,
+        ty:         Ty,
     },
 
     Type {
-        id:           Symbol,
+        name:         Symbol,
         parameters:   Box<[Ty]>,
         constructors: Box<[Constructor]>,
     },
@@ -570,7 +571,7 @@ impl<T: Display> Expr<T> {
             }
             ExprKind::Let {
                 params,
-                id,
+                name: id,
                 expr,
                 body,
             } => {
@@ -587,11 +588,19 @@ impl<T: Display> Expr<T> {
                 }
                 write!(f, ")")
             }
-            ExprKind::Val { id, ty } => {
-                write!(f, "(val {id}: {ty})")
+            ExprKind::Val {
+                name: id,
+                parameters,
+                ty,
+            } => {
+                write!(f, "(val {id}")?;
+                for t in parameters {
+                    write!(f, " {t}")?;
+                }
+                write!(f, ": {ty})")
             }
             ExprKind::Type {
-                id,
+                name: id,
                 parameters: params,
                 constructors,
             } => {

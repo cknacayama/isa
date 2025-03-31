@@ -76,7 +76,7 @@ impl<'a> Ctx<'a> {
 
         if !missing_ctors.is_empty() && all_missing {
             missing_ctors = vec![Ctor::Wildcard];
-        } else if missing_ctors.iter().any(|c| c.is_non_exhaustive()) {
+        } else if missing_ctors.iter().any(ctor::Ctor::is_non_exhaustive) {
             missing_ctors = vec![Ctor::NonExhaustive];
         }
 

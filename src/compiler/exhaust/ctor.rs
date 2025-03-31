@@ -60,7 +60,7 @@ impl Ctor {
         &self,
         f: &mut impl fmt::Write,
         ty: &Ty,
-        fields: impl Iterator<Item = impl CtxFmt<Ctx = TypeCtx>> + ExactSizeIterator,
+        fields: impl ExactSizeIterator<Item = impl CtxFmt<Ctx = TypeCtx>>,
         ctx: &TypeCtx,
     ) -> fmt::Result {
         let mut first = true;

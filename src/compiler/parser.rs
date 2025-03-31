@@ -190,14 +190,30 @@ impl<'a> Parser<'a> {
     fn parse_val(&mut self) -> ParseResult<UntypedExpr> {
         let span = self.expect(TokenKind::KwVal)?;
         let Spanned { data: id, .. } = self.expect_id()?;
+        let mut params = Vec::new();
+        while !self.check(TokenKind::Colon) {
+            let Spanned { data, .. } = self.expect_id()?;
+            params.push(Ty::Named {
+                name: PathIdent::Ident(data),
+                args: Rc::from([]),
+            });
+        }
         self.expect(TokenKind::Colon)?;
+        let parameters = params.into_boxed_slice();
         let Spanned {
             data: ty,
             span: ty_span,
         } = self.parse_type()?;
         let span = span.union(ty_span);
 
-        Ok(UntypedExpr::untyped(UntypedExprKind::Val { id, ty }, span))
+        Ok(UntypedExpr::untyped(
+            UntypedExprKind::Val {
+                name: id,
+                parameters,
+                ty,
+            },
+            span,
+        ))
     }
 
     fn parse_expr(&mut self) -> ParseResult<UntypedExpr> {
@@ -548,8 +564,8 @@ impl<'a> Parser<'a> {
 
         Ok(UntypedExpr::untyped(
             UntypedExprKind::Type {
-                id,
-                parameters: params.into_boxed_slice(),
+                name:         id,
+                parameters:   params.into_boxed_slice(),
                 constructors: constructors.into_boxed_slice(),
             },
             span,
@@ -786,9 +802,9 @@ impl<'a> Parser<'a> {
         Ok(UntypedExpr::untyped(
             UntypedExprKind::Let {
                 params: parametes.into_boxed_slice(),
-                id,
-                expr: Box::new(expr),
-                body: body.map(Box::new),
+                name:   id,
+                expr:   Box::new(expr),
+                body:   body.map(Box::new),
             },
             span,
         ))

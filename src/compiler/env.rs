@@ -8,21 +8,41 @@ use super::infer::Substitute;
 use super::types::Ty;
 use crate::global::Symbol;
 
+#[derive(Debug, Clone, Copy)]
+enum VarKind {
+    Constructor,
+    ValueDeclaration,
+    LetDefinition,
+}
+
+impl VarKind {
+    /// Returns `true` if the var kind is [`Constructor`].
+    ///
+    /// [`Constructor`]: VarKind::Constructor
+    #[must_use]
+    const fn is_constructor(&self) -> bool {
+        matches!(self, Self::Constructor)
+    }
+
+    /// Returns `true` if the var kind is [`ValueDeclaration`].
+    ///
+    /// [`ValueDeclaration`]: VarKind::ValueDeclaration
+    #[must_use]
+    const fn is_value_declaration(&self) -> bool {
+        matches!(self, Self::ValueDeclaration)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct VarData {
-    constructor: bool,
-    ty:          Ty,
+    kind: VarKind,
+    ty:   Ty,
 }
 
 impl VarData {
     #[must_use]
-    pub fn new(constructor: bool, ty: Ty) -> Self {
-        Self { constructor, ty }
-    }
-
-    #[must_use]
-    pub const fn constructor(&self) -> bool {
-        self.constructor
+    pub fn new(kind: VarKind, ty: Ty) -> Self {
+        Self { kind, ty }
     }
 
     #[must_use]
@@ -32,6 +52,10 @@ impl VarData {
 
     pub const fn ty_mut(&mut self) -> &mut Ty {
         &mut self.ty
+    }
+
+    pub const fn kind(&self) -> VarKind {
+        self.kind
     }
 }
 
@@ -75,7 +99,22 @@ impl Env {
             .rev()
             .find_map(|e| e.get(id))
             .and_then(|var| {
-                if var.constructor() {
+                if var.kind().is_constructor() {
+                    Some(var.ty().clone())
+                } else {
+                    None
+                }
+            })
+    }
+
+    #[must_use]
+    pub fn get_val(&self, id: &Symbol) -> Option<Ty> {
+        self.env
+            .iter()
+            .rev()
+            .find_map(|e| e.get(id))
+            .and_then(|var| {
+                if var.kind().is_value_declaration() {
                     Some(var.ty().clone())
                 } else {
                     None
@@ -86,13 +125,19 @@ impl Env {
     pub fn insert(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
         self.env
             .last_mut()
-            .and_then(|env| env.insert(id, VarData::new(false, ty)))
+            .and_then(|env| env.insert(id, VarData::new(VarKind::LetDefinition, ty)))
     }
 
     pub fn insert_constructor(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
         self.env
             .last_mut()
-            .and_then(|env| env.insert(id, VarData::new(true, ty)))
+            .and_then(|env| env.insert(id, VarData::new(VarKind::Constructor, ty)))
+    }
+
+    pub fn insert_val(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
+        self.env
+            .last_mut()
+            .and_then(|env| env.insert(id, VarData::new(VarKind::ValueDeclaration, ty)))
     }
 
     pub fn get_from_module(&self, module_access: &ModuleIdent) -> Result<VarData, InferErrorKind> {

@@ -4,14 +4,14 @@ module Option
 module List
     type List a = Nil | Cons a (List a);
     
-    // val lenght a: List a -> int;
+    val lenght a: List a -> int;
     let lenght list =
         match list with
             Nil -> 0,
             Cons _ list -> 1 + lenght list,
     ;
 
-    // val head a: List a -> Option.Option a;
+    val head a: List a -> Option.Option a;
     let head list =
         match list with
             Nil -> Option.None,

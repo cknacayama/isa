@@ -114,4 +114,12 @@ impl Ty {
             }
         }
     }
+
+    /// Returns `true` if the ty is [`Scheme`].
+    ///
+    /// [`Scheme`]: Ty::Scheme
+    #[must_use]
+    pub fn is_scheme(&self) -> bool {
+        matches!(self, Self::Scheme { .. })
+    }
 }

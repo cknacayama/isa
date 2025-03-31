@@ -41,7 +41,7 @@ impl WitnessPat {
         Self::new(ctor, fields, ty)
     }
 
-    fn iter_fields(&self) -> impl Iterator<Item = &Self> + ExactSizeIterator {
+    fn iter_fields(&self) -> impl ExactSizeIterator<Item = &Self> {
         self.fields.iter()
     }
 }

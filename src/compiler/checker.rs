@@ -54,6 +54,14 @@ impl Checker {
         &self.type_ctx
     }
 
+    fn insert_val(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
+        self.env.insert_val(id, ty)
+    }
+
+    fn get_val(&mut self, id: Symbol) -> Option<Ty> {
+        self.env.get_val(&id)
+    }
+
     fn insert_variable(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
         self.env.insert(id, ty)
     }
@@ -204,7 +212,7 @@ impl Checker {
             })
             .collect::<Box<_>>();
 
-        let expr = if typed_params.is_empty() {
+        let mut expr = if typed_params.is_empty() {
             self.check(expr)?
         } else {
             let var_id = self.gen_id();
@@ -227,6 +235,16 @@ impl Checker {
         };
 
         self.env.pop_scope();
+
+        if let Some(val_ty) = self.get_val(id) {
+            let val_ty = self.instantiate(val_ty);
+            let subs = self.unify(Constraint::new(val_ty, expr.ty.clone(), expr.span))?;
+            expr.substitute_many(&subs);
+            for p in &mut typed_params {
+                p.substitute_many(&subs);
+            }
+        }
+
         Ok((expr, typed_params))
     }
 
@@ -256,7 +274,7 @@ impl Checker {
         };
 
         let kind = TypedExprKind::Let {
-            id,
+            name: id,
             params,
             expr: Box::new(expr),
             body: body.map(Box::new),
@@ -336,12 +354,58 @@ impl Checker {
         }
 
         let kind = TypedExprKind::Type {
-            id: name,
+            name,
             parameters: args.into_boxed_slice(),
             constructors,
         };
 
         TypedExpr::new(kind, span, Ty::Unit)
+    }
+
+    fn check_val(
+        &mut self,
+        name: Symbol,
+        params: Box<[Ty]>,
+        mut ty: Ty,
+        span: Span,
+    ) -> InferResult<TypedExpr> {
+        let mut new_params = Vec::new();
+        let mut quant = Vec::new();
+        for p in params {
+            let new = self.gen_id();
+            quant.push(new);
+            new_params.push((p, new));
+        }
+
+        if !new_params.is_empty() {
+            ty = ty.substitute(&mut |ty| {
+                new_params
+                    .iter()
+                    .find_map(|(old, new)| if ty == old { Some(Ty::Var(*new)) } else { None })
+            });
+            ty = Ty::Scheme {
+                quant: quant.clone().into(),
+                ty:    Rc::new(ty),
+            }
+        }
+
+        match self.insert_val(name, ty.clone()) {
+            Some(old) if old.ty() != &ty => {
+                return Err(InferError::new(
+                    InferErrorKind::Uninferable(Constraint::new(old.ty().clone(), ty, span)),
+                    span,
+                ));
+            }
+            _ => (),
+        }
+
+        let kind = TypedExprKind::Val {
+            name,
+            parameters: quant.into_iter().map(Ty::Var).collect(),
+            ty,
+        };
+
+        Ok(TypedExpr::new(kind, span, Ty::Unit))
     }
 
     fn check_pat(&mut self, UntypedPat { kind, span, .. }: UntypedPat) -> InferResult<TypedPat> {
@@ -623,16 +687,16 @@ impl Checker {
         }
     }
 
-    pub fn check_types<'a, I>(&mut self, modules: I) -> InferResult<()>
+    pub fn check_types<'a, I>(&mut self, modules: I)
     where
         I: IntoIterator<Item = &'a mut UntypedModule>,
     {
         modules
             .into_iter()
-            .try_for_each(|module| self.check_module_types(module))
+            .for_each(|module| self.check_module_types(module));
     }
 
-    fn check_module_types(&mut self, module: &mut UntypedModule) -> InferResult<()> {
+    fn check_module_types(&mut self, module: &mut UntypedModule) {
         let mod_name = module.name;
         let mut declared = Vec::new();
         for decl in module
@@ -661,18 +725,16 @@ impl Checker {
                 });
             }
         }
-        Ok(())
     }
 
     fn check_type_declaration(&mut self, expr: &mut UntypedExpr) -> Option<Symbol> {
         match &mut expr.kind {
             UntypedExprKind::Semi(e) => self.check_type_declaration(e),
             UntypedExprKind::Type {
-                id,
+                name: id,
                 parameters,
                 constructors,
             } => {
-                let mut args = Vec::new();
                 let mut subs = Vec::new();
 
                 for param in parameters {
@@ -681,7 +743,6 @@ impl Checker {
                     let mut p = new.clone();
                     std::mem::swap(param, &mut p);
                     subs.push((p, new.clone()));
-                    args.push(new);
                 }
 
                 for ctor in constructors {
@@ -701,10 +762,12 @@ impl Checker {
         }
     }
 
-    pub fn check_many_modules<I>(&mut self, modules: I) -> InferResult<Vec<TypedModule>>
-    where
-        I: IntoIterator<Item = UntypedModule>,
-    {
+    pub fn check_many_modules(
+        &mut self,
+        mut modules: Vec<UntypedModule>,
+    ) -> InferResult<Vec<TypedModule>> {
+        self.check_types(&mut modules);
+
         modules
             .into_iter()
             .map(|module| self.check_module(module))
@@ -795,11 +858,11 @@ impl Checker {
             UntypedExprKind::Call { callee, arg } => self.check_call(*callee, *arg, span),
 
             UntypedExprKind::Let {
-                id,
+                name,
                 params,
                 expr,
                 body,
-            } => self.check_let(id, params, *expr, body.map(|body| *body), span),
+            } => self.check_let(name, params, *expr, body.map(|body| *body), span),
 
             UntypedExprKind::Semi(expr) => {
                 let mut expr = self.check(*expr)?;
@@ -808,12 +871,16 @@ impl Checker {
             }
 
             UntypedExprKind::Type {
-                id,
+                name,
                 parameters,
                 constructors,
-            } => Ok(self.check_type_definition(id, parameters, constructors, span)),
+            } => Ok(self.check_type_definition(name, parameters, constructors, span)),
 
-            UntypedExprKind::Val { id, ty } => todo!(),
+            UntypedExprKind::Val {
+                name,
+                parameters,
+                ty,
+            } => self.check_val(name, parameters, ty, span),
 
             UntypedExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
         }
