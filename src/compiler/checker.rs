@@ -291,11 +291,10 @@ impl Checker {
                 ty: Rc::new(ret),
             };
         }
-        self.insert_variable(constructor.name, ret.clone());
         self.insert_constructor(constructor.name, ret);
     }
 
-    fn check_type(
+    fn check_type_definition(
         &mut self,
         name: Symbol,
         parameters: Box<[Ty]>,
@@ -624,6 +623,84 @@ impl Checker {
         }
     }
 
+    pub fn check_types<'a, I>(&mut self, modules: I) -> InferResult<()>
+    where
+        I: IntoIterator<Item = &'a mut UntypedModule>,
+    {
+        modules
+            .into_iter()
+            .try_for_each(|module| self.check_module_types(module))
+    }
+
+    fn check_module_types(&mut self, module: &mut UntypedModule) -> InferResult<()> {
+        let mod_name = module.name;
+        let mut declared = Vec::new();
+        for decl in module
+            .exprs
+            .iter_mut()
+            .filter_map(|expr| self.check_type_declaration(expr))
+        {
+            let new_name = PathIdent::Module(ModuleIdent::new(mod_name, decl));
+            let decl = PathIdent::Ident(decl);
+            declared.push((decl, new_name));
+        }
+        if !declared.is_empty() {
+            for expr in &mut module.exprs {
+                expr.substitute(&mut |ty| match ty {
+                    Ty::Named { name, args } => declared.iter().find_map(|(decl, new)| {
+                        if name == decl {
+                            Some(Ty::Named {
+                                name: *new,
+                                args: args.clone(),
+                            })
+                        } else {
+                            None
+                        }
+                    }),
+                    _ => None,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn check_type_declaration(&mut self, expr: &mut UntypedExpr) -> Option<Symbol> {
+        match &mut expr.kind {
+            UntypedExprKind::Semi(e) => self.check_type_declaration(e),
+            UntypedExprKind::Type {
+                id,
+                parameters,
+                constructors,
+            } => {
+                let mut args = Vec::new();
+                let mut subs = Vec::new();
+
+                for param in parameters {
+                    let id = self.gen_id();
+                    let new = Ty::Var(id);
+                    let mut p = new.clone();
+                    std::mem::swap(param, &mut p);
+                    subs.push((p, new.clone()));
+                    args.push(new);
+                }
+
+                for ctor in constructors {
+                    ctor.substitute(&mut |ty| {
+                        subs.iter().find_map(
+                            |(old, new)| {
+                                if ty == old { Some(new.clone()) } else { None }
+                            },
+                        )
+                    });
+                }
+
+                Some(*id)
+            }
+
+            _ => None,
+        }
+    }
+
     pub fn check_many_modules<I>(&mut self, modules: I) -> InferResult<Vec<TypedModule>>
     where
         I: IntoIterator<Item = UntypedModule>,
@@ -636,43 +713,41 @@ impl Checker {
 
     pub fn check_module(&mut self, module: UntypedModule) -> InferResult<TypedModule> {
         self.env.push_scope();
-        self.cur_module = module.name;
+        self.cur_module = Some(module.name);
 
         let exprs = self.check_many(module.exprs)?;
         let declared = self.env.pop_scope().unwrap_or_else(|| unreachable!());
         let mut typed =
             TypedModule::new(module.name, declared, exprs.into_boxed_slice(), module.span);
 
-        if let Some(mod_name) = module.name {
-            while let Some(decl) = self.declared_types.pop() {
-                let new_name = PathIdent::Module(ModuleIdent::new(mod_name, decl));
-                let decl = PathIdent::Ident(decl);
-                typed.substitute(&mut |ty| match ty {
-                    Ty::Named { name, args } if *name == decl => Some(Ty::Named {
-                        name: new_name,
-                        args: args.clone(),
-                    }),
-                    _ => None,
-                });
-            }
-            self.env.insert_module(mod_name, typed.declared.clone());
-        } else {
-            self.env
-                .extend_global(typed.declared.iter().map(|(k, v)| (*k, v.clone())));
-            self.declared_types.clear();
+        let mod_name = module.name;
+
+        while let Some(decl) = self.declared_types.pop() {
+            let new_name = PathIdent::Module(ModuleIdent::new(mod_name, decl));
+            let decl = PathIdent::Ident(decl);
+            let mut subs = |ty: &Ty| match ty {
+                Ty::Named { name, args } if *name == decl => Some(Ty::Named {
+                    name: new_name,
+                    args: args.clone(),
+                }),
+                _ => None,
+            };
+            typed.substitute(&mut subs);
+            self.type_ctx.substitute(&mut subs);
         }
+        self.env.insert_module(mod_name, typed.declared.clone());
 
         Ok(typed)
     }
 
-    pub fn check_many<I>(&mut self, expr: I) -> InferResult<Vec<TypedExpr>>
+    fn check_many<I>(&mut self, expr: I) -> InferResult<Vec<TypedExpr>>
     where
         I: IntoIterator<Item = UntypedExpr>,
     {
         expr.into_iter().map(|expr| self.check(expr)).collect()
     }
 
-    pub fn check(&mut self, expr: UntypedExpr) -> InferResult<TypedExpr> {
+    fn check(&mut self, expr: UntypedExpr) -> InferResult<TypedExpr> {
         let span = expr.span;
         match expr.kind {
             UntypedExprKind::Acess(acess) => {
@@ -736,7 +811,9 @@ impl Checker {
                 id,
                 parameters,
                 constructors,
-            } => Ok(self.check_type(id, parameters, constructors, span)),
+            } => Ok(self.check_type_definition(id, parameters, constructors, span)),
+
+            UntypedExprKind::Val { id, ty } => todo!(),
 
             UntypedExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
         }

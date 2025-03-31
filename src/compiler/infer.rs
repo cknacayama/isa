@@ -6,9 +6,11 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
+use super::ast::Constructor;
 use super::ast::typed::{
     TypedExpr, TypedExprKind, TypedModule, TypedParam, TypedPat, TypedPatKind,
 };
+use super::ast::untyped::{UntypedExpr, UntypedExprKind};
 use super::error::{InferError, InferErrorKind};
 use super::types::Ty;
 use crate::span::Span;
@@ -63,6 +65,44 @@ impl Substitute for &mut TypedParam {
     }
 }
 
+impl Substitute for &mut Constructor {
+    fn substitute<S>(self, subs: &mut S) -> Self
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.params
+            .iter_mut()
+            .for_each(|param| *param = param.clone().substitute(subs));
+        self
+    }
+}
+
+impl Substitute for &mut UntypedExpr {
+    fn substitute<S>(self, subs: &mut S) -> Self
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        match &mut self.kind {
+            UntypedExprKind::Semi(semi) => {
+                semi.substitute(subs);
+            }
+            UntypedExprKind::Type { constructors, .. } => {
+                constructors.iter_mut().for_each(|c| {
+                    c.params.iter_mut().for_each(|t| {
+                        *t = t.clone().substitute(subs);
+                    });
+                });
+            }
+            UntypedExprKind::Val { ty, .. } => {
+                *ty = ty.clone().substitute(subs);
+            }
+            _ => (),
+        }
+
+        self
+    }
+}
+
 impl Substitute for &mut TypedExpr {
     fn substitute<S>(self, subs: &mut S) -> Self
     where
@@ -113,6 +153,9 @@ impl Substitute for &mut TypedExpr {
                         *t = t.clone().substitute(subs);
                     });
                 });
+            }
+            TypedExprKind::Val { ty, .. } => {
+                *ty = ty.clone().substitute(subs);
             }
             TypedExprKind::Bin { lhs, rhs, .. } => {
                 lhs.substitute(subs);

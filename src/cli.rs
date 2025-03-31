@@ -119,10 +119,7 @@ impl Config {
                 return self.report(&err, checker.type_ctx());
             }
 
-            match module.name {
-                Some(name) => println!("module {name}"),
-                None => println!("module"),
-            }
+            println!("module {}", module.name);
             for (id, ty) in &module.declared {
                 println!("    val {id}: {};", ty.ty());
             }

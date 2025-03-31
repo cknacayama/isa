@@ -113,3 +113,18 @@ impl TypeCtx {
         write!(f, "{ctor}")
     }
 }
+
+impl Substitute for &mut TypeCtx {
+    fn substitute<S>(self, subs: &mut S) -> Self
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.constructors
+            .values_mut()
+            .flat_map(|data| data.constructors.iter_mut())
+            .for_each(|c| {
+                c.substitute(subs);
+            });
+        self
+    }
+}

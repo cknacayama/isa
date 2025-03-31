@@ -14,7 +14,7 @@ pub type UntypedParam = Param<()>;
 
 impl UntypedModule {
     #[must_use]
-    pub fn untyped(name: Option<Symbol>, exprs: Box<[UntypedExpr]>, span: Span) -> Self {
+    pub fn untyped(name: Symbol, exprs: Box<[UntypedExpr]>, span: Span) -> Self {
         Self::new(name, FxHashMap::default(), exprs, span)
     }
 }

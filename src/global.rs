@@ -5,8 +5,17 @@ use std::ops::Range;
 use crate::IndexSet;
 use crate::span::{Span, SpanData};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(usize);
+
+impl std::fmt::Debug for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match GLOBAL_DATA.with_borrow(|e| e.symbols.get(*self)) {
+            Some(symbol) => write!(f, "\"{symbol}\""),
+            None => f.debug_tuple("Symbol").field(&self.0).finish(),
+        }
+    }
+}
 
 impl Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

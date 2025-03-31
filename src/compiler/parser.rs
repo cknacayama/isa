@@ -131,14 +131,8 @@ impl<'a> Parser<'a> {
 
     /// parses one module
     fn parse_module(&mut self) -> ParseResult<UntypedModule> {
-        let name = match self.next_if_match(TokenKind::KwModule) {
-            Some(span) => {
-                let mut id = self.expect_id()?;
-                id.span = span.union(id.span);
-                Some(id)
-            }
-            None => None,
-        };
+        let mut span = self.expect(TokenKind::KwModule)?;
+        let name = self.expect_id()?;
 
         let mut exprs = vec![self.parse_semi_expr()?];
 
@@ -147,16 +141,15 @@ impl<'a> Parser<'a> {
             exprs.push(expr?);
         }
 
-        let span = match (name.as_ref(), exprs.as_slice()) {
-            (Some(name), []) => name.span,
-            (Some(name), [.., expr]) => name.span.union(expr.span),
-            (None, [expr]) => expr.span,
-            (None, [first, .., last]) => first.span.union(last.span),
-            (None, []) => return Err(Spanned::new(ParseError::UnexpectedEof, self.last_span)),
-        };
-        let name = name.map(|name| name.data);
+        if let [.., expr] = exprs.as_slice() {
+            span = span.union(expr.span);
+        }
 
-        Ok(UntypedModule::untyped(name, exprs.into_boxed_slice(), span))
+        Ok(UntypedModule::untyped(
+            name.data,
+            exprs.into_boxed_slice(),
+            span,
+        ))
     }
 
     pub fn parse_all(&mut self) -> ParseResult<Vec<UntypedModule>> {
@@ -181,7 +174,7 @@ impl<'a> Parser<'a> {
             .data
         {
             TokenKind::KwType => self.parse_type_definition(),
-            TokenKind::KwVal => todo!(),
+            TokenKind::KwVal => self.parse_val(),
             _ => self.parse_expr(),
         }?;
 
@@ -192,6 +185,19 @@ impl<'a> Parser<'a> {
         } else {
             Ok(expr)
         }
+    }
+
+    fn parse_val(&mut self) -> ParseResult<UntypedExpr> {
+        let span = self.expect(TokenKind::KwVal)?;
+        let Spanned { data: id, .. } = self.expect_id()?;
+        self.expect(TokenKind::Colon)?;
+        let Spanned {
+            data: ty,
+            span: ty_span,
+        } = self.parse_type()?;
+        let span = span.union(ty_span);
+
+        Ok(UntypedExpr::untyped(UntypedExprKind::Val { id, ty }, span))
     }
 
     fn parse_expr(&mut self) -> ParseResult<UntypedExpr> {

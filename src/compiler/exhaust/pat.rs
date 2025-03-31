@@ -1,4 +1,3 @@
-
 use super::Ctx;
 use super::ctor::Ctor;
 use crate::compiler::ctx::{CtxFmt, TypeCtx};
@@ -42,7 +41,7 @@ impl WitnessPat {
         Self::new(ctor, fields, ty)
     }
 
-    fn iter_fields(&self) -> impl Iterator<Item = &Self> {
+    fn iter_fields(&self) -> impl Iterator<Item = &Self> + ExactSizeIterator {
         self.fields.iter()
     }
 }

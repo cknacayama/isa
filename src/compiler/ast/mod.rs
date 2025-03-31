@@ -180,7 +180,7 @@ impl Display for Constructor {
 
 #[derive(Clone)]
 pub struct Module<T> {
-    pub name:     Option<Symbol>,
+    pub name:     Symbol,
     pub declared: FxHashMap<Symbol, VarData>,
     pub exprs:    Box<[Expr<T>]>,
     pub span:     Span,
@@ -189,7 +189,7 @@ pub struct Module<T> {
 impl<T> Module<T> {
     #[must_use]
     pub const fn new(
-        name: Option<Symbol>,
+        name: Symbol,
         declared: FxHashMap<Symbol, VarData>,
         exprs: Box<[Expr<T>]>,
         span: Span,
@@ -486,6 +486,11 @@ pub enum ExprKind<T> {
         body:   Option<Box<Expr<T>>>,
     },
 
+    Val {
+        id: Symbol,
+        ty: Ty,
+    },
+
     Type {
         id:           Symbol,
         parameters:   Box<[Ty]>,
@@ -582,6 +587,9 @@ impl<T: Display> Expr<T> {
                 }
                 write!(f, ")")
             }
+            ExprKind::Val { id, ty } => {
+                write!(f, "(val {id}: {ty})")
+            }
             ExprKind::Type {
                 id,
                 parameters: params,
@@ -637,5 +645,11 @@ impl<T: Display> Expr<T> {
             ExprKind::Acess(module_access) => write!(f, "{module_access}"),
         }
         .and_then(|()| write!(f, ": {}", self.ty))
+    }
+}
+
+impl<T: Display> Display for Expr<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.format_helper(f, 0)
     }
 }

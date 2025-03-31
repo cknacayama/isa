@@ -1,7 +1,7 @@
-let fib n = match n with
-    ..=0 -> 0,
-    1 -> 1,
-    _ -> fib (n - 1) + fib (n - 2)
-;
+type Option 'a = None | Some 'a;
 
-let foo = fib true;
+let return a = Some a;
+let bind opt f = match opt with
+    Some a -> f a,
+    None -> None,
+;

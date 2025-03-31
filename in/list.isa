@@ -17,10 +17,3 @@ module List
             Nil -> Option.None,
             Cons v _ -> Option.Some v,
         ;
-
-    let is_some opt =
-        match opt with
-            Option.Some _ -> true,
-            Option.None -> false,
-        ;
-

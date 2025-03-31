@@ -60,7 +60,7 @@ impl Ctor {
         &self,
         f: &mut impl fmt::Write,
         ty: &Ty,
-        fields: impl Iterator<Item = impl CtxFmt<Ctx = TypeCtx>>,
+        fields: impl Iterator<Item = impl CtxFmt<Ctx = TypeCtx>> + ExactSizeIterator,
         ctx: &TypeCtx,
     ) -> fmt::Result {
         let mut first = true;
@@ -77,12 +77,14 @@ impl Ctor {
         match self {
             Self::Type(idx) => {
                 ctx.write_variant_name(f, ty, *idx)?;
-                write!(f, " (")?;
-                for p in fields {
-                    write!(f, "{}", start_or_comma())?;
-                    p.ctx_fmt(f, ctx)?;
+                if fields.len() > 0 {
+                    write!(f, " (")?;
+                    for p in fields {
+                        write!(f, "{}", start_or_comma())?;
+                        p.ctx_fmt(f, ctx)?;
+                    }
+                    write!(f, ")")?;
                 }
-                write!(f, ")")?;
             }
             Self::Bool(b) => write!(f, "{b}")?,
             Self::IntRange(range) => write!(f, "{range}")?,
@@ -95,6 +97,14 @@ impl Ctor {
             _ => write!(f, "_ : {ty}")?,
         }
         Ok(())
+    }
+
+    /// Returns `true` if the ctor is [`NonExhaustive`].
+    ///
+    /// [`NonExhaustive`]: Ctor::NonExhaustive
+    #[must_use]
+    pub fn is_non_exhaustive(&self) -> bool {
+        matches!(self, Self::NonExhaustive)
     }
 }
 
