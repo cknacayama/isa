@@ -5,7 +5,7 @@ use std::ops::Range;
 use crate::IndexSet;
 use crate::span::{Span, SpanData};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Symbol(usize);
 
 impl std::fmt::Debug for Symbol {
@@ -23,14 +23,6 @@ impl Display for Symbol {
             Some(symbol) => write!(f, "{symbol}"),
             None => write!(f, "<?{}>", self.0),
         }
-    }
-}
-
-impl Symbol {
-    #[must_use]
-    pub fn concat(self, other: Self, sep: impl Display) -> Self {
-        let symbol = format!("{self}{sep}{other}");
-        intern_static_symbol(symbol.leak())
     }
 }
 
@@ -81,28 +73,22 @@ pub fn intern_span(span: SpanData) -> Span {
     GLOBAL_DATA.with_borrow_mut(|e| e.spans.intern(span))
 }
 
-#[must_use]
-fn intern_static_symbol(symbol: &'static str) -> Symbol {
-    GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern_static(symbol))
-}
-
-#[must_use]
-pub fn symbol_count() -> usize {
-    GLOBAL_DATA.with_borrow(|e| e.symbols.len())
-}
-
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct SymbolInterner {
     symbols: IndexSet<&'static str>,
+}
+
+impl Default for SymbolInterner {
+    fn default() -> Self {
+        let mut symbols = IndexSet::default();
+        symbols.insert_full("");
+        Self { symbols }
+    }
 }
 
 impl SymbolInterner {
     fn get(&self, symbol: Symbol) -> Option<&'static str> {
         self.symbols.get_index(symbol.0).copied()
-    }
-
-    fn len(&self) -> usize {
-        self.symbols.len()
     }
 
     fn intern(&mut self, symbol: &str) -> Symbol {
@@ -113,11 +99,6 @@ impl SymbolInterner {
             let (idx, _) = self.symbols.insert_full(symbol);
             Symbol(idx)
         }
-    }
-
-    fn intern_static(&mut self, symbol: &'static str) -> Symbol {
-        let (idx, _) = self.symbols.insert_full(symbol);
-        Symbol(idx)
     }
 }
 

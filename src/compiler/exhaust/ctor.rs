@@ -94,7 +94,7 @@ impl Ctor {
                     pat.ctx_fmt(f, ctx)?;
                 }
             }
-            _ => write!(f, "_ : {ty}")?,
+            _ => write!(f, "_")?,
         }
         Ok(())
     }

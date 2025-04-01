@@ -52,14 +52,6 @@ impl Ty {
         }
     }
 
-    /// Returns `true` if the ty is [`Named`].
-    ///
-    /// [`Named`]: Ty::Named
-    #[must_use]
-    pub const fn is_named(&self) -> bool {
-        matches!(self, Self::Named { .. })
-    }
-
     /// Returns `true` if the ty is [`Fn`].
     ///
     /// [`Fn`]: Ty::Fn
@@ -113,13 +105,5 @@ impl Ty {
                 })
             }
         }
-    }
-
-    /// Returns `true` if the ty is [`Scheme`].
-    ///
-    /// [`Scheme`]: Ty::Scheme
-    #[must_use]
-    pub fn is_scheme(&self) -> bool {
-        matches!(self, Self::Scheme { .. })
     }
 }

@@ -20,7 +20,7 @@ impl VarKind {
     ///
     /// [`Constructor`]: VarKind::Constructor
     #[must_use]
-    const fn is_constructor(&self) -> bool {
+    const fn is_constructor(self) -> bool {
         matches!(self, Self::Constructor)
     }
 
@@ -28,7 +28,7 @@ impl VarKind {
     ///
     /// [`ValueDeclaration`]: VarKind::ValueDeclaration
     #[must_use]
-    const fn is_value_declaration(&self) -> bool {
+    const fn is_value_declaration(self) -> bool {
         matches!(self, Self::ValueDeclaration)
     }
 }
@@ -41,7 +41,7 @@ pub struct VarData {
 
 impl VarData {
     #[must_use]
-    pub fn new(kind: VarKind, ty: Ty) -> Self {
+    fn new(kind: VarKind, ty: Ty) -> Self {
         Self { kind, ty }
     }
 
@@ -50,11 +50,7 @@ impl VarData {
         &self.ty
     }
 
-    pub const fn ty_mut(&mut self) -> &mut Ty {
-        &mut self.ty
-    }
-
-    pub const fn kind(&self) -> VarKind {
+    const fn kind(&self) -> VarKind {
         self.kind
     }
 }
@@ -75,46 +71,19 @@ impl Default for Env {
 }
 
 impl Env {
-    pub fn extend_global<I>(&mut self, iter: I) -> bool
-    where
-        I: IntoIterator<Item = (Symbol, VarData)>,
-    {
-        self.env
-            .first_mut()
-            .map(|glob| {
-                glob.extend(iter);
-            })
-            .is_some()
+    #[must_use]
+    pub fn get(&self, id: Symbol) -> Option<&VarData> {
+        self.env.iter().rev().find_map(|e| e.get(&id))
     }
 
     #[must_use]
-    pub fn get(&self, id: &Symbol) -> Option<&VarData> {
-        self.env.iter().rev().find_map(|e| e.get(id))
-    }
-
-    #[must_use]
-    pub fn get_constructor(&self, id: &Symbol) -> Option<Ty> {
+    pub fn get_constructor(&self, id: Symbol) -> Option<Ty> {
         self.env
             .iter()
             .rev()
-            .find_map(|e| e.get(id))
+            .find_map(|e| e.get(&id))
             .and_then(|var| {
                 if var.kind().is_constructor() {
-                    Some(var.ty().clone())
-                } else {
-                    None
-                }
-            })
-    }
-
-    #[must_use]
-    pub fn get_val(&self, id: &Symbol) -> Option<Ty> {
-        self.env
-            .iter()
-            .rev()
-            .find_map(|e| e.get(id))
-            .and_then(|var| {
-                if var.kind().is_value_declaration() {
                     Some(var.ty().clone())
                 } else {
                     None
@@ -140,7 +109,7 @@ impl Env {
             .and_then(|env| env.insert(id, VarData::new(VarKind::ValueDeclaration, ty)))
     }
 
-    pub fn get_from_module(&self, module_access: &ModuleIdent) -> Result<VarData, InferErrorKind> {
+    pub fn get_from_module(&self, module_access: &ModuleIdent) -> Result<&VarData, InferErrorKind> {
         let Some(module) = self.modules.get(&module_access.module()) else {
             return Err(InferErrorKind::UnboundModule(module_access.module()));
         };
@@ -149,7 +118,23 @@ impl Env {
             return Err(InferErrorKind::Unbound(module_access.member()));
         };
 
-        Ok(var.clone())
+        Ok(var)
+    }
+
+    pub fn get_val_from_module(&self, module_access: &ModuleIdent) -> Result<Ty, InferErrorKind> {
+        let Some(module) = self.modules.get(&module_access.module()) else {
+            return Err(InferErrorKind::UnboundModule(module_access.module()));
+        };
+
+        let Some(var) = module.get(&module_access.member()) else {
+            return Err(InferErrorKind::Unbound(module_access.member()));
+        };
+
+        if var.kind().is_value_declaration() {
+            Ok(var.ty().clone())
+        } else {
+            Err(InferErrorKind::NotConstructor(module_access.member()))
+        }
     }
 
     pub fn get_constructor_from_module(
@@ -164,19 +149,19 @@ impl Env {
             return Err(InferErrorKind::Unbound(module_access.member()));
         };
 
-        if var.constructor() {
+        if var.kind().is_constructor() {
             Ok(var.ty().clone())
         } else {
             Err(InferErrorKind::NotConstructor(module_access.member()))
         }
     }
 
-    pub fn insert_module(
+    pub fn extend_module(
         &mut self,
         module: Symbol,
-        declared: FxHashMap<Symbol, VarData>,
-    ) -> Option<FxHashMap<Symbol, VarData>> {
-        self.modules.insert(module, declared)
+        declared: impl Iterator<Item = (Symbol, VarData)>,
+    ) {
+        self.modules.entry(module).or_default().extend(declared);
     }
 
     pub fn push_scope(&mut self) {
@@ -185,10 +170,6 @@ impl Env {
 
     pub fn pop_scope(&mut self) -> Option<FxHashMap<Symbol, VarData>> {
         self.env.pop()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&Symbol, &VarData)> {
-        self.env.iter().flat_map(FxHashMap::iter)
     }
 
     fn free_type_variables(&self) -> FxHashSet<u64> {
@@ -230,6 +211,10 @@ impl Env {
                 ty:    Rc::new(ty),
             },
         }
+    }
+
+    pub const fn modules(&self) -> &FxHashMap<Symbol, FxHashMap<Symbol, VarData>> {
+        &self.modules
     }
 }
 

@@ -1,5 +1,3 @@
-use rustc_hash::FxHashMap;
-
 use super::{Expr, ExprKind, MatchArm, Module, Param, Pat, PatKind};
 use crate::global::Symbol;
 use crate::span::Span;
@@ -14,8 +12,8 @@ pub type UntypedParam = Param<()>;
 
 impl UntypedModule {
     #[must_use]
-    pub fn untyped(name: Symbol, exprs: Box<[UntypedExpr]>, span: Span) -> Self {
-        Self::new(name, FxHashMap::default(), exprs, span)
+    pub fn untyped(name: Symbol, exprs: Vec<UntypedExpr>, span: Span) -> Self {
+        Self::new(name, exprs, span)
     }
 }
 

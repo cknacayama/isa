@@ -117,7 +117,7 @@ impl<'a> Parser<'a> {
     fn expect_integer(&mut self) -> ParseResult<Spanned<i64>> {
         self.next_or_eof().and_then(|t| match t.data {
             TokenKind::Integer(int) => Ok(t.map(|_| int)),
-            _ => Err(t.map(ParseError::ExpectedId)),
+            _ => Err(t.map(ParseError::ExpectedInt)),
         })
     }
 
@@ -145,11 +145,7 @@ impl<'a> Parser<'a> {
             span = span.union(expr.span);
         }
 
-        Ok(UntypedModule::untyped(
-            name.data,
-            exprs.into_boxed_slice(),
-            span,
-        ))
+        Ok(UntypedModule::untyped(name.data, exprs, span))
     }
 
     pub fn parse_all(&mut self) -> ParseResult<Vec<UntypedModule>> {
@@ -722,10 +718,19 @@ impl<'a> Parser<'a> {
                 if self.next_if_match(TokenKind::Dot).is_some() {
                     let member = self.expect_id()?;
                     let span = span.union(member.span);
-                    let kind = UntypedPatKind::Module(ModuleIdent::new(name, member.data));
+                    let name = PathIdent::Module(ModuleIdent::new(name, member.data));
+                    let kind = UntypedPatKind::Constructor {
+                        name,
+                        args: Box::from([]),
+                    };
                     Ok(UntypedPat::untyped(kind, span))
                 } else {
-                    Ok(UntypedPat::untyped(UntypedPatKind::Ident(name), span))
+                    let name = PathIdent::Ident(name);
+                    let kind = UntypedPatKind::Constructor {
+                        name,
+                        args: Box::from([]),
+                    };
+                    Ok(UntypedPat::untyped(kind, span))
                 }
             }
             TokenKind::Underscore => Ok(UntypedPat::untyped(UntypedPatKind::Wild, span)),
@@ -736,10 +741,8 @@ impl<'a> Parser<'a> {
     fn parse_type_pat(&mut self) -> ParseResult<UntypedPat> {
         let simple = self.parse_simple_pat()?;
 
-        let name = match simple.kind {
-            UntypedPatKind::Module(module) => PathIdent::Module(module),
-            UntypedPatKind::Ident(id) => PathIdent::Ident(id),
-            _ => return Ok(simple),
+        let UntypedPatKind::Constructor { name, .. } = simple.kind else {
+            return Ok(simple);
         };
 
         let mut span = simple.span;

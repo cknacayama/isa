@@ -7,10 +7,10 @@
 )]
 
 pub mod cli;
-pub mod compiler;
-pub mod global;
-pub mod report;
-pub mod span;
+pub(crate) mod compiler;
+pub(crate) mod global;
+pub(crate) mod report;
+pub(crate) mod span;
 
 use std::hash::BuildHasherDefault;
 

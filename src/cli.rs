@@ -112,15 +112,17 @@ impl Config {
             Err(err) => return self.report(&err, checker.type_ctx()),
         };
 
-        let duration = start.elapsed();
-
         for module in modules {
             if let Err(err) = check_matches(&module.exprs, checker.type_ctx()) {
                 return self.report(&err, checker.type_ctx());
             }
+        }
 
-            println!("module {}", module.name);
-            for (id, ty) in &module.declared {
+        let duration = start.elapsed();
+
+        for (module, declared) in checker.modules() {
+            println!("module {module}");
+            for (id, ty) in declared {
                 println!("    val {id}: {};", ty.ty());
             }
         }

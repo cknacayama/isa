@@ -1,5 +1,7 @@
 use std::rc::Rc;
 
+use rustc_hash::FxHashMap;
+
 use super::ast::typed::{
     TypedExpr, TypedExprKind, TypedMatchArm, TypedModule, TypedParam, TypedPat, TypedPatKind,
 };
@@ -18,26 +20,15 @@ use crate::span::Span;
 
 #[derive(Debug, Default)]
 pub struct Checker {
-    env:            Env,
-    type_ctx:       TypeCtx,
-    cur_module:     Option<Symbol>,
-    declared_types: Vec<Symbol>,
+    env:        Env,
+    type_ctx:   TypeCtx,
+    cur_module: Symbol,
 }
 
 impl Checker {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
-    }
-
-    #[must_use]
-    pub fn with_types(type_env: TypeCtx) -> Self {
-        Self {
-            env:            Env::default(),
-            type_ctx:       type_env,
-            cur_module:     None,
-            declared_types: Vec::new(),
-        }
     }
 
     fn unify<C>(&mut self, constr: C) -> InferResult<Vec<Subs>>
@@ -49,6 +40,10 @@ impl Checker {
         })
     }
 
+    pub fn modules(&self) -> &FxHashMap<Symbol, FxHashMap<Symbol, VarData>> {
+        self.env.modules()
+    }
+
     #[must_use]
     pub fn type_ctx(&self) -> &TypeCtx {
         &self.type_ctx
@@ -58,8 +53,8 @@ impl Checker {
         self.env.insert_val(id, ty)
     }
 
-    fn get_val(&mut self, id: Symbol) -> Option<Ty> {
-        self.env.get_val(&id)
+    fn get_val_from_module(&self, id: &ModuleIdent) -> Result<Ty, InferErrorKind> {
+        self.env.get_val_from_module(id)
     }
 
     fn insert_variable(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
@@ -67,7 +62,14 @@ impl Checker {
     }
 
     fn get_variable(&self, id: Symbol) -> Option<Ty> {
-        self.env.get(&id).map(VarData::ty).cloned()
+        self.env
+            .get(id)
+            .or_else(|| {
+                let module_access = ModuleIdent::new(self.cur_module, id);
+                self.env.get_from_module(&module_access).ok()
+            })
+            .map(VarData::ty)
+            .cloned()
     }
 
     fn insert_constructor(&mut self, name: Symbol, ty: Ty) -> Option<VarData> {
@@ -75,7 +77,10 @@ impl Checker {
     }
 
     fn get_constructor(&self, name: Symbol) -> Option<Ty> {
-        self.env.get_constructor(&name)
+        self.env.get_constructor(name).or_else(|| {
+            let module_access = ModuleIdent::new(self.cur_module, name);
+            self.env.get_constructor_from_module(&module_access).ok()
+        })
     }
 
     const fn gen_id(&mut self) -> u64 {
@@ -236,7 +241,9 @@ impl Checker {
 
         self.env.pop_scope();
 
-        if let Some(val_ty) = self.get_val(id) {
+        let module_id = ModuleIdent::new(self.cur_module, id);
+
+        if let Ok(val_ty) = self.get_val_from_module(&module_id) {
             let val_ty = self.instantiate(val_ty);
             let subs = self.unify(Constraint::new(val_ty, expr.ty.clone(), expr.span))?;
             expr.substitute_many(&subs);
@@ -283,21 +290,8 @@ impl Checker {
         Ok(TypedExpr::new(kind, span, ty))
     }
 
-    fn check_constructor(
-        &mut self,
-        constructor: &mut Constructor,
-        subs: &[(Ty, Ty)],
-        quant: Rc<[u64]>,
-        mut ret: Ty,
-    ) {
-        for param in constructor.params.iter_mut().rev() {
-            *param = param.clone().substitute(&mut |ty| {
-                subs.iter().find_map(
-                    |(old, new)| {
-                        if ty == old { Some(new.clone()) } else { None }
-                    },
-                )
-            });
+    fn check_constructor(&mut self, constructor: &Constructor, quant: Rc<[u64]>, mut ret: Ty) {
+        for param in constructor.params.iter().rev() {
             ret = Ty::Fn {
                 param: Rc::new(param.clone()),
                 ret:   Rc::new(ret),
@@ -316,46 +310,31 @@ impl Checker {
         &mut self,
         name: Symbol,
         parameters: Box<[Ty]>,
-        mut constructors: Box<[Constructor]>,
+        constructors: Box<[Constructor]>,
         span: Span,
     ) -> TypedExpr {
-        let mut args = Vec::new();
-        let mut subs = Vec::new();
         let mut quant = Vec::new();
 
-        for param in parameters {
-            let id = self.gen_id();
-            let new = Ty::Var(id);
-            subs.push((param, new.clone()));
-            args.push(new);
-            quant.push(id);
+        for param in &parameters {
+            let new = param.as_var().unwrap_or_else(|| unreachable!());
+            quant.push(new);
         }
 
         let quant = Rc::<[u64]>::from(quant);
 
-        self.declared_types.push(name);
-
         let ty = Ty::Named {
-            name: PathIdent::Ident(name),
-            args: args.clone().into(),
+            name: PathIdent::Module(ModuleIdent::new(self.cur_module, name)),
+            args: parameters.clone().into(),
         };
 
-        let ty_with_module = self.cur_module.map_or_else(
-            || ty.clone(),
-            |module| Ty::Named {
-                name: PathIdent::Module(ModuleIdent::new(module, name)),
-                args: args.clone().into(),
-            },
-        );
-
-        for c in &mut constructors {
-            self.check_constructor(c, &subs, quant.clone(), ty.clone());
-            self.type_ctx.insert_constructor(&ty_with_module, c.clone());
+        for c in &constructors {
+            self.check_constructor(c, quant.clone(), ty.clone());
+            self.type_ctx.insert_constructor(&ty, c.clone());
         }
 
         let kind = TypedExprKind::Type {
             name,
-            parameters: args.into_boxed_slice(),
+            parameters,
             constructors,
         };
 
@@ -389,14 +368,11 @@ impl Checker {
             }
         }
 
-        match self.insert_val(name, ty.clone()) {
-            Some(old) if old.ty() != &ty => {
-                return Err(InferError::new(
-                    InferErrorKind::Uninferable(Constraint::new(old.ty().clone(), ty, span)),
-                    span,
-                ));
-            }
-            _ => (),
+        if let Some(old) = self.insert_val(name, ty.clone()) {
+            return Err(InferError::new(
+                InferErrorKind::Uninferable(Constraint::new(old.ty().clone(), ty, span)),
+                span,
+            ));
         }
 
         let kind = TypedExprKind::Val {
@@ -500,14 +476,8 @@ impl Checker {
                 Ok(TypedPat::new(kind, span, ty))
             }
 
-            UntypedPatKind::Ident(name) => {
-                let var = self.gen_type_var();
-                self.insert_variable(name, var.clone());
-                Ok(TypedPat::new(TypedPatKind::Ident(name), span, var))
-            }
-
-            UntypedPatKind::Module(_) => {
-                unreachable!()
+            UntypedPatKind::Ident(_) => {
+                unreachable!("Parser never returns Ident pattern")
             }
 
             UntypedPatKind::IntRange(range) => {
@@ -687,7 +657,7 @@ impl Checker {
         }
     }
 
-    pub fn check_types<'a, I>(&mut self, modules: I)
+    fn check_types<'a, I>(&mut self, modules: I)
     where
         I: IntoIterator<Item = &'a mut UntypedModule>,
     {
@@ -731,7 +701,7 @@ impl Checker {
         match &mut expr.kind {
             UntypedExprKind::Semi(e) => self.check_type_declaration(e),
             UntypedExprKind::Type {
-                name: id,
+                name,
                 parameters,
                 constructors,
             } => {
@@ -739,23 +709,22 @@ impl Checker {
 
                 for param in parameters {
                     let id = self.gen_id();
-                    let new = Ty::Var(id);
-                    let mut p = new.clone();
-                    std::mem::swap(param, &mut p);
-                    subs.push((p, new.clone()));
+                    let mut new = Ty::Var(id);
+                    std::mem::swap(param, &mut new);
+                    subs.push((new, id));
                 }
 
                 for ctor in constructors {
                     ctor.substitute(&mut |ty| {
                         subs.iter().find_map(
                             |(old, new)| {
-                                if ty == old { Some(new.clone()) } else { None }
+                                if ty == old { Some(Ty::Var(*new)) } else { None }
                             },
                         )
                     });
                 }
 
-                Some(*id)
+                Some(*name)
             }
 
             _ => None,
@@ -768,46 +737,51 @@ impl Checker {
     ) -> InferResult<Vec<TypedModule>> {
         self.check_types(&mut modules);
 
+        let mut decl = Vec::new();
+
+        for module in &mut modules {
+            self.env.push_scope();
+            self.cur_module = module.name;
+
+            let exprs = module
+                .exprs
+                .extract_if(.., |e| e.kind.is_type_or_val())
+                .map(|e| self.check(e))
+                .collect::<InferResult<Vec<_>>>()?;
+
+            let declared = self.env.pop_scope().unwrap_or_else(|| unreachable!());
+            self.env.extend_module(module.name, declared.into_iter());
+
+            decl.push(exprs);
+        }
+
         modules
             .into_iter()
-            .map(|module| self.check_module(module))
+            .zip(decl)
+            .map(|(module, mut decl)| {
+                let mut module = self.check_module(module)?;
+                decl.append(&mut module.exprs);
+                module.exprs = decl;
+                Ok(module)
+            })
             .collect()
     }
 
-    pub fn check_module(&mut self, module: UntypedModule) -> InferResult<TypedModule> {
+    fn check_module(&mut self, module: UntypedModule) -> InferResult<TypedModule> {
         self.env.push_scope();
-        self.cur_module = Some(module.name);
+        self.cur_module = module.name;
 
-        let exprs = self.check_many(module.exprs)?;
+        let exprs = module
+            .exprs
+            .into_iter()
+            .map(|expr| self.check(expr))
+            .collect::<InferResult<_>>()?;
         let declared = self.env.pop_scope().unwrap_or_else(|| unreachable!());
-        let mut typed =
-            TypedModule::new(module.name, declared, exprs.into_boxed_slice(), module.span);
+        let typed = TypedModule::new(module.name, exprs, module.span);
 
-        let mod_name = module.name;
-
-        while let Some(decl) = self.declared_types.pop() {
-            let new_name = PathIdent::Module(ModuleIdent::new(mod_name, decl));
-            let decl = PathIdent::Ident(decl);
-            let mut subs = |ty: &Ty| match ty {
-                Ty::Named { name, args } if *name == decl => Some(Ty::Named {
-                    name: new_name,
-                    args: args.clone(),
-                }),
-                _ => None,
-            };
-            typed.substitute(&mut subs);
-            self.type_ctx.substitute(&mut subs);
-        }
-        self.env.insert_module(mod_name, typed.declared.clone());
+        self.env.extend_module(module.name, declared.into_iter());
 
         Ok(typed)
-    }
-
-    fn check_many<I>(&mut self, expr: I) -> InferResult<Vec<TypedExpr>>
-    where
-        I: IntoIterator<Item = UntypedExpr>,
-    {
-        expr.into_iter().map(|expr| self.check(expr)).collect()
     }
 
     fn check(&mut self, expr: UntypedExpr) -> InferResult<TypedExpr> {
@@ -884,9 +858,5 @@ impl Checker {
 
             UntypedExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
         }
-    }
-
-    pub fn type_ctx_mut(&mut self) -> &mut TypeCtx {
-        &mut self.type_ctx
     }
 }

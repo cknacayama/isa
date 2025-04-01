@@ -185,9 +185,6 @@ impl Substitute for &mut TypedModule {
         self.exprs.iter_mut().for_each(|e| {
             e.substitute(subs);
         });
-        self.declared.values_mut().for_each(|var| {
-            *var.ty_mut() = var.ty().clone().substitute(subs);
-        });
         self
     }
 }
@@ -209,7 +206,6 @@ impl Substitute for &mut TypedPat {
             | TypedPatKind::Int(_)
             | TypedPatKind::Bool(_)
             | TypedPatKind::Ident(_)
-            | TypedPatKind::Module(_)
             | TypedPatKind::IntRange(_) => (),
         }
         self.ty = self.ty.clone().substitute(subs);
@@ -361,11 +357,6 @@ impl Constraint {
     }
 
     #[must_use]
-    pub fn satisfied(&self) -> bool {
-        self.lhs == self.rhs
-    }
-
-    #[must_use]
     pub fn lhs(&self) -> &Ty {
         &self.lhs
     }
@@ -373,10 +364,6 @@ impl Constraint {
     #[must_use]
     pub fn rhs(&self) -> &Ty {
         &self.rhs
-    }
-
-    pub fn parent(&self) -> Option<&Self> {
-        self.parent.as_ref().map(Rc::as_ref)
     }
 
     fn with_parent(self, parent: Rc<Self>) -> Self {
@@ -499,16 +486,8 @@ impl ConstraintSet {
         Self::default()
     }
 
-    pub fn append(&mut self, mut other: Self) {
-        self.constrs.append(&mut other.constrs);
-    }
-
     pub fn push(&mut self, c: Constraint) {
         self.constrs.push(c);
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &Constraint> {
-        self.constrs.iter()
     }
 }
 

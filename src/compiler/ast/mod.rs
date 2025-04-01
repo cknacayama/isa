@@ -3,9 +3,6 @@ pub mod untyped;
 
 use std::fmt::{Debug, Display, Write};
 
-use rustc_hash::FxHashMap;
-
-use super::env::VarData;
 use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;
@@ -30,33 +27,11 @@ pub enum BinOp {
 }
 
 impl BinOp {
-    #[must_use]
-    pub const fn from_token(tk: TokenKind) -> Option<Self> {
-        match tk {
-            TokenKind::Plus => Some(Self::Add),
-            TokenKind::Minus => Some(Self::Sub),
-            TokenKind::Star => Some(Self::Mul),
-            TokenKind::Slash => Some(Self::Div),
-            TokenKind::Percent => Some(Self::Rem),
-            TokenKind::Eq => Some(Self::Eq),
-            TokenKind::BangEq => Some(Self::Ne),
-            TokenKind::Gt => Some(Self::Gt),
-            TokenKind::Ge => Some(Self::Ge),
-            TokenKind::Lt => Some(Self::Lt),
-            TokenKind::Le => Some(Self::Le),
-            TokenKind::KwAnd => Some(Self::And),
-            TokenKind::KwOr => Some(Self::Or),
-            TokenKind::Pipe => Some(Self::Pipe),
-
-            _ => None,
-        }
-    }
-
     /// Returns `true` if the bin op is [`Pipe`].
     ///
     /// [`Pipe`]: BinOp::Pipe
     #[must_use]
-    pub const fn is_pipe(&self) -> bool {
+    pub const fn is_pipe(self) -> bool {
         matches!(self, Self::Pipe)
     }
 }
@@ -159,18 +134,6 @@ pub struct Constructor {
     pub params: Box<[Ty]>,
 }
 
-impl Constructor {
-    #[must_use]
-    pub const fn new(name: Symbol, params: Box<[Ty]>) -> Self {
-        Self { name, params }
-    }
-
-    #[must_use]
-    pub const fn params(&self) -> &[Ty] {
-        &self.params
-    }
-}
-
 impl Display for Constructor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
@@ -180,26 +143,15 @@ impl Display for Constructor {
 
 #[derive(Clone)]
 pub struct Module<T> {
-    pub name:     Symbol,
-    pub declared: FxHashMap<Symbol, VarData>,
-    pub exprs:    Box<[Expr<T>]>,
-    pub span:     Span,
+    pub name:  Symbol,
+    pub exprs: Vec<Expr<T>>,
+    pub span:  Span,
 }
 
 impl<T> Module<T> {
     #[must_use]
-    pub const fn new(
-        name: Symbol,
-        declared: FxHashMap<Symbol, VarData>,
-        exprs: Box<[Expr<T>]>,
-        span: Span,
-    ) -> Self {
-        Self {
-            name,
-            declared,
-            exprs,
-            span,
-        }
+    pub const fn new(name: Symbol, exprs: Vec<Expr<T>>, span: Span) -> Self {
+        Self { name, exprs, span }
     }
 }
 
@@ -291,8 +243,6 @@ impl Display for IntRangePat {
 pub enum PatKind<T> {
     Wild,
 
-    Module(ModuleIdent),
-
     Ident(Symbol),
 
     Or(Box<[Pat<T>]>),
@@ -309,24 +259,6 @@ pub enum PatKind<T> {
         name: PathIdent,
         args: Box<[Pat<T>]>,
     },
-}
-
-impl<T> PatKind<T> {
-    /// Returns `true` if the pat kind is [`Module`].
-    ///
-    /// [`Module`]: PatKind::Module
-    #[must_use]
-    pub const fn is_module(&self) -> bool {
-        matches!(self, Self::Module(..))
-    }
-
-    /// Returns `true` if the pat kind is [`Ident`].
-    ///
-    /// [`Ident`]: PatKind::Ident
-    #[must_use]
-    pub const fn is_ident(&self) -> bool {
-        matches!(self, Self::Ident(..))
-    }
 }
 
 #[derive(Clone)]
@@ -354,7 +286,6 @@ impl<T> Pat<T> {
     fn format_helper(&self, f: &mut impl Write) -> std::fmt::Result {
         match &self.kind {
             PatKind::Wild => write!(f, "_"),
-            PatKind::Module(module) => write!(f, "{module}"),
             PatKind::Ident(id) => write!(f, "{id}"),
             PatKind::Or(typed_pats) => {
                 let mut iter = typed_pats.iter();
@@ -401,8 +332,8 @@ impl<T: Debug> Debug for Expr<T> {
 
 #[derive(Debug, Clone)]
 pub struct MatchArm<T> {
-    pub(crate) pat:  Pat<T>,
-    pub(crate) expr: Expr<T>,
+    pub pat:  Pat<T>,
+    pub expr: Expr<T>,
 }
 
 impl<T> MatchArm<T> {
@@ -431,9 +362,9 @@ impl<T: Display> MatchArm<T> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Param<T> {
-    pub(crate) name: Symbol,
-    pub(crate) ty:   T,
-    pub(crate) span: Span,
+    pub name: Symbol,
+    pub ty:   T,
+    pub span: Span,
 }
 
 impl<T> Param<T> {
@@ -521,12 +452,13 @@ pub enum ExprKind<T> {
 }
 
 impl<T> ExprKind<T> {
-    /// Returns `true` if the expr kind is [`Match`].
-    ///
-    /// [`Match`]: ExprKind::Match
     #[must_use]
-    pub fn is_match(&self) -> bool {
-        matches!(self, Self::Match { .. })
+    pub const fn is_type_or_val(&self) -> bool {
+        match self {
+            Self::Type { .. } | Self::Val { .. } => true,
+            Self::Semi(e) => e.kind.is_type_or_val(),
+            _ => false,
+        }
     }
 }
 
@@ -538,14 +470,6 @@ impl<T> Expr<T> {
 }
 
 impl<T: Display> Expr<T> {
-    #[must_use]
-    pub fn format(&self) -> String {
-        let mut out = String::new();
-        // String formatting is infallible
-        let _ = self.format_helper(&mut out, 1);
-        out
-    }
-
     fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
         let tab = String::from_utf8(vec![b' '; indentation * 2]).unwrap();
         match &self.kind {

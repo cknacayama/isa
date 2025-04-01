@@ -1,7 +1,13 @@
-type Option 'a = None | Some 'a;
+module Option
 
-let return a = Some a;
-let bind opt f = match opt with
-    Some a -> f a,
-    None -> None,
-;
+    type Option 'a = None | Some 'a;
+
+module List
+    type List 'a = Nil | Cons 'a (List 'a);
+    
+    let tail list =
+        match list with
+            Nil -> Option.None,
+            Cons v Nil -> Option.Some v,
+            Cons _ rest -> tail rest,
+        ;

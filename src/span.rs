@@ -103,8 +103,4 @@ impl<T> Spanned<T> {
     {
         other.map(From::from)
     }
-
-    pub const fn span(&self) -> Span {
-        self.span
-    }
 }

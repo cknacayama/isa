@@ -76,7 +76,7 @@ impl<'a> Ctx<'a> {
 
         if !missing_ctors.is_empty() && all_missing {
             missing_ctors = vec![Ctor::Wildcard];
-        } else if missing_ctors.iter().any(ctor::Ctor::is_non_exhaustive) {
+        } else if missing_ctors.iter().any(Ctor::is_non_exhaustive) {
             missing_ctors = vec![Ctor::NonExhaustive];
         }
 
@@ -87,9 +87,7 @@ impl<'a> Ctx<'a> {
 impl Pat {
     fn from_ast_pat(pat: &TypedPat, ctx: &TypeCtx) -> Self {
         match &pat.kind {
-            TypedPatKind::Wild | TypedPatKind::Module(_) | TypedPatKind::Ident(_) => {
-                Self::new(Ctor::Wildcard, Vec::new())
-            }
+            TypedPatKind::Wild | TypedPatKind::Ident(_) => Self::new(Ctor::Wildcard, Vec::new()),
             TypedPatKind::Or(pats) => {
                 let fields = pats
                     .iter()
@@ -160,14 +158,25 @@ impl TypeCtx {
                 self.check_single_match(lhs)?;
                 self.check_single_match(rhs)?;
             }
+
             ExprKind::Fn { expr, .. }
+            | ExprKind::Un { expr, .. }
+            | ExprKind::Semi(expr)
             | ExprKind::Let {
                 expr, body: None, ..
-            }
-            | ExprKind::Un { expr, .. }
-            | ExprKind::Semi(expr) => {
+            } => {
                 self.check_single_match(expr)?;
             }
+
+            ExprKind::Let {
+                expr,
+                body: Some(body),
+                ..
+            } => {
+                self.check_single_match(expr)?;
+                self.check_single_match(body)?;
+            }
+
             ExprKind::Match { expr, arms } => {
                 self.check_single_match(expr)?;
 

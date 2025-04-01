@@ -11,13 +11,6 @@ pub trait CtxFmt {
     type Ctx;
 
     fn ctx_fmt(&self, f: &mut impl fmt::Write, ctx: &Self::Ctx) -> fmt::Result;
-
-    fn ctx_fmt_string(&self, ctx: &Self::Ctx) -> String {
-        let mut out = String::new();
-        self.ctx_fmt(&mut out, ctx)
-            .unwrap_or_else(|_| unreachable!());
-        out
-    }
 }
 
 #[derive(Debug, Clone, Default)]
