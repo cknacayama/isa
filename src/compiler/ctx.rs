@@ -21,7 +21,7 @@ pub struct TyData {
 
 impl TyData {
     #[must_use]
-    pub fn new(params: Rc<[Ty]>, constructors: Vec<Constructor>) -> Self {
+    pub const fn new(params: Rc<[Ty]>, constructors: Vec<Constructor>) -> Self {
         Self {
             params,
             constructors,
@@ -79,7 +79,7 @@ impl TypeCtx {
         let mut ctors = data.constructors.swap_remove(idx);
 
         for param in &mut ctors.params {
-            *param = param.clone().substitute_many(&subs);
+            param.substitute_many(&subs);
         }
 
         ctors.params
@@ -91,7 +91,7 @@ impl TypeCtx {
         cur
     }
 
-    pub fn gen_type_var(&mut self) -> Ty {
+    pub const fn gen_type_var(&mut self) -> Ty {
         let id = self.gen_id();
         Ty::Var(id)
     }
@@ -107,8 +107,8 @@ impl TypeCtx {
     }
 }
 
-impl Substitute for &mut TypeCtx {
-    fn substitute<S>(self, subs: &mut S) -> Self
+impl Substitute for TypeCtx {
+    fn substitute<S>(&mut self, subs: &mut S)
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
@@ -118,6 +118,5 @@ impl Substitute for &mut TypeCtx {
             .for_each(|c| {
                 c.substitute(subs);
             });
-        self
     }
 }

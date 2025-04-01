@@ -40,12 +40,12 @@ impl Checker {
         })
     }
 
-    pub fn modules(&self) -> &FxHashMap<Symbol, FxHashMap<Symbol, VarData>> {
+    pub const fn modules(&self) -> &FxHashMap<Symbol, FxHashMap<Symbol, VarData>> {
         self.env.modules()
     }
 
     #[must_use]
-    pub fn type_ctx(&self) -> &TypeCtx {
+    pub const fn type_ctx(&self) -> &TypeCtx {
         &self.type_ctx
     }
 
@@ -87,7 +87,7 @@ impl Checker {
         self.type_ctx.gen_id()
     }
 
-    fn gen_type_var(&mut self) -> Ty {
+    const fn gen_type_var(&mut self) -> Ty {
         self.type_ctx.gen_type_var()
     }
 
@@ -102,7 +102,7 @@ impl Checker {
         let mut then = self.check(then)?;
         let mut otherwise = self.check(otherwise)?;
 
-        let var = self.gen_type_var();
+        let mut var = self.gen_type_var();
 
         let c_cond = Constraint::new(Ty::Bool, cond.ty.clone(), [cond.span, span]);
         let c_then = Constraint::new(var.clone(), then.ty.clone(), [then.span, span]);
@@ -111,10 +111,10 @@ impl Checker {
 
         let subs = self.unify([c_cond, c_then, c_otherwise])?;
 
+        var.substitute_many(&subs);
         cond.substitute_many(&subs);
         then.substitute_many(&subs);
         otherwise.substitute_many(&subs);
-        let var = var.substitute_many(&subs);
 
         let kind = TypedExprKind::If {
             cond:      Box::new(cond),
@@ -137,9 +137,7 @@ impl Checker {
         self.insert_variable(param.name, var);
 
         let expr = self.check(expr)?;
-        let var = self
-            .get_variable(param.name)
-            .unwrap_or_else(|| unreachable!());
+        let var = self.get_variable(param.name).unwrap();
 
         self.env.pop_scope();
 
@@ -165,7 +163,7 @@ impl Checker {
         let mut callee = self.check(callee)?;
         let mut arg = self.check(arg)?;
 
-        let var = self.gen_type_var();
+        let mut var = self.gen_type_var();
         let fn_ty = Ty::Fn {
             param: Rc::new(arg.ty.clone()),
             ret:   Rc::new(var.clone()),
@@ -179,7 +177,7 @@ impl Checker {
         callee.substitute_many(&subs);
         arg.substitute_many(&subs);
 
-        let var = var.substitute_many(&subs);
+        var.substitute_many(&subs);
 
         let kind = TypedExprKind::Call {
             callee: Box::new(callee),
@@ -227,7 +225,7 @@ impl Checker {
             let mut expr = self.check(expr)?;
 
             for p in &mut typed_params {
-                p.ty = self.get_variable(p.name).unwrap_or_else(|| unreachable!());
+                p.ty = self.get_variable(p.name).unwrap();
             }
 
             expr.ty =
@@ -316,7 +314,7 @@ impl Checker {
         let mut quant = Vec::new();
 
         for param in &parameters {
-            let new = param.as_var().unwrap_or_else(|| unreachable!());
+            let new = param.as_var().unwrap();
             quant.push(new);
         }
 
@@ -357,7 +355,7 @@ impl Checker {
         }
 
         if !new_params.is_empty() {
-            ty = ty.substitute(&mut |ty| {
+            ty.substitute(&mut |ty| {
                 new_params
                     .iter()
                     .find_map(|(old, new)| if ty == old { Some(Ty::Var(*new)) } else { None })
@@ -394,7 +392,7 @@ impl Checker {
                 let mut patterns = Vec::new();
                 let mut c = ConstraintSet::new();
 
-                let var = self.gen_type_var();
+                let mut var = self.gen_type_var();
                 for pat in spanneds {
                     let pat = self.check_pat(pat)?;
                     c.push(Constraint::new(
@@ -410,7 +408,7 @@ impl Checker {
                 for p in &mut patterns {
                     p.substitute_many(&subs);
                 }
-                let var = var.substitute_many(&subs);
+                var.substitute_many(&subs);
 
                 Ok(TypedPat::new(
                     TypedPatKind::Or(patterns.into_boxed_slice()),
@@ -466,7 +464,7 @@ impl Checker {
                 for arg in &mut typed_args {
                     arg.substitute_many(&subs);
                 }
-                ty = ty.substitute_many(&subs);
+                ty.substitute_many(&subs);
 
                 let kind = TypedPatKind::Constructor {
                     name,
@@ -509,7 +507,7 @@ impl Checker {
     ) -> InferResult<TypedExpr> {
         let mut expr = self.check(expr)?;
 
-        let var = self.gen_type_var();
+        let mut var = self.gen_type_var();
         let mut typed_arms = Vec::new();
 
         let mut c = ConstraintSet::new();
@@ -536,7 +534,7 @@ impl Checker {
             arm.pat.substitute_many(&subs);
             arm.expr.substitute_many(&subs);
         }
-        let var = var.substitute_many(&subs);
+        var.substitute_many(&subs);
 
         let kind = TypedExprKind::Match {
             expr: Box::new(expr),
@@ -643,32 +641,26 @@ impl Checker {
         match ty {
             Ty::Scheme { quant, ty } => {
                 let subs: Vec<_> = (0..quant.len()).map(|_| self.gen_type_var()).collect();
+                let mut ty = ty.as_ref().clone();
 
-                ty.as_ref().clone().substitute(&mut |ty| {
+                ty.substitute(&mut |ty| {
                     let v = ty.as_var()?;
                     quant
                         .iter()
                         .copied()
                         .enumerate()
                         .find_map(|(i, n)| if v == n { Some(subs[i].clone()) } else { None })
-                })
+                });
+                ty
             }
             _ => ty,
         }
     }
 
-    fn check_types<'a, I>(&mut self, modules: I)
-    where
-        I: IntoIterator<Item = &'a mut UntypedModule>,
-    {
-        modules
-            .into_iter()
-            .for_each(|module| self.check_module_types(module));
-    }
-
     fn check_module_types(&mut self, module: &mut UntypedModule) {
-        let mod_name = module.name;
         let mut declared = Vec::new();
+        let mod_name = module.name;
+
         for decl in module
             .exprs
             .iter_mut()
@@ -678,23 +670,24 @@ impl Checker {
             let decl = PathIdent::Ident(decl);
             declared.push((decl, new_name));
         }
-        if !declared.is_empty() {
-            for expr in &mut module.exprs {
-                expr.substitute(&mut |ty| match ty {
-                    Ty::Named { name, args } => declared.iter().find_map(|(decl, new)| {
-                        if name == decl {
-                            Some(Ty::Named {
-                                name: *new,
-                                args: args.clone(),
-                            })
-                        } else {
-                            None
-                        }
-                    }),
-                    _ => None,
-                });
-            }
+
+        if declared.is_empty() {
+            return;
         }
+
+        module.substitute(&mut |ty| match ty {
+            Ty::Named { name, args } => declared.iter().find_map(|(decl, new)| {
+                if name == decl {
+                    Some(Ty::Named {
+                        name: *new,
+                        args: args.clone(),
+                    })
+                } else {
+                    None
+                }
+            }),
+            _ => None,
+        });
     }
 
     fn check_type_declaration(&mut self, expr: &mut UntypedExpr) -> Option<Symbol> {
@@ -735,11 +728,10 @@ impl Checker {
         &mut self,
         mut modules: Vec<UntypedModule>,
     ) -> InferResult<Vec<TypedModule>> {
-        self.check_types(&mut modules);
-
         let mut decl = Vec::new();
-
         for module in &mut modules {
+            self.check_module_types(module);
+
             self.env.push_scope();
             self.cur_module = module.name;
 
@@ -749,7 +741,7 @@ impl Checker {
                 .map(|e| self.check(e))
                 .collect::<InferResult<Vec<_>>>()?;
 
-            let declared = self.env.pop_scope().unwrap_or_else(|| unreachable!());
+            let declared = self.env.pop_scope().unwrap();
             self.env.extend_module(module.name, declared.into_iter());
 
             decl.push(exprs);
@@ -776,7 +768,7 @@ impl Checker {
             .into_iter()
             .map(|expr| self.check(expr))
             .collect::<InferResult<_>>()?;
-        let declared = self.env.pop_scope().unwrap_or_else(|| unreachable!());
+        let declared = self.env.pop_scope().unwrap();
         let typed = TypedModule::new(module.name, exprs, module.span);
 
         self.env.extend_module(module.name, declared.into_iter());
@@ -787,14 +779,14 @@ impl Checker {
     fn check(&mut self, expr: UntypedExpr) -> InferResult<TypedExpr> {
         let span = expr.span;
         match expr.kind {
-            UntypedExprKind::Acess(acess) => {
+            UntypedExprKind::ModuleIdent(acess) => {
                 let t = self
                     .env
                     .get_from_module(&acess)
                     .map_err(|kind| InferError::new(kind, span))?;
 
                 Ok(TypedExpr::new(
-                    TypedExprKind::Acess(acess),
+                    TypedExprKind::ModuleIdent(acess),
                     span,
                     self.instantiate(t.ty().clone()),
                 ))

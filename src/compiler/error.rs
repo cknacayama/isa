@@ -105,17 +105,17 @@ impl Display for InferError {
 
 impl InferError {
     #[must_use]
-    pub fn new(kind: InferErrorKind, span: Span) -> Self {
+    pub const fn new(kind: InferErrorKind, span: Span) -> Self {
         Self { kind, span }
     }
 
     #[must_use]
-    pub fn kind(&self) -> &InferErrorKind {
+    pub const fn kind(&self) -> &InferErrorKind {
         &self.kind
     }
 
     #[must_use]
-    pub fn span(&self) -> Span {
+    pub const fn span(&self) -> Span {
         self.span
     }
 }
@@ -128,7 +128,7 @@ pub struct MatchNonExhaustive {
 
 impl MatchNonExhaustive {
     #[must_use]
-    pub fn new(witnesses: Vec<WitnessPat>, span: Span) -> Self {
+    pub const fn new(witnesses: Vec<WitnessPat>, span: Span) -> Self {
         Self { witnesses, span }
     }
 

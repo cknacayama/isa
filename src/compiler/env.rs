@@ -41,7 +41,7 @@ pub struct VarData {
 
 impl VarData {
     #[must_use]
-    fn new(kind: VarKind, ty: Ty) -> Self {
+    const fn new(kind: VarKind, ty: Ty) -> Self {
         Self { kind, ty }
     }
 
@@ -218,23 +218,14 @@ impl Env {
     }
 }
 
-impl Substitute for &mut Env {
-    fn substitute<S>(self, subs: &mut S) -> Self
+impl Substitute for Env {
+    fn substitute<S>(&mut self, subs: &mut S)
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
-        for t in self.env.iter_mut().flat_map(FxHashMap::values_mut) {
-            t.ty = t.ty.clone().substitute(subs);
-        }
-        self
-    }
-}
-impl Substitute for &mut VarData {
-    fn substitute<S>(self, subs: &mut S) -> Self
-    where
-        S: FnMut(&Ty) -> Option<Ty>,
-    {
-        self.ty = self.ty.clone().substitute(subs);
-        self
+        self.env
+            .iter_mut()
+            .flat_map(FxHashMap::values_mut)
+            .for_each(|t| t.ty.substitute(subs));
     }
 }

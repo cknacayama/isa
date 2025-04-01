@@ -3,6 +3,7 @@ pub mod untyped;
 
 use std::fmt::{Debug, Display, Write};
 
+use super::infer::Substitute;
 use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;
@@ -201,7 +202,7 @@ pub enum PathIdent {
 
 impl PathIdent {
     #[must_use]
-    pub fn ident(&self) -> Symbol {
+    pub const fn ident(&self) -> Symbol {
         match self {
             Self::Module(module_ident) => module_ident.member(),
             Self::Ident(symbol) => *symbol,
@@ -342,11 +343,11 @@ impl<T> MatchArm<T> {
         Self { pat, expr }
     }
 
-    pub fn pat(&self) -> &Pat<T> {
+    pub const fn pat(&self) -> &Pat<T> {
         &self.pat
     }
 
-    pub fn expr(&self) -> &Expr<T> {
+    pub const fn expr(&self) -> &Expr<T> {
         &self.expr
     }
 }
@@ -395,7 +396,7 @@ pub enum ExprKind<T> {
 
     Ident(Symbol),
 
-    Acess(ModuleIdent),
+    ModuleIdent(ModuleIdent),
 
     Bin {
         op:  BinOp,
@@ -470,6 +471,7 @@ impl<T> Expr<T> {
 }
 
 impl<T: Display> Expr<T> {
+    #[allow(clippy::too_many_lines)]
     fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
         let tab = String::from_utf8(vec![b' '; indentation * 2]).unwrap();
         match &self.kind {
@@ -482,14 +484,14 @@ impl<T: Display> Expr<T> {
             ExprKind::Bool(b) => write!(f, "{b}"),
             ExprKind::Ident(id) => write!(f, "{id}"),
             ExprKind::Bin { op, lhs, rhs } => {
-                write!(f, "(({op}) ")?;
+                write!(f, "(")?;
                 lhs.format_helper(f, indentation + 1)?;
-                write!(f, " ")?;
+                write!(f, "{op}")?;
                 rhs.format_helper(f, indentation + 1)?;
                 write!(f, ")")
             }
             ExprKind::Un { op, expr } => {
-                write!(f, "(({op}) ")?;
+                write!(f, "({op} ")?;
                 expr.format_helper(f, indentation + 1)?;
                 write!(f, ")")
             }
@@ -575,7 +577,7 @@ impl<T: Display> Expr<T> {
                 arg.format_helper(f, indentation + 1)?;
                 write!(f, ")")
             }
-            ExprKind::Acess(module_access) => write!(f, "{module_access}"),
+            ExprKind::ModuleIdent(module_access) => write!(f, "{module_access}"),
         }
         .and_then(|()| write!(f, ": {}", self.ty))
     }
@@ -584,5 +586,159 @@ impl<T: Display> Expr<T> {
 impl<T: Display> Display for Expr<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.format_helper(f, 0)
+    }
+}
+
+impl Substitute for Param<Ty> {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.ty.substitute(subs);
+    }
+}
+
+impl Substitute for Constructor {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        for param in &mut self.params {
+            param.substitute(subs);
+        }
+    }
+}
+
+impl Substitute for Expr<()> {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        match &mut self.kind {
+            ExprKind::Semi(semi) => {
+                semi.substitute(subs);
+            }
+            ExprKind::Type { constructors, .. } => {
+                constructors.iter_mut().for_each(|c| {
+                    c.params.iter_mut().for_each(|t| {
+                        t.substitute(subs);
+                    });
+                });
+            }
+            ExprKind::Val { ty, .. } => {
+                ty.substitute(subs);
+            }
+            _ => (),
+        }
+    }
+}
+
+impl Substitute for Expr<Ty> {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        match &mut self.kind {
+            ExprKind::Let {
+                params, expr, body, ..
+            } => {
+                params.iter_mut().for_each(|p| {
+                    p.substitute(subs);
+                });
+                expr.substitute(subs);
+                if let Some(body) = body.as_mut() {
+                    body.substitute(subs);
+                }
+            }
+            ExprKind::Fn { param, expr } => {
+                param.substitute(subs);
+                expr.substitute(subs);
+            }
+            ExprKind::If {
+                cond,
+                then,
+                otherwise,
+            } => {
+                cond.substitute(subs);
+                then.substitute(subs);
+                otherwise.substitute(subs);
+            }
+            ExprKind::Call { callee, arg } => {
+                callee.substitute(subs);
+                arg.substitute(subs);
+            }
+            ExprKind::Match { expr, arms } => {
+                expr.substitute(subs);
+                arms.iter_mut().for_each(|arm| {
+                    arm.pat.substitute(subs);
+                    arm.expr.substitute(subs);
+                });
+            }
+            ExprKind::Semi(semi) => {
+                semi.substitute(subs);
+            }
+            ExprKind::Type { constructors, .. } => {
+                constructors.iter_mut().for_each(|c| {
+                    c.params.iter_mut().for_each(|t| {
+                        t.substitute(subs);
+                    });
+                });
+            }
+            ExprKind::Val { ty, .. } => {
+                ty.substitute(subs);
+            }
+            ExprKind::Bin { lhs, rhs, .. } => {
+                lhs.substitute(subs);
+                rhs.substitute(subs);
+            }
+            ExprKind::Un { expr, .. } => {
+                expr.substitute(subs);
+            }
+
+            ExprKind::Unit
+            | ExprKind::Int(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Ident(_)
+            | ExprKind::ModuleIdent(_) => (),
+        }
+
+        self.ty.substitute(subs);
+    }
+}
+
+impl<T> Substitute for Module<T>
+where
+    Expr<T>: Substitute,
+{
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        for e in &mut self.exprs {
+            e.substitute(subs);
+        }
+    }
+}
+
+impl Substitute for Pat<Ty> {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        match &mut self.kind {
+            PatKind::Or(args) | PatKind::Constructor { args, .. } => {
+                args.iter_mut().for_each(|p| {
+                    p.substitute(subs);
+                });
+            }
+
+            PatKind::Wild
+            | PatKind::Unit
+            | PatKind::Int(_)
+            | PatKind::Bool(_)
+            | PatKind::Ident(_)
+            | PatKind::IntRange(_) => (),
+        }
+        self.ty.substitute(subs);
     }
 }

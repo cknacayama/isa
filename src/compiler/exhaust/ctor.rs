@@ -28,11 +28,11 @@ impl Ctor {
         }
     }
 
-    pub(super) fn is_or(&self) -> bool {
+    pub(super) const fn is_or(&self) -> bool {
         matches!(self, Self::Or)
     }
 
-    fn as_type(&self) -> Option<usize> {
+    const fn as_type(&self) -> Option<usize> {
         if let Self::Type(v) = self {
             Some(*v)
         } else {
@@ -40,7 +40,7 @@ impl Ctor {
         }
     }
 
-    fn as_bool(&self) -> Option<bool> {
+    const fn as_bool(&self) -> Option<bool> {
         if let Self::Bool(v) = self {
             Some(*v)
         } else {
@@ -48,7 +48,7 @@ impl Ctor {
         }
     }
 
-    fn as_int_range(&self) -> Option<&IntRange> {
+    const fn as_int_range(&self) -> Option<&IntRange> {
         if let Self::IntRange(v) = self {
             Some(v)
         } else {
@@ -103,7 +103,7 @@ impl Ctor {
     ///
     /// [`NonExhaustive`]: Ctor::NonExhaustive
     #[must_use]
-    pub fn is_non_exhaustive(&self) -> bool {
+    pub const fn is_non_exhaustive(&self) -> bool {
         matches!(self, Self::NonExhaustive)
     }
 }

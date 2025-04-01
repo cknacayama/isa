@@ -12,7 +12,7 @@ pub type UntypedParam = Param<()>;
 
 impl UntypedModule {
     #[must_use]
-    pub fn untyped(name: Symbol, exprs: Vec<UntypedExpr>, span: Span) -> Self {
+    pub const fn untyped(name: Symbol, exprs: Vec<UntypedExpr>, span: Span) -> Self {
         Self::new(name, exprs, span)
     }
 }

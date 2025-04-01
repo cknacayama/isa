@@ -3,6 +3,7 @@ module Option
     type Option 'a = None | Some 'a;
 
 module List
+
     type List 'a = Nil | Cons 'a (List 'a);
     
     let tail list =

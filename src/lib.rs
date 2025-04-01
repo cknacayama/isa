@@ -1,11 +1,3 @@
-#![forbid(unsafe_code)]
-#![deny(clippy::enum_glob_use, clippy::pedantic, clippy::nursery)]
-#![allow(clippy::missing_const_for_fn, reason = "false positive")]
-#![allow(
-    clippy::missing_errors_doc,
-    reason = "Only returns Result with custom Error types"
-)]
-
 pub mod cli;
 pub(crate) mod compiler;
 pub(crate) mod global;

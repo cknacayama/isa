@@ -18,7 +18,7 @@ pub struct Ctx<'a> {
 }
 
 impl<'a> Ctx<'a> {
-    fn new(ctx: &'a TypeCtx) -> Self {
+    const fn new(ctx: &'a TypeCtx) -> Self {
         Self { ctx }
     }
 

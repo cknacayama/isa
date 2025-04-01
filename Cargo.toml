@@ -7,3 +7,14 @@ edition = "2024"
 codespan-reporting = "0.12.0"
 indexmap = "2.8.0"
 rustc-hash = "2.1.1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+enum_glob_use = { level = "deny", priority = -1 }
+
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"

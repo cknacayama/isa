@@ -95,7 +95,7 @@ impl SymbolInterner {
         if let Some(idx) = self.symbols.get_index_of(symbol) {
             Symbol(idx)
         } else {
-            let symbol = Box::leak::<'static>(Box::<str>::from(symbol));
+            let symbol = Box::leak(Box::from(symbol));
             let (idx, _) = self.symbols.insert_full(symbol);
             Symbol(idx)
         }

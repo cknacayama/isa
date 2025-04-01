@@ -89,11 +89,7 @@ impl Config {
     }
 
     pub fn run(&self) {
-        let input = self
-            .files
-            .get(self.file_id)
-            .unwrap_or_else(|_| unreachable!())
-            .source();
+        let input = self.files.get(self.file_id).unwrap().source();
 
         let start = Instant::now();
 

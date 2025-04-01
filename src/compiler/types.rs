@@ -91,10 +91,7 @@ impl Ty {
             }
             Self::Named { args, .. } => {
                 let mut iter = args.iter();
-                let first = iter
-                    .next()
-                    .unwrap_or_else(|| unreachable!())
-                    .free_type_variables();
+                let first = iter.next().unwrap().free_type_variables();
                 iter.fold(first, |mut acc, arg| {
                     for t in arg.free_type_variables() {
                         if !acc.contains(&t) {

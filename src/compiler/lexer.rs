@@ -108,9 +108,7 @@ impl<'a> Lexer<'a> {
     fn number(&mut self) -> Token {
         self.eat_while(|c| c.is_ascii_digit());
         let s = &self.input[self.start..self.cur];
-        self.make_token(TokenKind::Integer(
-            s.parse().unwrap_or_else(|_| unreachable!()),
-        ))
+        self.make_token(TokenKind::Integer(s.parse().unwrap()))
     }
 
     fn identifier_or_keyword(&mut self) -> Token {

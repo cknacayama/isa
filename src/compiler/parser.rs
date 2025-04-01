@@ -415,7 +415,7 @@ impl<'a> Parser<'a> {
                 if self.next_if_match(TokenKind::Dot).is_some() {
                     let member = self.expect_id()?;
                     let span = span.union(member.span);
-                    let kind = UntypedExprKind::Acess(ModuleIdent::new(id, member.data));
+                    let kind = UntypedExprKind::ModuleIdent(ModuleIdent::new(id, member.data));
                     Ok(UntypedExpr::untyped(kind, span))
                 } else {
                     Ok(UntypedExpr::untyped(UntypedExprKind::Ident(id), span))

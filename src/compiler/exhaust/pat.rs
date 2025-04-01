@@ -19,11 +19,11 @@ impl CtxFmt for &WitnessPat {
 }
 
 impl WitnessPat {
-    fn new(ctor: Ctor, fields: Vec<Self>, ty: Ty) -> Self {
+    const fn new(ctor: Ctor, fields: Vec<Self>, ty: Ty) -> Self {
         Self { ctor, fields, ty }
     }
 
-    fn wildcard(ty: Ty) -> Self {
+    const fn wildcard(ty: Ty) -> Self {
         Self::new(Ctor::Wildcard, Vec::new(), ty)
     }
 
@@ -71,7 +71,7 @@ impl WitnessVector {
 pub struct WitnessMatrix(Vec<WitnessVector>);
 
 impl WitnessMatrix {
-    fn empty() -> Self {
+    const fn empty() -> Self {
         Self(Vec::new())
     }
 
@@ -79,7 +79,7 @@ impl WitnessMatrix {
         Self(vec![WitnessVector(Vec::new())])
     }
 
-    fn is_empty(&self) -> bool {
+    const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
@@ -136,7 +136,7 @@ pub struct Pat {
 
 impl Pat {
     #[must_use]
-    pub(super) fn new(ctor: Ctor, fields: Vec<(usize, Self)>) -> Self {
+    pub(super) const fn new(ctor: Ctor, fields: Vec<(usize, Self)>) -> Self {
         Self { ctor, fields }
     }
 
@@ -151,11 +151,11 @@ impl Pat {
         fields
     }
 
-    pub(super) fn ctor(&self) -> &Ctor {
+    pub(super) const fn ctor(&self) -> &Ctor {
         &self.ctor
     }
 
-    fn is_or_pat(&self) -> bool {
+    const fn is_or_pat(&self) -> bool {
         self.ctor().is_or()
     }
 
@@ -188,7 +188,7 @@ impl<'a> PatOrWild<'a> {
         }
     }
 
-    fn ctor(self) -> &'a Ctor {
+    const fn ctor(self) -> &'a Ctor {
         match self {
             Self::Wild => &Ctor::Wildcard,
             Self::Pat(pat) => pat.ctor(),
@@ -202,7 +202,7 @@ pub struct PatVector<'a> {
 }
 
 impl<'a> PatVector<'a> {
-    pub(super) fn new(pats: Vec<PatOrWild<'a>>) -> Self {
+    pub(super) const fn new(pats: Vec<PatOrWild<'a>>) -> Self {
         Self { pats }
     }
 
@@ -237,7 +237,7 @@ pub(super) struct PatMatrixRow<'a> {
 }
 
 impl<'a> PatMatrixRow<'a> {
-    pub fn new(pats: PatVector<'a>, parent_row: usize, useful: bool) -> Self {
+    pub const fn new(pats: PatVector<'a>, parent_row: usize, useful: bool) -> Self {
         Self {
             pats,
             parent_row,
