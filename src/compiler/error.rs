@@ -241,6 +241,12 @@ impl IsaError {
         }
     }
 
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn with_label(mut self, label: DiagnosticLabel) -> Self {
+        self.labels.push(label);
+        self
+    }
+
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -255,6 +261,18 @@ impl IsaError {
 
     pub fn note(&self) -> Option<&str> {
         self.note.as_deref()
+    }
+}
+
+impl Display for Uninferable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "uniferable")
+    }
+}
+
+impl Display for IsaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.message.fmt(f)
     }
 }
 
@@ -296,6 +314,12 @@ impl std::error::Error for InferErrorKind {
 }
 
 impl std::error::Error for InferError {
+}
+
+impl std::error::Error for Uninferable {
+}
+
+impl std::error::Error for IsaError {
 }
 
 impl std::error::Error for MatchNonExhaustive {

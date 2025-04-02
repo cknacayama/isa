@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::fmt::Display;
 use std::rc::Rc;
 
@@ -105,7 +106,7 @@ impl Constraint {
 
 #[derive(Debug, Clone, Default)]
 pub struct ConstraintSet {
-    constrs: Vec<Constraint>,
+    constrs: VecDeque<Constraint>,
 }
 
 impl Substitute for ConstraintSet {
@@ -121,11 +122,11 @@ impl Substitute for ConstraintSet {
 
 impl<T> From<T> for ConstraintSet
 where
-    Vec<Constraint>: From<T>,
+    VecDeque<Constraint>: From<T>,
 {
     fn from(value: T) -> Self {
         Self {
-            constrs: Vec::from(value),
+            constrs: VecDeque::from(value),
         }
     }
 }
@@ -133,7 +134,7 @@ where
 impl From<Constraint> for ConstraintSet {
     fn from(value: Constraint) -> Self {
         Self {
-            constrs: vec![value],
+            constrs: VecDeque::from([value]),
         }
     }
 }
@@ -145,7 +146,7 @@ where
     let mut cset = ConstraintSet::from(cset);
     let mut subs = Vec::new();
 
-    while let Some(c) = cset.constrs.pop() {
+    while let Some(c) = cset.constrs.pop_front() {
         let span = c.span;
         match (&c.lhs, &c.rhs) {
             (lhs @ (Ty::Int | Ty::Bool | Ty::Var(_)), rhs @ (Ty::Int | Ty::Bool | Ty::Var(_)))
@@ -218,7 +219,7 @@ impl ConstraintSet {
     }
 
     pub fn push(&mut self, c: Constraint) {
-        self.constrs.push(c);
+        self.constrs.push_back(c);
     }
 }
 

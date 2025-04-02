@@ -133,6 +133,7 @@ impl TokenKind {
 pub struct Constructor {
     pub name:   Symbol,
     pub params: Box<[Ty]>,
+    pub span:   Span,
 }
 
 impl Display for Constructor {
@@ -412,16 +413,18 @@ pub enum ExprKind<T> {
     Semi(Box<Expr<T>>),
 
     Let {
-        name:   Symbol,
-        params: Box<[Param<T>]>,
-        expr:   Box<Expr<T>>,
-        body:   Option<Box<Expr<T>>>,
+        name:      Symbol,
+        name_span: Span,
+        params:    Box<[Param<T>]>,
+        expr:      Box<Expr<T>>,
+        body:      Option<Box<Expr<T>>>,
     },
 
     Val {
         name:       Symbol,
         parameters: Box<[Ty]>,
         ty:         Ty,
+        ty_span:    Span,
     },
 
     Type {
@@ -500,6 +503,7 @@ impl<T: Display> Expr<T> {
                 name: id,
                 expr,
                 body,
+                ..
             } => {
                 write!(f, "(let {id} ")?;
                 for p in params {
@@ -518,6 +522,7 @@ impl<T: Display> Expr<T> {
                 name: id,
                 parameters,
                 ty,
+                ..
             } => {
                 write!(f, "(val {id}")?;
                 for t in parameters {

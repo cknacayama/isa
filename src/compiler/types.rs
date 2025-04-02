@@ -36,6 +36,14 @@ impl Ty {
         matches!(self, Self::Fn { .. })
     }
 
+    fn is_simple_format(&self) -> bool {
+        match self {
+            Self::Named { args, .. } => args.is_empty(),
+            Self::Unit | Self::Int | Self::Bool | Self::Var(_) => true,
+            Self::Fn { .. } | Self::Scheme { .. } => false,
+        }
+    }
+
     #[must_use]
     pub const fn as_var(&self) -> Option<u64> {
         if let Self::Var(v) = self {
@@ -171,7 +179,14 @@ impl Display for Ty {
             Self::Unit => write!(f, "()"),
             Self::Int => write!(f, "int"),
             Self::Bool => write!(f, "bool"),
-            Self::Fn { param, ret } => write!(f, "({param} -> {ret})"),
+            Self::Fn { param, ret } => {
+                if param.is_simple_format() {
+                    write!(f, "{param}")?;
+                } else {
+                    write!(f, "({param})")?;
+                }
+                write!(f, " -> {ret}")
+            }
             Self::Var(var) => write!(f, "'{var}"),
             Self::Scheme { quant, ty } => {
                 for n in quant.iter() {
@@ -180,11 +195,15 @@ impl Display for Ty {
                 write!(f, ". {ty}")
             }
             Self::Named { name, args } => {
-                write!(f, "({name}")?;
+                write!(f, "{name}")?;
                 for arg in args.iter() {
-                    write!(f, " {arg}")?;
+                    if arg.is_simple_format() {
+                        write!(f, " {arg}")?;
+                    } else {
+                        write!(f, " ({arg})")?;
+                    }
                 }
-                write!(f, ")")
+                Ok(())
             }
         }
     }

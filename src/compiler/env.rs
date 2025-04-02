@@ -7,6 +7,7 @@ use super::error::InferErrorKind;
 use super::infer::Substitute;
 use super::types::Ty;
 use crate::global::Symbol;
+use crate::span::Span;
 
 #[derive(Debug, Clone, Copy)]
 enum VarKind {
@@ -37,12 +38,13 @@ impl VarKind {
 pub struct VarData {
     kind: VarKind,
     ty:   Ty,
+    span: Span,
 }
 
 impl VarData {
     #[must_use]
-    const fn new(kind: VarKind, ty: Ty) -> Self {
-        Self { kind, ty }
+    const fn new(kind: VarKind, ty: Ty, span: Span) -> Self {
+        Self { kind, ty, span }
     }
 
     #[must_use]
@@ -52,6 +54,10 @@ impl VarData {
 
     const fn kind(&self) -> VarKind {
         self.kind
+    }
+
+    pub const fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -77,36 +83,36 @@ impl Env {
     }
 
     #[must_use]
-    pub fn get_constructor(&self, id: Symbol) -> Option<Ty> {
+    pub fn get_constructor(&self, id: Symbol) -> Option<&VarData> {
         self.env
             .iter()
             .rev()
             .find_map(|e| e.get(&id))
             .and_then(|var| {
                 if var.kind().is_constructor() {
-                    Some(var.ty().clone())
+                    Some(var)
                 } else {
                     None
                 }
             })
     }
 
-    pub fn insert(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
+    pub fn insert(&mut self, id: Symbol, ty: Ty, span: Span) -> Option<VarData> {
         self.env
             .last_mut()
-            .and_then(|env| env.insert(id, VarData::new(VarKind::LetDefinition, ty)))
+            .and_then(|env| env.insert(id, VarData::new(VarKind::LetDefinition, ty, span)))
     }
 
-    pub fn insert_constructor(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
+    pub fn insert_constructor(&mut self, id: Symbol, ty: Ty, span: Span) -> Option<VarData> {
         self.env
             .last_mut()
-            .and_then(|env| env.insert(id, VarData::new(VarKind::Constructor, ty)))
+            .and_then(|env| env.insert(id, VarData::new(VarKind::Constructor, ty, span)))
     }
 
-    pub fn insert_val(&mut self, id: Symbol, ty: Ty) -> Option<VarData> {
+    pub fn insert_val(&mut self, id: Symbol, ty: Ty, span: Span) -> Option<VarData> {
         self.env
             .last_mut()
-            .and_then(|env| env.insert(id, VarData::new(VarKind::ValueDeclaration, ty)))
+            .and_then(|env| env.insert(id, VarData::new(VarKind::ValueDeclaration, ty, span)))
     }
 
     pub fn get_from_module(&self, module_access: &ModuleIdent) -> Result<&VarData, InferErrorKind> {
@@ -121,7 +127,10 @@ impl Env {
         Ok(var)
     }
 
-    pub fn get_val_from_module(&self, module_access: &ModuleIdent) -> Result<Ty, InferErrorKind> {
+    pub fn get_val_from_module(
+        &self,
+        module_access: &ModuleIdent,
+    ) -> Result<&VarData, InferErrorKind> {
         let Some(module) = self.modules.get(&module_access.module()) else {
             return Err(InferErrorKind::UnboundModule(module_access.module()));
         };
@@ -131,7 +140,7 @@ impl Env {
         };
 
         if var.kind().is_value_declaration() {
-            Ok(var.ty().clone())
+            Ok(var)
         } else {
             Err(InferErrorKind::Unbound(module_access.member()))
         }
@@ -140,7 +149,7 @@ impl Env {
     pub fn get_constructor_from_module(
         &self,
         module_access: &ModuleIdent,
-    ) -> Result<Ty, InferErrorKind> {
+    ) -> Result<&VarData, InferErrorKind> {
         let Some(module) = self.modules.get(&module_access.module()) else {
             return Err(InferErrorKind::UnboundModule(module_access.module()));
         };
@@ -150,7 +159,7 @@ impl Env {
         };
 
         if var.kind().is_constructor() {
-            Ok(var.ty().clone())
+            Ok(var)
         } else {
             Err(InferErrorKind::Unbound(module_access.member()))
         }

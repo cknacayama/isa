@@ -207,6 +207,7 @@ impl<'a> Parser<'a> {
                 name: id,
                 parameters,
                 ty,
+                ty_span,
             },
             span,
         ))
@@ -507,7 +508,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_constructor(&mut self) -> ParseResult<Spanned<Constructor>> {
+    fn parse_constructor(&mut self) -> ParseResult<Constructor> {
         let Spanned {
             data: name,
             mut span,
@@ -521,13 +522,11 @@ impl<'a> Parser<'a> {
             params.push(ty.data);
         }
 
-        Ok(Spanned::new(
-            Constructor {
-                name,
-                params: params.into_boxed_slice(),
-            },
+        Ok(Constructor {
+            name,
+            params: params.into_boxed_slice(),
             span,
-        ))
+        })
     }
 
     fn parse_type_definition(&mut self) -> ParseResult<UntypedExpr> {
@@ -551,8 +550,8 @@ impl<'a> Parser<'a> {
         self.next_if_match(TokenKind::Bar);
         loop {
             let c = self.parse_constructor()?;
-            constructors.push(c.data);
             span = span.union(c.span);
+            constructors.push(c);
             if self.next_if_match(TokenKind::Bar).is_none() {
                 break;
             }
@@ -784,7 +783,10 @@ impl<'a> Parser<'a> {
 
     fn parse_let(&mut self) -> ParseResult<UntypedExpr> {
         let mut span = self.expect(TokenKind::KwLet)?;
-        let Spanned { data: id, .. } = self.expect_id()?;
+        let Spanned {
+            data: name,
+            span: name_span,
+        } = self.expect_id()?;
 
         let mut parametes = Vec::new();
         while !self.check(TokenKind::Eq) {
@@ -804,10 +806,11 @@ impl<'a> Parser<'a> {
 
         Ok(UntypedExpr::untyped(
             UntypedExprKind::Let {
+                name,
+                name_span,
                 params: parametes.into_boxed_slice(),
-                name:   id,
-                expr:   Box::new(expr),
-                body:   body.map(Box::new),
+                expr: Box::new(expr),
+                body: body.map(Box::new),
             },
             span,
         ))
