@@ -1,7 +1,9 @@
 use std::fmt::Display;
 
+use codespan_reporting::diagnostic::Label;
+
 use super::exhaust::pat::WitnessPat;
-use super::infer::Constraint;
+use super::infer::{Constraint, Subs};
 use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;
@@ -64,25 +66,38 @@ impl std::error::Error for ParseError {
 }
 
 #[derive(Debug, Clone)]
+pub struct Uninferable {
+    constr: Constraint,
+
+    /// Substitutions applied up until the error
+    subs: Vec<Subs>,
+}
+
+impl Uninferable {
+    pub const fn new(constr: Constraint, subs: Vec<Subs>) -> Self {
+        Self { constr, subs }
+    }
+
+    pub const fn constr(&self) -> &Constraint {
+        &self.constr
+    }
+
+    pub fn subs(&self) -> &[Subs] {
+        &self.subs
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum InferErrorKind {
-    Uninferable(Constraint),
     Unbound(Symbol),
     UnboundModule(Symbol),
-    NotConstructor(Symbol),
+    NotConstructor(Ty),
     Kind(Ty),
 }
 
 impl Display for InferErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Uninferable(constr) => {
-                write!(
-                    f,
-                    "expected expression of type `{}`, got `{}`",
-                    constr.lhs(),
-                    constr.rhs()
-                )
-            }
             Self::Unbound(id) => write!(f, "unbound identifier: {id}"),
             Self::UnboundModule(module) => write!(f, "unbound module: {module}"),
             Self::NotConstructor(name) => write!(f, "'{name}' is not a constructor"),
@@ -117,6 +132,116 @@ impl InferError {
     #[must_use]
     pub const fn span(&self) -> Span {
         self.span
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DiagnosticLabel {
+    message: String,
+    span:    Span,
+}
+
+impl DiagnosticLabel {
+    pub fn new<T>(message: T, span: Span) -> Self
+    where
+        T: ToString,
+    {
+        Self {
+            message: message.to_string(),
+            span,
+        }
+    }
+
+    pub fn as_primary<FileId>(&self, file_id: FileId) -> Label<FileId> {
+        Label::primary(file_id, self.span()).with_message(self.message())
+    }
+
+    pub fn as_secondary<FileId>(&self, file_id: FileId) -> Label<FileId> {
+        Label::secondary(file_id, self.span()).with_message(self.message())
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub const fn span(&self) -> Span {
+        self.span
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IsaError {
+    message:       String,
+    primary_label: DiagnosticLabel,
+    labels:        Vec<DiagnosticLabel>,
+}
+
+impl From<InferError> for IsaError {
+    fn from(value: InferError) -> Self {
+        match value.kind() {
+            InferErrorKind::Unbound(symbol) => {
+                let message = format!("undefined identifier `{symbol}`");
+                let label = DiagnosticLabel::new("not previously defined", value.span());
+                Self::new(message, label, Vec::new())
+            }
+            InferErrorKind::UnboundModule(symbol) => {
+                let label = DiagnosticLabel::new(
+                    format!("module`{symbol}` not previously defined"),
+                    value.span(),
+                );
+                Self::new("undefined module", label, Vec::new())
+            }
+            InferErrorKind::NotConstructor(ty) => {
+                let message = format!("`{ty}` is not a constructor");
+                let label = DiagnosticLabel::new("expected a value constructor", value.span());
+                Self::new(message, label, Vec::new())
+            }
+            InferErrorKind::Kind(ty) => {
+                let label = DiagnosticLabel::new("pattern should have kind *", value.span());
+                let snd_label = DiagnosticLabel::new(format!("this is of type {ty}"), value.span());
+                Self::new("not matchable", label, vec![snd_label])
+            }
+        }
+    }
+}
+
+impl From<Uninferable> for IsaError {
+    fn from(value: Uninferable) -> Self {
+        let fst = DiagnosticLabel::new(
+            format!("expected `{}`", value.constr().lhs()),
+            value.constr().span(),
+        );
+        let snd = DiagnosticLabel::new(
+            format!("this is of type `{}`", value.constr().rhs()),
+            value.constr().span(),
+        );
+
+        Self::new("type mismatch", fst, vec![snd])
+    }
+}
+
+impl IsaError {
+    pub fn new<T>(message: T, primary_label: DiagnosticLabel, labels: Vec<DiagnosticLabel>) -> Self
+    where
+        T: ToString,
+    {
+        Self {
+            message: message.to_string(),
+            primary_label,
+            labels,
+        }
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub const fn primary_label(&self) -> &DiagnosticLabel {
+        &self.primary_label
+    }
+
+    pub fn labels(&self) -> &[DiagnosticLabel] {
+        &self.labels
     }
 }
 

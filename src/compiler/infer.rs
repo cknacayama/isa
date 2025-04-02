@@ -1,11 +1,9 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
-use super::error::{InferError, InferErrorKind};
+use super::error::Uninferable;
 use super::types::Ty;
 use crate::span::Span;
-
-pub type InferResult<T> = Result<T, InferError>;
 
 #[derive(Debug, Clone)]
 pub struct Subs {
@@ -47,53 +45,12 @@ pub trait Substitute {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct ConstraintSpan {
-    pub sub_exprs: Option<(Option<Span>, Span)>,
-    pub expr:      Span,
-}
-
-impl ConstraintSpan {
-    #[must_use]
-    pub const fn new(sub_exprs: Option<(Option<Span>, Span)>, expr: Span) -> Self {
-        Self { sub_exprs, expr }
-    }
-}
-
-impl From<Span> for ConstraintSpan {
-    fn from(value: Span) -> Self {
-        Self::new(None, value)
-    }
-}
-
-impl From<[Span; 2]> for ConstraintSpan {
-    fn from(value: [Span; 2]) -> Self {
-        Self::new(Some((None, value[0])), value[1])
-    }
-}
-
-impl From<[Span; 3]> for ConstraintSpan {
-    fn from(value: [Span; 3]) -> Self {
-        Self::new(Some((Some(value[0]), value[1])), value[2])
-    }
-}
-
-impl From<ConstraintSpan> for Vec<Span> {
-    fn from(value: ConstraintSpan) -> Self {
-        match value.sub_exprs {
-            None => vec![value.expr],
-            Some((None, rhs)) => vec![rhs, value.expr],
-            Some((Some(lhs), rhs)) => vec![lhs, rhs, value.expr],
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Constraint {
-    lhs:       Ty,
-    rhs:       Ty,
-    parent:    Option<Rc<Constraint>>,
-    pub spans: ConstraintSpan,
+    lhs:    Ty,
+    rhs:    Ty,
+    span:   Span,
+    parent: Option<Rc<Constraint>>,
 }
 
 impl Substitute for Constraint {
@@ -108,15 +65,12 @@ impl Substitute for Constraint {
 
 impl Constraint {
     #[must_use]
-    pub fn new<T>(lhs: Ty, rhs: Ty, spans: T) -> Self
-    where
-        ConstraintSpan: From<T>,
-    {
+    pub const fn new(lhs: Ty, rhs: Ty, span: Span) -> Self {
         Self {
             lhs,
             rhs,
+            span,
             parent: None,
-            spans: ConstraintSpan::from(spans),
         }
     }
 
@@ -142,6 +96,10 @@ impl Constraint {
             parent = grand.clone();
         }
         parent
+    }
+
+    pub const fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -180,7 +138,7 @@ impl From<Constraint> for ConstraintSet {
     }
 }
 
-pub fn unify<C>(cset: C) -> InferResult<Vec<Subs>>
+pub fn unify<C>(cset: C) -> Result<Vec<Subs>, Uninferable>
 where
     ConstraintSet: From<C>,
 {
@@ -188,7 +146,7 @@ where
     let mut subs = Vec::new();
 
     while let Some(c) = cset.constrs.pop() {
-        let spans = c.spans;
+        let span = c.span;
         match (&c.lhs, &c.rhs) {
             (lhs @ (Ty::Int | Ty::Bool | Ty::Var(_)), rhs @ (Ty::Int | Ty::Bool | Ty::Var(_)))
                 if lhs == rhs => {}
@@ -203,8 +161,8 @@ where
                 subs.push(s);
             }
             (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
-                let c1 = Constraint::new(i1.as_ref().clone(), i2.as_ref().clone(), spans);
-                let c2 = Constraint::new(o1.as_ref().clone(), o2.as_ref().clone(), spans);
+                let c1 = Constraint::new(i1.as_ref().clone(), i2.as_ref().clone(), c.span);
+                let c2 = Constraint::new(o1.as_ref().clone(), o2.as_ref().clone(), c.span);
                 let parent = Rc::new(c);
 
                 cset.push(c1.with_parent(parent.clone()));
@@ -225,7 +183,7 @@ where
                 let parent = Rc::new(c);
                 for (a1, a2) in args1.iter().zip(args2.iter()) {
                     cset.push(
-                        Constraint::new(a1.clone(), a2.clone(), spans).with_parent(parent.clone()),
+                        Constraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
                     );
                 }
             }
@@ -237,7 +195,7 @@ where
                 } else {
                     c
                 };
-                return Err(InferError::new(InferErrorKind::Uninferable(c), spans.expr));
+                return Err(Uninferable::new(c, subs));
             }
         }
     }

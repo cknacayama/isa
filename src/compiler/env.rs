@@ -133,7 +133,7 @@ impl Env {
         if var.kind().is_value_declaration() {
             Ok(var.ty().clone())
         } else {
-            Err(InferErrorKind::NotConstructor(module_access.member()))
+            Err(InferErrorKind::Unbound(module_access.member()))
         }
     }
 
@@ -152,7 +152,7 @@ impl Env {
         if var.kind().is_constructor() {
             Ok(var.ty().clone())
         } else {
-            Err(InferErrorKind::NotConstructor(module_access.member()))
+            Err(InferErrorKind::Unbound(module_access.member()))
         }
     }
 

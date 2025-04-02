@@ -148,7 +148,12 @@ impl Substitute for Rc<Ty> {
                 let args = Rc::from(new_args);
                 Ty::Named { name: *name, args }
             }
-            _ => self.as_ref().clone(),
+            _ => {
+                if let Some(new) = subs(self) {
+                    *self = Self::new(new);
+                }
+                return;
+            }
         };
 
         if let Some(new) = subs(&ty) {
