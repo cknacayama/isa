@@ -187,6 +187,14 @@ where
                     );
                 }
             }
+            (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 })
+                if q1.len() == q2.len() =>
+            {
+                let constr = Constraint::new(t1.as_ref().clone(), t2.as_ref().clone(), span);
+                let parent = Rc::new(c);
+                cset.push(constr.with_parent(parent));
+            }
+
             _ => {
                 let c = if let Some(parent) = c.parent {
                     let mut parent = parent.as_ref().clone();

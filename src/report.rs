@@ -25,6 +25,7 @@ impl Report for IsaError {
             .with_message(self.message())
             .with_label(self.primary_label().as_primary(file_id))
             .with_labels_iter(self.labels().iter().map(|l| l.as_secondary(file_id)))
+            .with_notes_iter(self.note().map(String::from))
     }
 }
 

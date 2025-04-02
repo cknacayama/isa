@@ -142,10 +142,8 @@ pub struct DiagnosticLabel {
 }
 
 impl DiagnosticLabel {
-    pub fn new<T>(message: T, span: Span) -> Self
-    where
-        T: ToString,
-    {
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn new(message: impl ToString, span: Span) -> Self {
         Self {
             message: message.to_string(),
             span,
@@ -174,6 +172,7 @@ pub struct IsaError {
     message:       String,
     primary_label: DiagnosticLabel,
     labels:        Vec<DiagnosticLabel>,
+    note:          Option<String>,
 }
 
 impl From<InferError> for IsaError {
@@ -208,27 +207,37 @@ impl From<InferError> for IsaError {
 impl From<Uninferable> for IsaError {
     fn from(value: Uninferable) -> Self {
         let fst = DiagnosticLabel::new(
-            format!("expected `{}`", value.constr().lhs()),
+            format!(
+                "expected `{}`, got `{}`",
+                value.constr().lhs(),
+                value.constr().rhs()
+            ),
             value.constr().span(),
         );
-        let snd = DiagnosticLabel::new(
-            format!("this is of type `{}`", value.constr().rhs()),
-            value.constr().span(),
-        );
-
-        Self::new("type mismatch", fst, vec![snd])
+        Self::new("type mismatch", fst, Vec::new())
     }
 }
 
 impl IsaError {
-    pub fn new<T>(message: T, primary_label: DiagnosticLabel, labels: Vec<DiagnosticLabel>) -> Self
-    where
-        T: ToString,
-    {
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn new(
+        message: impl ToString,
+        primary_label: DiagnosticLabel,
+        labels: Vec<DiagnosticLabel>,
+    ) -> Self {
         Self {
             message: message.to_string(),
             primary_label,
             labels,
+            note: None,
+        }
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn with_note(self, note: impl ToString) -> Self {
+        Self {
+            note: Some(note.to_string()),
+            ..self
         }
     }
 
@@ -242,6 +251,10 @@ impl IsaError {
 
     pub fn labels(&self) -> &[DiagnosticLabel] {
         &self.labels
+    }
+
+    pub fn note(&self) -> Option<&str> {
+        self.note.as_deref()
     }
 }
 

@@ -110,36 +110,31 @@ impl Checker {
         let c_then = Constraint::new(var.clone(), then.ty.clone(), then.span);
         let c_otherwise = Constraint::new(var.clone(), otherwise.ty.clone(), otherwise.span);
 
-        let subs = match self.unify([c_cond, c_then, c_otherwise]) {
-            Ok(subs) => subs,
-            Err(err) => {
-                let err_span = err.constr().span();
+        let subs = self.unify([c_cond, c_then, c_otherwise]).map_err(|err| {
+            let err_span = err.constr().span();
 
-                let (fst_label, labels) = if err_span == cond.span {
-                    let mut ty = cond.ty.clone();
-                    ty.substitute_many(err.subs());
-                    let fst = DiagnosticLabel::new(
-                        "expected `if` condition to have type `bool`",
-                        err_span,
-                    );
-                    let snd = DiagnosticLabel::new(format!("this is of type `{ty}`"), err_span);
-                    (fst, vec![snd])
-                } else {
-                    let mut then_ty = then.ty.clone();
-                    let mut els_ty = otherwise.ty.clone();
-                    then_ty.substitute_many(err.subs());
-                    els_ty.substitute_many(err.subs());
-                    let fst = DiagnosticLabel::new("`if` and `else` have different types", span);
-                    let snd = DiagnosticLabel::new(format!("`if` has type `{then_ty}`"), then.span);
-                    let trd =
-                        DiagnosticLabel::new(format!("`else` has type `{els_ty}`"), otherwise.span);
+            let (fst_label, labels) = if err_span == cond.span {
+                let mut ty = cond.ty.clone();
+                ty.substitute_many(err.subs());
+                let fst =
+                    DiagnosticLabel::new("expected `if` condition to have type `bool`", err_span);
+                let snd = DiagnosticLabel::new(format!("this is of type `{ty}`"), err_span);
+                (fst, vec![snd])
+            } else {
+                let mut then_ty = then.ty.clone();
+                let mut els_ty = otherwise.ty.clone();
+                then_ty.substitute_many(err.subs());
+                els_ty.substitute_many(err.subs());
+                let fst = DiagnosticLabel::new("`if` and `else` have different types", span);
+                let snd = DiagnosticLabel::new(format!("`if` has type `{then_ty}`"), then.span);
+                let trd =
+                    DiagnosticLabel::new(format!("`else` has type `{els_ty}`"), otherwise.span);
 
-                    (fst, vec![snd, trd])
-                };
+                (fst, vec![snd, trd])
+            };
 
-                return Err(IsaError::new("type mismatch", fst_label, labels));
-            }
-        };
+            IsaError::new("type mismatch", fst_label, labels)
+        })?;
 
         var.substitute_many(&subs);
         cond.substitute_many(&subs);
@@ -198,32 +193,26 @@ impl Checker {
             param: Rc::new(arg.ty.clone()),
             ret:   Rc::new(var.clone()),
         };
-        let subs = match self.unify(Constraint::new(callee.ty.clone(), fn_ty, span)) {
-            Ok(subs) => subs,
-            Err(err) => {
-                callee.ty.substitute_many(err.subs());
-                arg.ty.substitute_many(err.subs());
-                let (fst, labels) = if let Ty::Fn { ref param, .. } = callee.ty {
-                    let fst = DiagnosticLabel::new(format!("expected `{param}`"), arg.span);
-                    let snd =
-                        DiagnosticLabel::new(format!("this is of type `{}`", arg.ty), arg.span);
-                    let trd = DiagnosticLabel::new(
-                        format!("this is of type `{}`", callee.ty),
-                        callee.span,
-                    );
-                    (fst, vec![snd, trd])
-                } else {
-                    let fst = DiagnosticLabel::new("expected callable", callee.span);
-                    let snd = DiagnosticLabel::new(
-                        format!("this is of type `{}`", callee.ty),
-                        callee.span,
-                    );
-                    (fst, vec![snd])
-                };
+        let constr = Constraint::new(callee.ty.clone(), fn_ty, span);
+        let subs = self.unify(constr).map_err(|err| {
+            callee.ty.substitute_many(err.subs());
+            arg.ty.substitute_many(err.subs());
+            let (fst, labels) = if let Ty::Fn { ref param, .. } = callee.ty {
+                let fst =
+                    DiagnosticLabel::new(format!("expected `{param}`, got {}", arg.ty), arg.span);
+                let snd =
+                    DiagnosticLabel::new(format!("this is of type `{}`", callee.ty), callee.span);
+                (fst, vec![snd])
+            } else {
+                let fst = DiagnosticLabel::new(
+                    format!("expected callable, got `{}`", callee.ty),
+                    callee.span,
+                );
+                (fst, Vec::new())
+            };
 
-                return Err(IsaError::new("type mismatch", fst, labels));
-            }
-        };
+            IsaError::new("type mismatch", fst, labels)
+        })?;
 
         callee.substitute_many(&subs);
         arg.substitute_many(&subs);
@@ -293,22 +282,20 @@ impl Checker {
         let module_id = ModuleIdent::new(self.cur_module, id);
 
         if let Ok(val_ty) = self.get_val_from_module(&module_id) {
-            let instance = self.instantiate(val_ty.clone());
-            let subs = match self.unify(Constraint::new(instance, expr.ty.clone(), expr.span)) {
-                Ok(subs) => subs,
-                Err(err) => {
-                    let fst = DiagnosticLabel::new(
-                        format!("expected `let` bind expression to have type `{val_ty}`"),
-                        err.constr().span(),
-                    );
-                    let snd = DiagnosticLabel::new(
-                        format!("this is of type `{}`", err.constr().rhs()),
-                        err.constr().span(),
-                    );
+            let constr = Constraint::new(val_ty.clone(), expr.ty.clone(), expr.span);
+            let subs = self.unify(constr).map_err(|err| {
+                let fst = DiagnosticLabel::new(
+                    format!("expected `let` bind expression to have type `{val_ty}`"),
+                    err.constr().span(),
+                );
+                let snd = DiagnosticLabel::new(
+                    format!("this is of type `{}`", err.constr().rhs()),
+                    err.constr().span(),
+                );
 
-                    return Err(IsaError::new("type mismatch", fst, vec![snd]));
-                }
-            };
+                IsaError::new("type mismatch", fst, vec![snd])
+            })?;
+
             expr.substitute_many(&subs);
             for p in &mut typed_params {
                 p.substitute_many(&subs);
@@ -612,22 +599,15 @@ impl Checker {
                 let c1 = Constraint::new(Ty::Int, lhs.ty.clone(), lhs.span);
                 let c2 = Constraint::new(Ty::Int, rhs.ty.clone(), rhs.span);
 
-                let subs = match self.unify([c1, c2]) {
-                    Ok(subs) => subs,
-                    Err(err) => {
-                        let fst = DiagnosticLabel::new("expected `int`", err.constr().span());
-                        let snd = DiagnosticLabel::new(
-                            format!("this is of type `{}`", err.constr().rhs()),
-                            err.constr().span(),
-                        );
-                        let trd = DiagnosticLabel::new(
-                            format!("operator `{op}` expects operands of type `int`"),
-                            span,
-                        );
+                let subs = self.unify([c1, c2]).map_err(|err| {
+                    let fst = DiagnosticLabel::new(
+                        format!("expected `int`, got `{}`", err.constr().rhs()),
+                        err.constr().span(),
+                    );
+                    let note = format!("operator `{op}` expects operands of type `int`");
 
-                        return Err(IsaError::new("type mismatch", fst, vec![snd, trd]));
-                    }
-                };
+                    IsaError::new("type mismatch", fst, Vec::new()).with_note(note)
+                })?;
 
                 lhs.substitute_many(&subs);
                 rhs.substitute_many(&subs);
@@ -644,22 +624,15 @@ impl Checker {
                 let c1 = Constraint::new(Ty::Int, lhs.ty.clone(), lhs.span);
                 let c2 = Constraint::new(Ty::Int, rhs.ty.clone(), rhs.span);
 
-                let subs = match self.unify([c1, c2]) {
-                    Ok(subs) => subs,
-                    Err(err) => {
-                        let fst = DiagnosticLabel::new("expected `int`", err.constr().span());
-                        let snd = DiagnosticLabel::new(
-                            format!("this is of type `{}`", err.constr().rhs()),
-                            err.constr().span(),
-                        );
-                        let trd = DiagnosticLabel::new(
-                            format!("operator `{op}` expects operands of type `int`"),
-                            span,
-                        );
+                let subs = self.unify([c1, c2]).map_err(|err| {
+                    let fst = DiagnosticLabel::new(
+                        format!("expected `int`, got `{}`", err.constr().rhs()),
+                        err.constr().span(),
+                    );
+                    let note = format!("operator `{op}` expects operands of type `int`");
 
-                        return Err(IsaError::new("type mismatch", fst, vec![snd, trd]));
-                    }
-                };
+                    IsaError::new("type mismatch", fst, Vec::new()).with_note(note)
+                })?;
 
                 lhs.substitute_many(&subs);
                 rhs.substitute_many(&subs);
@@ -676,22 +649,15 @@ impl Checker {
                 let c1 = Constraint::new(Ty::Bool, lhs.ty.clone(), lhs.span);
                 let c2 = Constraint::new(Ty::Bool, rhs.ty.clone(), rhs.span);
 
-                let subs = match self.unify([c1, c2]) {
-                    Ok(subs) => subs,
-                    Err(err) => {
-                        let fst = DiagnosticLabel::new("expected `bool`", err.constr().span());
-                        let snd = DiagnosticLabel::new(
-                            format!("this is of type `{}`", err.constr().rhs()),
-                            err.constr().span(),
-                        );
-                        let trd = DiagnosticLabel::new(
-                            format!("operator `{op}` expects operands of type `bool`"),
-                            span,
-                        );
+                let subs = self.unify([c1, c2]).map_err(|err| {
+                    let fst = DiagnosticLabel::new(
+                        format!("expected `bool`, got `{}`", err.constr().rhs()),
+                        err.constr().span(),
+                    );
+                    let note = format!("operator `{op}` expects operands of type `bool`");
 
-                        return Err(IsaError::new("type mismatch", fst, vec![snd, trd]));
-                    }
-                };
+                    IsaError::new("type mismatch", fst, Vec::new()).with_note(note)
+                })?;
 
                 lhs.substitute_many(&subs);
                 rhs.substitute_many(&subs);
@@ -718,25 +684,10 @@ impl Checker {
         };
         let constr = Constraint::new(ty.clone(), expr.ty.clone(), expr.span);
 
-        let subs = match self.unify(constr) {
-            Ok(subs) => subs,
-            Err(err) => {
-                let fst_label = DiagnosticLabel::new(
-                    format!("expected value of type `{}`", err.constr().lhs()),
-                    err.constr().span(),
-                );
-                let snd_label = DiagnosticLabel::new(
-                    format!("this is of type `{}`", err.constr().rhs()),
-                    err.constr().span(),
-                );
-                let trd_label = DiagnosticLabel::new(format!("{op} operates on type `{ty}`"), span);
-                return Err(IsaError::new(
-                    "type mismatch",
-                    fst_label,
-                    vec![snd_label, trd_label],
-                ));
-            }
-        };
+        let subs = self.unify(constr).map_err(|err| {
+            let note = format!("{op} operates on type `{ty}`");
+            IsaError::from(err).with_note(note)
+        })?;
 
         expr.substitute_many(&subs);
 
