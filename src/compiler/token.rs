@@ -43,6 +43,7 @@ pub enum TokenKind {
     KwFalse,
 
     KwType,
+    KwAlias,
     KwLet,
     KwVal,
     KwIn,
@@ -70,6 +71,7 @@ impl TokenKind {
             "true" => Some(Self::KwTrue),
             "false" => Some(Self::KwFalse),
             "type" => Some(Self::KwType),
+            "alias" => Some(Self::KwAlias),
             "let" => Some(Self::KwLet),
             "val" => Some(Self::KwVal),
             "fn" => Some(Self::KwFn),
@@ -123,6 +125,7 @@ impl Display for TokenKind {
             Self::KwTrue => write!(f, "true"),
             Self::KwFalse => write!(f, "false"),
             Self::KwType => write!(f, "type"),
+            Self::KwAlias => write!(f, "alias"),
             Self::KwLet => write!(f, "let"),
             Self::KwVal => write!(f, "val"),
             Self::KwIn => write!(f, "in"),

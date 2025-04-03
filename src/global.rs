@@ -6,7 +6,7 @@ use crate::IndexSet;
 use crate::span::{Span, SpanData};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
-pub struct Symbol(usize);
+pub struct Symbol(u32);
 
 impl std::fmt::Debug for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -88,16 +88,16 @@ impl Default for SymbolInterner {
 
 impl SymbolInterner {
     fn get(&self, symbol: Symbol) -> Option<&'static str> {
-        self.symbols.get_index(symbol.0).copied()
+        self.symbols.get_index(symbol.0 as usize).copied()
     }
 
     fn intern(&mut self, symbol: &str) -> Symbol {
         if let Some(idx) = self.symbols.get_index_of(symbol) {
-            Symbol(idx)
+            Symbol(idx.try_into().unwrap())
         } else {
             let symbol = Box::leak(Box::from(symbol));
             let (idx, _) = self.symbols.insert_full(symbol);
-            Symbol(idx)
+            Symbol(idx.try_into().unwrap())
         }
     }
 }

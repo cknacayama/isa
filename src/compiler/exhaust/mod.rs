@@ -136,7 +136,7 @@ impl IntRange {
             },
             IntRangePat::ToInclusive(i) => Self {
                 lo: MaybeInfinite::NegInfinity,
-                hi: MaybeInfinite::Finite(i).plus_one().unwrap(),
+                hi: MaybeInfinite::Finite(i).plus_one(),
             },
             IntRangePat::Exclusive(lo, hi) => Self {
                 lo: MaybeInfinite::Finite(lo),
@@ -144,7 +144,7 @@ impl IntRange {
             },
             IntRangePat::Inclusive(lo, hi) => Self {
                 lo: MaybeInfinite::Finite(lo),
-                hi: MaybeInfinite::Finite(hi).plus_one().unwrap(),
+                hi: MaybeInfinite::Finite(hi).plus_one(),
             },
         }
     }

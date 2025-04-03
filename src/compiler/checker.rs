@@ -10,7 +10,7 @@ use super::ast::untyped::{
     UntypedPatKind,
 };
 use super::ast::{BinOp, Constructor, ModuleIdent, PathIdent, UnOp};
-use super::ctx::TypeCtx;
+use super::ctx::{AliasData, TypeCtx};
 use super::env::{Env, VarData};
 use super::error::{DiagnosticLabel, InferError, InferErrorKind, IsaError, Uninferable};
 use super::infer::{Constraint, ConstraintSet, Subs, Substitute, unify};
@@ -55,7 +55,7 @@ impl Checker {
         self.env.insert_val(id, ty, span)
     }
 
-    fn get_val_from_module(&self, id: &ModuleIdent) -> Result<&VarData, InferErrorKind> {
+    fn get_val_from_module(&self, id: ModuleIdent) -> Result<&VarData, InferErrorKind> {
         self.env.get_val_from_module(id)
     }
 
@@ -68,7 +68,7 @@ impl Checker {
             .get(id)
             .or_else(|| {
                 let module_access = ModuleIdent::new(self.cur_module, id);
-                self.env.get_from_module(&module_access).ok()
+                self.env.get_from_module(module_access).ok()
             })
             .map(VarData::ty)
             .cloned()
@@ -81,7 +81,7 @@ impl Checker {
     fn get_constructor(&self, name: Symbol) -> Option<&VarData> {
         self.env.get_constructor(name).or_else(|| {
             let module_access = ModuleIdent::new(self.cur_module, name);
-            self.env.get_constructor_from_module(&module_access).ok()
+            self.env.get_constructor_from_module(module_access).ok()
         })
     }
 
@@ -286,7 +286,7 @@ impl Checker {
         let u1 = self.env.generalize(expr.ty.clone());
 
         let module_id = ModuleIdent::new(self.cur_module, name);
-        if let Ok(val) = self.get_val_from_module(&module_id).cloned() {
+        if let Ok(val) = self.get_val_from_module(module_id).cloned() {
             let constr = Constraint::new(val.ty().clone(), u1.clone(), expr.span);
 
             let subs = self.unify(constr).map_err(|err| {
@@ -405,20 +405,17 @@ impl Checker {
         ty_span: Span,
         span: Span,
     ) -> TypedExpr {
-        let mut new_params = Vec::new();
+        let mut subs = Vec::new();
         let mut quant = Vec::new();
         for p in params {
             let new = self.gen_id();
+            let old = p.get_name().and_then(PathIdent::as_ident).unwrap();
             quant.push(new);
-            new_params.push((p, new));
+            subs.push((old, new));
         }
 
-        if !new_params.is_empty() {
-            ty.substitute(&mut |ty| {
-                new_params
-                    .iter()
-                    .find_map(|(old, new)| if ty == old { Some(Ty::Var(*new)) } else { None })
-            });
+        if !subs.is_empty() {
+            ty.substitute_param(&subs);
             ty = Ty::Scheme {
                 quant: quant.clone().into(),
                 ty:    Rc::new(ty),
@@ -476,7 +473,7 @@ impl Checker {
                 let ctor = match name {
                     PathIdent::Module(module) => self
                         .env
-                        .get_constructor_from_module(&module)
+                        .get_constructor_from_module(module)
                         .map_err(|err| InferError::new(err, span))?,
 
                     PathIdent::Ident(name) => match self.get_constructor(name) {
@@ -740,26 +737,26 @@ impl Checker {
     }
 
     fn instantiate(&mut self, ty: Ty) -> Ty {
-        match ty {
-            Ty::Scheme { quant, ty } => {
-                let subs: Vec<_> = (0..quant.len()).map(|_| self.gen_type_var()).collect();
-                let mut ty = ty.as_ref().clone();
+        let Ty::Scheme { quant, ty } = ty else {
+            return ty;
+        };
 
-                ty.substitute(&mut |ty| {
-                    let v = ty.as_var()?;
-                    quant
-                        .iter()
-                        .copied()
-                        .enumerate()
-                        .find_map(|(i, n)| if v == n { Some(subs[i].clone()) } else { None })
-                });
-                ty
-            }
-            _ => ty,
-        }
+        let subs: Vec<_> = (0..quant.len()).map(|_| self.gen_type_var()).collect();
+        let mut ty = ty.as_ref().clone();
+
+        ty.substitute(&mut |ty| {
+            let v = ty.as_var()?;
+            quant
+                .iter()
+                .copied()
+                .enumerate()
+                .find_map(|(i, n)| if v == n { Some(subs[i].clone()) } else { None })
+        });
+
+        ty
     }
 
-    fn check_module_types(&mut self, module: &mut UntypedModule) {
+    fn check_module_types(&mut self, module: &mut UntypedModule) -> Vec<(ModuleIdent, AliasData)> {
         let mut declared = Vec::new();
         let mod_name = module.name;
 
@@ -768,28 +765,44 @@ impl Checker {
             .iter_mut()
             .filter_map(|expr| self.check_type_declaration(expr))
         {
-            let new_name = PathIdent::Module(ModuleIdent::new(mod_name, decl));
+            let module_id = ModuleIdent::new(mod_name, decl);
+            let new_name = PathIdent::Module(module_id);
             let decl = PathIdent::Ident(decl);
             declared.push((decl, new_name));
         }
 
         if declared.is_empty() {
-            return;
+            return Vec::new();
         }
 
-        module.substitute(&mut |ty| match ty {
-            Ty::Named { name, args } => declared.iter().find_map(|(decl, new)| {
-                if name == decl {
-                    Some(Ty::Named {
-                        name: *new,
-                        args: args.clone(),
-                    })
-                } else {
-                    None
+        module.substitute(&mut |ty| {
+            let Ty::Named { name, args } = ty else {
+                return None;
+            };
+
+            declared.iter().find_map(|(decl, new)| {
+                if name != decl {
+                    return None;
                 }
-            }),
-            _ => None,
+
+                Some(Ty::Named {
+                    name: *new,
+                    args: args.clone(),
+                })
+            })
         });
+
+        let mut aliases = Vec::new();
+        for (name, alias) in module
+            .exprs
+            .iter()
+            .filter_map(Self::check_alias_declaration)
+        {
+            let module_id = ModuleIdent::new(mod_name, name);
+            aliases.push((module_id, alias));
+        }
+
+        aliases
     }
 
     fn check_type_declaration(&mut self, expr: &mut UntypedExpr) -> Option<Symbol> {
@@ -806,20 +819,56 @@ impl Checker {
                     let id = self.gen_id();
                     let mut new = Ty::Var(id);
                     std::mem::swap(param, &mut new);
-                    subs.push((new, id));
+                    let old = new.get_name().and_then(PathIdent::as_ident).unwrap();
+                    subs.push((old, id));
                 }
 
                 for ctor in constructors {
-                    ctor.substitute(&mut |ty| {
-                        subs.iter().find_map(
-                            |(old, new)| {
-                                if ty == old { Some(Ty::Var(*new)) } else { None }
-                            },
-                        )
-                    });
+                    ctor.substitute_param(&subs);
                 }
 
                 Some(*name)
+            }
+            UntypedExprKind::Alias {
+                name,
+                parameters,
+                ty,
+            } => {
+                let mut subs = Vec::new();
+
+                for param in parameters {
+                    let id = self.gen_id();
+                    let mut new = Ty::Var(id);
+                    std::mem::swap(param, &mut new);
+                    let old = new.get_name().and_then(PathIdent::as_ident).unwrap();
+                    subs.push((old, id));
+                }
+
+                ty.substitute_param(&subs);
+
+                Some(*name)
+            }
+
+            _ => None,
+        }
+    }
+
+    fn check_alias_declaration(expr: &UntypedExpr) -> Option<(Symbol, AliasData)> {
+        match &expr.kind {
+            UntypedExprKind::Semi(e) => Self::check_alias_declaration(e),
+            UntypedExprKind::Alias {
+                name,
+                parameters,
+                ty,
+            } => {
+                let mut vars = Vec::new();
+
+                for param in parameters {
+                    let id = param.as_var().unwrap();
+                    vars.push(id);
+                }
+
+                Some((*name, AliasData::new(vars.into(), ty.clone())))
             }
 
             _ => None,
@@ -830,9 +879,30 @@ impl Checker {
         &mut self,
         mut modules: Vec<UntypedModule>,
     ) -> IsaResult<Vec<TypedModule>> {
+        let aliases = modules
+            .iter_mut()
+            .map(|module| self.check_module_types(module))
+            .fold(FxHashMap::default(), |mut acc, aliases| {
+                acc.extend(aliases);
+                acc
+            });
+
         let mut decl = Vec::new();
+
         for module in &mut modules {
-            self.check_module_types(module);
+            if !aliases.is_empty() {
+                module.substitute(&mut |ty| {
+                    let Ty::Named {
+                        name: PathIdent::Module(name),
+                        args,
+                    } = ty
+                    else {
+                        return None;
+                    };
+
+                    aliases.get(name).map(|alias| alias.subs(args))
+                });
+            }
 
             self.env.push_scope();
             self.cur_module = module.name;
@@ -840,8 +910,8 @@ impl Checker {
             let exprs = module
                 .exprs
                 .extract_if(.., |e| e.kind.is_type_or_val())
-                .map(|e| self.check(e))
-                .collect::<IsaResult<Vec<_>>>()?;
+                .map(|e| self.check(e).unwrap())
+                .collect::<Vec<_>>();
 
             let declared = self.env.pop_scope().unwrap();
             self.env.extend_module(module.name, declared.into_iter());
@@ -884,7 +954,7 @@ impl Checker {
             UntypedExprKind::ModuleIdent(acess) => {
                 let t = self
                     .env
-                    .get_from_module(&acess)
+                    .get_from_module(acess)
                     .map_err(|kind| InferError::new(kind, span))?;
 
                 Ok(TypedExpr::new(
@@ -944,6 +1014,20 @@ impl Checker {
                 parameters,
                 constructors,
             } => Ok(self.check_type_definition(name, parameters, constructors, span)),
+
+            UntypedExprKind::Alias {
+                name,
+                parameters,
+                ty,
+            } => Ok(TypedExpr::new(
+                TypedExprKind::Alias {
+                    name,
+                    parameters,
+                    ty,
+                },
+                span,
+                Ty::Unit,
+            )),
 
             UntypedExprKind::Val {
                 name,

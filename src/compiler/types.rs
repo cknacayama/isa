@@ -44,6 +44,14 @@ impl Ty {
         }
     }
 
+    pub const fn get_name(&self) -> Option<&PathIdent> {
+        if let Self::Named { name, .. } = self {
+            Some(name)
+        } else {
+            None
+        }
+    }
+
     #[must_use]
     pub const fn as_var(&self) -> Option<u64> {
         if let Self::Var(v) = self {
@@ -111,7 +119,8 @@ impl Substitute for Ty {
                     *args = new.into();
                 }
             }
-            _ => (),
+
+            Self::Unit | Self::Int | Self::Bool | Self::Var(_) => (),
         }
 
         if let Some(ty) = subs(self) {
@@ -156,7 +165,7 @@ impl Substitute for Rc<Ty> {
                 let args = Rc::from(new_args);
                 Ty::Named { name: *name, args }
             }
-            _ => {
+            Ty::Unit | Ty::Int | Ty::Bool | Ty::Var(_) => {
                 if let Some(new) = subs(self) {
                     *self = Self::new(new);
                 }

@@ -179,12 +179,12 @@ impl ModuleIdent {
     }
 
     #[must_use]
-    pub const fn module(&self) -> Symbol {
+    pub const fn module(self) -> Symbol {
         self.module
     }
 
     #[must_use]
-    pub const fn member(&self) -> Symbol {
+    pub const fn member(self) -> Symbol {
         self.member
     }
 }
@@ -207,6 +207,15 @@ impl PathIdent {
         match self {
             Self::Module(module_ident) => module_ident.member(),
             Self::Ident(symbol) => *symbol,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_ident(&self) -> Option<Symbol> {
+        if let Self::Ident(v) = self {
+            Some(*v)
+        } else {
+            None
         }
     }
 }
@@ -433,6 +442,12 @@ pub enum ExprKind<T> {
         constructors: Box<[Constructor]>,
     },
 
+    Alias {
+        name:       Symbol,
+        parameters: Box<[Ty]>,
+        ty:         Ty,
+    },
+
     Fn {
         param: Param<T>,
         expr:  Box<Expr<T>>,
@@ -519,16 +534,27 @@ impl<T: Display> Expr<T> {
                 write!(f, ")")
             }
             ExprKind::Val {
-                name: id,
+                name,
                 parameters,
                 ty,
                 ..
             } => {
-                write!(f, "(val {id}")?;
+                write!(f, "(val {name}")?;
                 for t in parameters {
                     write!(f, " {t}")?;
                 }
                 write!(f, ": {ty})")
+            }
+            ExprKind::Alias {
+                name,
+                parameters,
+                ty,
+            } => {
+                write!(f, "(alias {name}")?;
+                for t in parameters {
+                    write!(f, " {t}")?;
+                }
+                write!(f, "= {ty})")
             }
             ExprKind::Type {
                 name: id,
@@ -630,7 +656,7 @@ impl Substitute for Expr<()> {
                     });
                 });
             }
-            ExprKind::Val { ty, .. } => {
+            ExprKind::Alias { ty, .. } | ExprKind::Val { ty, .. } => {
                 ty.substitute(subs);
             }
             _ => (),
@@ -689,7 +715,7 @@ impl Substitute for Expr<Ty> {
                     });
                 });
             }
-            ExprKind::Val { ty, .. } => {
+            ExprKind::Val { ty, .. } | ExprKind::Alias { ty, .. } => {
                 ty.substitute(subs);
             }
             ExprKind::Bin { lhs, rhs, .. } => {

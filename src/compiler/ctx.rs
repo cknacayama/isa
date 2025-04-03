@@ -21,11 +21,44 @@ pub struct TyData {
 
 impl TyData {
     #[must_use]
-    pub const fn new(params: Rc<[Ty]>, constructors: Vec<Constructor>) -> Self {
+    const fn new(params: Rc<[Ty]>, constructors: Vec<Constructor>) -> Self {
         Self {
             params,
             constructors,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AliasData {
+    params: Rc<[u64]>,
+    ty:     Ty,
+}
+
+impl AliasData {
+    #[must_use]
+    pub const fn new(params: Rc<[u64]>, ty: Ty) -> Self {
+        Self { params, ty }
+    }
+
+    pub fn params(&self) -> &[u64] {
+        &self.params
+    }
+
+    pub const fn ty(&self) -> &Ty {
+        &self.ty
+    }
+
+    pub fn subs(&self, args: &[Ty]) -> Ty {
+        let mut ty = self.ty().clone();
+        ty.substitute(&mut |ty| {
+            self.params()
+                .iter()
+                .copied()
+                .position(|v| ty.as_var().is_some_and(|ty| ty == v))
+                .map(|pos| args[pos].clone())
+        });
+        ty
     }
 }
 
@@ -37,12 +70,10 @@ pub struct TypeCtx {
 
 impl TypeCtx {
     pub fn insert_constructor(&mut self, ty: &Ty, ctor: Constructor) {
-        let (name, args) = match ty {
-            Ty::Named { name, args } => (*name, args),
-            _ => return,
-        };
+        let Ty::Named { name, args } = ty else { return };
+
         self.constructors
-            .entry(name)
+            .entry(*name)
             .or_insert_with(|| TyData::new(args.clone(), Vec::default()))
             .constructors
             .push(ctor);

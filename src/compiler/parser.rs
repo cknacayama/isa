@@ -171,6 +171,7 @@ impl<'a> Parser<'a> {
         {
             TokenKind::KwType => self.parse_type_definition(),
             TokenKind::KwVal => self.parse_val(),
+            TokenKind::KwAlias => self.parse_alias(),
             _ => self.parse_expr(),
         }?;
 
@@ -181,6 +182,35 @@ impl<'a> Parser<'a> {
         } else {
             Ok(expr)
         }
+    }
+
+    fn parse_alias(&mut self) -> ParseResult<UntypedExpr> {
+        let span = self.expect(TokenKind::KwAlias)?;
+        let Spanned { data: name, .. } = self.expect_id()?;
+        let mut params = Vec::new();
+        while !self.check(TokenKind::Eq) {
+            let Spanned { data, .. } = self.expect_id()?;
+            params.push(Ty::Named {
+                name: PathIdent::Ident(data),
+                args: Rc::from([]),
+            });
+        }
+        self.expect(TokenKind::Eq)?;
+        let parameters = params.into_boxed_slice();
+        let Spanned {
+            data: ty,
+            span: ty_span,
+        } = self.parse_type()?;
+        let span = span.union(ty_span);
+
+        Ok(UntypedExpr::untyped(
+            UntypedExprKind::Alias {
+                name,
+                parameters,
+                ty,
+            },
+            span,
+        ))
     }
 
     fn parse_val(&mut self) -> ParseResult<UntypedExpr> {
@@ -531,7 +561,7 @@ impl<'a> Parser<'a> {
 
     fn parse_type_definition(&mut self) -> ParseResult<UntypedExpr> {
         let span = self.expect(TokenKind::KwType)?;
-        let Spanned { data: id, .. } = self.expect_id()?;
+        let Spanned { data: name, .. } = self.expect_id()?;
 
         let mut params = Vec::new();
 
@@ -559,8 +589,8 @@ impl<'a> Parser<'a> {
 
         Ok(UntypedExpr::untyped(
             UntypedExprKind::Type {
-                name:         id,
-                parameters:   params.into_boxed_slice(),
+                name,
+                parameters: params.into_boxed_slice(),
                 constructors: constructors.into_boxed_slice(),
             },
             span,

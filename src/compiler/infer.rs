@@ -2,8 +2,10 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 use std::rc::Rc;
 
+use super::ast::PathIdent;
 use super::error::Uninferable;
 use super::types::Ty;
+use crate::global::Symbol;
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
@@ -43,6 +45,20 @@ pub trait Substitute {
         for s in subs {
             self.substitute_eq(s);
         }
+    }
+
+    fn substitute_param(&mut self, subs: &[(Symbol, u64)])
+    where
+        Self: Sized,
+    {
+        self.substitute(&mut |ty| {
+            ty.get_name()
+                .and_then(PathIdent::as_ident)
+                .and_then(|name| {
+                    subs.iter()
+                        .find_map(|(s, v)| if *s == name { Some(Ty::Var(*v)) } else { None })
+                })
+        });
     }
 }
 

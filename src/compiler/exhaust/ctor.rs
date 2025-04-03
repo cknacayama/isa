@@ -117,12 +117,12 @@ pub enum MaybeInfinite {
 
 impl MaybeInfinite {
     #[must_use]
-    pub(super) fn plus_one(self) -> Option<Self> {
+    pub(super) fn plus_one(self) -> Self {
         match self {
             Self::Finite(n) => n
                 .checked_add(1)
-                .map_or(Some(Self::PosInfinity), |m| Some(Self::Finite(m))),
-            x => Some(x),
+                .map_or(Self::PosInfinity, Self::Finite),
+            x => x,
         }
     }
 
@@ -156,7 +156,7 @@ impl IntRange {
     pub(super) fn from_singleton(x: MaybeInfinite) -> Self {
         Self {
             lo: x,
-            hi: x.plus_one().unwrap(),
+            hi: x.plus_one(),
         }
     }
 
