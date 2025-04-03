@@ -15,13 +15,13 @@ pub trait CtxFmt {
 
 #[derive(Debug, Clone, Default)]
 pub struct TyData {
-    params:       Rc<[Ty]>,
+    params:       Rc<[u64]>,
     constructors: Vec<Constructor>,
 }
 
 impl TyData {
     #[must_use]
-    const fn new(params: Rc<[Ty]>, constructors: Vec<Constructor>) -> Self {
+    const fn new(params: Rc<[u64]>, constructors: Vec<Constructor>) -> Self {
         Self {
             params,
             constructors,
@@ -69,12 +69,10 @@ pub struct TypeCtx {
 }
 
 impl TypeCtx {
-    pub fn insert_constructor(&mut self, ty: &Ty, ctor: Constructor) {
-        let Ty::Named { name, args } = ty else { return };
-
+    pub fn insert_constructor(&mut self, name: PathIdent, params: &Rc<[u64]>, ctor: Constructor) {
         self.constructors
-            .entry(*name)
-            .or_insert_with(|| TyData::new(args.clone(), Vec::default()))
+            .entry(name)
+            .or_insert_with(|| TyData::new(params.clone(), Vec::default()))
             .constructors
             .push(ctor);
     }
@@ -100,20 +98,18 @@ impl TypeCtx {
         let subs = data
             .params
             .iter()
+            .copied()
             .zip(args.iter())
-            .filter_map(|(ty, arg)| {
-                let ty = ty.as_var()?;
-                Some(Subs::new(ty, arg.clone()))
-            })
+            .filter_map(|(ty, arg)| Some(Subs::new(ty, arg.clone())))
             .collect::<Vec<_>>();
 
-        let mut ctors = data.constructors.swap_remove(idx);
+        let mut ctor = data.constructors.swap_remove(idx);
 
-        for param in &mut ctors.params {
+        for param in &mut ctor.params {
             param.substitute_many(&subs);
         }
 
-        ctors.params
+        ctor.params
     }
 
     pub const fn gen_id(&mut self) -> u64 {

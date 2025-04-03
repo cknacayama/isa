@@ -378,14 +378,16 @@ impl Checker {
 
         let quant = Rc::<[u64]>::from(quant);
 
+        let ty_name = PathIdent::Module(ModuleIdent::new(self.cur_module, name));
+
         let ty = Ty::Named {
-            name: PathIdent::Module(ModuleIdent::new(self.cur_module, name)),
+            name: ty_name,
             args: parameters.clone().into(),
         };
 
         for c in &constructors {
             self.check_constructor(c, quant.clone(), ty.clone());
-            self.type_ctx.insert_constructor(&ty, c.clone());
+            self.type_ctx.insert_constructor(ty_name, &quant, c.clone());
         }
 
         let kind = TypedExprKind::Type {
