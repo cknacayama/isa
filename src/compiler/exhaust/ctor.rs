@@ -72,21 +72,28 @@ impl Ctor {
                 s
             }
         };
-        let mut start_or_comma = || start_or_continue(", ");
 
         match self {
             Self::Type(idx) => {
                 ctx.write_variant_name(f, ty, *idx)?;
                 if fields.len() > 0 {
-                    write!(f, " (")?;
                     for p in fields {
-                        write!(f, "{}", start_or_comma())?;
-                        p.ctx_fmt(f, ctx)?;
+                        write!(f, " ")?;
+                        p.ctx_simple_fmt(f, ctx)?;
                     }
-                    write!(f, ")")?;
                 }
             }
             Self::Bool(b) => write!(f, "{b}")?,
+            Self::IntRange(IntRange { lo, hi }) if ty.is_char() => write!(
+                f,
+                "{:?}..{:?}",
+                lo.as_finite()
+                    .map(|i| <i64 as TryInto<u8>>::try_into(i).unwrap() as char)
+                    .unwrap(),
+                hi.as_finite()
+                    .map(|i| <i64 as TryInto<u8>>::try_into(i).unwrap() as char)
+                    .unwrap(),
+            )?,
             Self::IntRange(range) => write!(f, "{range}")?,
             Self::Or => {
                 for pat in fields {
@@ -119,9 +126,7 @@ impl MaybeInfinite {
     #[must_use]
     pub(super) fn plus_one(self) -> Self {
         match self {
-            Self::Finite(n) => n
-                .checked_add(1)
-                .map_or(Self::PosInfinity, Self::Finite),
+            Self::Finite(n) => n.checked_add(1).map_or(Self::PosInfinity, Self::Finite),
             x => x,
         }
     }
@@ -146,10 +151,17 @@ impl IntRange {
         other.lo <= self.lo && self.hi <= other.hi
     }
 
-    const fn infinite() -> Self {
+    pub(super) const fn infinite() -> Self {
         Self {
             lo: MaybeInfinite::NegInfinity,
             hi: MaybeInfinite::PosInfinity,
+        }
+    }
+
+    pub(super) const fn character() -> Self {
+        Self {
+            lo: MaybeInfinite::Finite(0),
+            hi: MaybeInfinite::Finite(u8::MAX as i64),
         }
     }
 
@@ -212,7 +224,7 @@ impl IntRange {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CtorSet {
     Type { variants: NonZeroUsize },
-    Integers,
+    Integers(IntRange),
     Bool,
     Unlistable,
 }
@@ -252,10 +264,10 @@ impl CtorSet {
                     }
                 }
             }
-            Self::Integers => {
+            Self::Integers(range) => {
                 let seen_ranges = seen.iter().filter_map(Ctor::as_int_range).copied();
 
-                for (seen, splitted_range) in IntRange::infinite().split(seen_ranges) {
+                for (seen, splitted_range) in range.split(seen_ranges) {
                     if seen {
                         present.push(Ctor::IntRange(splitted_range));
                     } else {

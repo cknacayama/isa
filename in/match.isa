@@ -1,14 +1,14 @@
 module Option
 
-    type Option 'a = None | Some 'a;
+    type Option a = None | Some a;
 
 module List
 
-    type List 'a = Nil | Cons 'a (List 'a);
+    type List a = Nil | Cons a (List a);
     
     let tail list =
         match list with
             Nil -> Option.None,
             Cons v Nil -> Option.Some v,
-            Cons _ rest -> tail rest,
+            // Cons _ rest -> tail rest,
         ;

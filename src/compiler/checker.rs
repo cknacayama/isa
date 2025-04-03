@@ -114,10 +114,9 @@ impl Checker {
             let err_span = err.constr().span();
 
             let (fst_label, labels) = if err_span == cond.span {
-                let fst =
-                    DiagnosticLabel::new("expected `if` condition to have type `bool`", err_span);
+                let fst = DiagnosticLabel::new("expected if condition to have type bool", err_span);
                 let snd = DiagnosticLabel::new(
-                    format!("this is of type `{}`", err.constr().rhs()),
+                    format!("this is of type {}", err.constr().rhs()),
                     err_span,
                 );
                 (fst, vec![snd])
@@ -126,10 +125,9 @@ impl Checker {
                 let mut els_ty = otherwise.ty.clone();
                 then_ty.substitute_many(err.subs());
                 els_ty.substitute_many(err.subs());
-                let fst = DiagnosticLabel::new("`if` and `else` have different types", span);
-                let snd = DiagnosticLabel::new(format!("`if` has type `{then_ty}`"), then.span);
-                let trd =
-                    DiagnosticLabel::new(format!("`else` has type `{els_ty}`"), otherwise.span);
+                let fst = DiagnosticLabel::new("if and else have different types", span);
+                let snd = DiagnosticLabel::new(format!("if has type {then_ty}"), then.span);
+                let trd = DiagnosticLabel::new(format!("else has type {els_ty}"), otherwise.span);
 
                 (fst, vec![snd, trd])
             };
@@ -200,15 +198,14 @@ impl Checker {
             arg.ty.substitute_many(err.subs());
             let (fst, labels) = if let Ty::Fn { ref param, .. } = callee.ty {
                 let fst = DiagnosticLabel::new(
-                    format!("expected `{param}` argument, got `{}`", arg.ty),
+                    format!("expected {param} argument, got {}", arg.ty),
                     arg.span,
                 );
-                let snd =
-                    DiagnosticLabel::new(format!("this has type `{}`", callee.ty), callee.span);
+                let snd = DiagnosticLabel::new(format!("this has type {}", callee.ty), callee.span);
                 (fst, vec![snd])
             } else {
                 let fst = DiagnosticLabel::new(
-                    format!("expected callable, got `{}`", callee.ty),
+                    format!("expected callable, got {}", callee.ty),
                     callee.span,
                 );
                 (fst, Vec::new())
@@ -290,15 +287,15 @@ impl Checker {
             let constr = Constraint::new(val.ty().clone(), u1.clone(), expr.span);
 
             let subs = self.unify(constr).map_err(|err| {
-                let fst = DiagnosticLabel::new(format!("expected `{}`", val.ty()), name_span);
+                let fst = DiagnosticLabel::new(format!("expected {}", val.ty()), name_span);
                 let snd = DiagnosticLabel::new(
-                    format!("this has type `{}`", err.constr().rhs()),
+                    format!("this has type {}", err.constr().rhs()),
                     err.constr().span(),
                 );
                 let trd = DiagnosticLabel::new("expected due to this", val.span());
 
                 IsaError::new("type mismatch", fst, vec![snd, trd])
-                    .with_note("`let` bind should have same type as `val` declaration")
+                    .with_note("let bind should have same type as val declaration")
             })?;
 
             expr.substitute_many(&subs);
@@ -471,6 +468,7 @@ impl Checker {
             UntypedPatKind::Unit => Ok(TypedPat::new(TypedPatKind::Unit, span, Ty::Unit)),
             UntypedPatKind::Int(i) => Ok(TypedPat::new(TypedPatKind::Int(i), span, Ty::Int)),
             UntypedPatKind::Bool(b) => Ok(TypedPat::new(TypedPatKind::Bool(b), span, Ty::Bool)),
+            UntypedPatKind::Char(c) => Ok(TypedPat::new(TypedPatKind::Char(c), span, Ty::Char)),
             UntypedPatKind::Constructor { name, args } => {
                 let ctor = match name {
                     PathIdent::Module(module) => self
@@ -519,7 +517,7 @@ impl Checker {
 
                 let subs = self.unify(c).map_err(|err| {
                     IsaError::from(err).with_label(DiagnosticLabel::new(
-                        format!("constructor is of type `{}`", ctor.ty()),
+                        format!("constructor is of type {}", ctor.ty()),
                         ctor.span(),
                     ))
                 })?;
@@ -544,6 +542,12 @@ impl Checker {
             UntypedPatKind::IntRange(range) => {
                 Ok(TypedPat::new(TypedPatKind::IntRange(range), span, Ty::Int))
             }
+
+            UntypedPatKind::CharRange(range) => Ok(TypedPat::new(
+                TypedPatKind::CharRange(range),
+                span,
+                Ty::Char,
+            )),
         }
     }
 
@@ -598,13 +602,13 @@ impl Checker {
 
             let (snd, note) = if is_pat {
                 let snd = DiagnosticLabel::new("expected due to this pattern", expr.span);
-                (snd, "`match` patterns should have same type as scrutinee")
+                (snd, "match patterns should have same type as scrutinee")
             } else {
                 let snd = DiagnosticLabel::new(
                     "expected due to this",
                     typed_arms.first().unwrap().expr().span,
                 );
-                (snd, "`match` arms should have same type")
+                (snd, "match arms should have same type")
             };
 
             IsaError::from(err).with_label(snd).with_note(note)
@@ -646,7 +650,7 @@ impl Checker {
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
-                        "operator `{op}` expects operands of type `{}`",
+                        "operator {op} expects operands of type {}",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -669,7 +673,7 @@ impl Checker {
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
-                        "operator `{op}` expects operands of type `{}`",
+                        "operator {op} expects operands of type {}",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -692,7 +696,7 @@ impl Checker {
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
-                        "operator `{op}` expects operands of type `{}`",
+                        "operator {op} expects operands of type {}",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -724,7 +728,7 @@ impl Checker {
         let constr = Constraint::new(ty.clone(), expr.ty.clone(), expr.span);
 
         let subs = self.unify(constr).map_err(|err| {
-            let note = format!("{op} operates on `{ty}`");
+            let note = format!("{op} operates on {ty}");
             IsaError::from(err).with_note(note)
         })?;
 
@@ -971,6 +975,8 @@ impl Checker {
             UntypedExprKind::Int(i) => Ok(TypedExpr::new(TypedExprKind::Int(i), span, Ty::Int)),
 
             UntypedExprKind::Bool(b) => Ok(TypedExpr::new(TypedExprKind::Bool(b), span, Ty::Bool)),
+
+            UntypedExprKind::Char(c) => Ok(TypedExpr::new(TypedExprKind::Char(c), span, Ty::Char)),
 
             UntypedExprKind::Ident(id) => {
                 let t = self

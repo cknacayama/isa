@@ -9,15 +9,22 @@ use super::types::Ty;
 use crate::global::Symbol;
 use crate::span::Span;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LexError {
     InvalidChar(char),
+    UnterminatedChar,
+    EmptyChar,
+    UnrecognizedEscape,
 }
 
 impl Display for LexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidChar(c) => write!(f, "invalid character '{c}'"),
+            Self::UnterminatedChar => write!(f, "unterminated character"),
+            Self::EmptyChar => write!(f, "empty character"),
+            Self::UnrecognizedEscape => write!(f, "unrecognized escape sequence"),
         }
     }
 }
@@ -101,7 +108,7 @@ impl Display for InferErrorKind {
             Self::Unbound(id) => write!(f, "unbound identifier: {id}"),
             Self::UnboundModule(module) => write!(f, "unbound module: {module}"),
             Self::NotConstructor(name) => write!(f, "'{name}' is not a constructor"),
-            Self::Kind(ty) => write!(f, "`{ty}` is not of kind *"),
+            Self::Kind(ty) => write!(f, "{ty} is not of kind *"),
         }
     }
 }
@@ -179,19 +186,19 @@ impl From<InferError> for IsaError {
     fn from(value: InferError) -> Self {
         match value.kind() {
             InferErrorKind::Unbound(symbol) => {
-                let message = format!("undefined identifier `{symbol}`");
+                let message = format!("undefined identifier {symbol}");
                 let label = DiagnosticLabel::new("not previously defined", value.span());
                 Self::new(message, label, Vec::new())
             }
             InferErrorKind::UnboundModule(symbol) => {
                 let label = DiagnosticLabel::new(
-                    format!("module`{symbol}` not previously defined"),
+                    format!("module{symbol} not previously defined"),
                     value.span(),
                 );
                 Self::new("undefined module", label, Vec::new())
             }
             InferErrorKind::NotConstructor(ty) => {
-                let message = format!("`{ty}` is not a constructor");
+                let message = format!("{ty} is not a constructor");
                 let label = DiagnosticLabel::new("expected a value constructor", value.span());
                 Self::new(message, label, Vec::new())
             }
@@ -208,7 +215,7 @@ impl From<Uninferable> for IsaError {
     fn from(value: Uninferable) -> Self {
         let fst = DiagnosticLabel::new(
             format!(
-                "expected `{}`, got `{}`",
+                "expected {}, got {}",
                 value.constr().lhs(),
                 value.constr().rhs()
             ),

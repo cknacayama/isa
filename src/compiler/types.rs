@@ -9,6 +9,7 @@ pub enum Ty {
     Unit,
     Int,
     Bool,
+    Char,
     Var(u64),
     Fn { param: Rc<Ty>, ret: Rc<Ty> },
     Scheme { quant: Rc<[u64]>, ty: Rc<Ty> },
@@ -28,18 +29,20 @@ impl Ty {
         }
     }
 
-    /// Returns `true` if the ty is [`Fn`].
-    ///
-    /// [`Fn`]: Ty::Fn
     #[must_use]
     pub const fn is_fn(&self) -> bool {
         matches!(self, Self::Fn { .. })
     }
 
-    fn is_simple_format(&self) -> bool {
+    #[must_use]
+    pub const fn is_char(&self) -> bool {
+        matches!(self, Self::Char)
+    }
+
+    fn is_simple_fmt(&self) -> bool {
         match self {
             Self::Named { args, .. } => args.is_empty(),
-            Self::Unit | Self::Int | Self::Bool | Self::Var(_) => true,
+            Self::Unit | Self::Int | Self::Bool | Self::Char | Self::Var(_) => true,
             Self::Fn { .. } | Self::Scheme { .. } => false,
         }
     }
@@ -64,7 +67,7 @@ impl Ty {
     #[must_use]
     pub fn free_type_variables(&self) -> Vec<u64> {
         match self {
-            Self::Unit | Self::Int | Self::Bool => Vec::new(),
+            Self::Unit | Self::Int | Self::Bool | Self::Char => Vec::new(),
             Self::Named { args, .. } if args.is_empty() => Vec::new(),
             Self::Var(id) => vec![*id],
             Self::Fn { param, ret } => {
@@ -120,7 +123,7 @@ impl Substitute for Ty {
                 }
             }
 
-            Self::Unit | Self::Int | Self::Bool | Self::Var(_) => (),
+            Self::Unit | Self::Int | Self::Bool | Self::Char | Self::Var(_) => (),
         }
 
         if let Some(ty) = subs(self) {
@@ -165,7 +168,7 @@ impl Substitute for Rc<Ty> {
                 let args = Rc::from(new_args);
                 Ty::Named { name: *name, args }
             }
-            Ty::Unit | Ty::Int | Ty::Bool | Ty::Var(_) => {
+            Ty::Unit | Ty::Int | Ty::Bool | Ty::Char | Ty::Var(_) => {
                 if let Some(new) = subs(self) {
                     *self = Self::new(new);
                 }
@@ -188,8 +191,9 @@ impl Display for Ty {
             Self::Unit => write!(f, "()"),
             Self::Int => write!(f, "int"),
             Self::Bool => write!(f, "bool"),
+            Self::Char => write!(f, "char"),
             Self::Fn { param, ret } => {
-                if param.is_simple_format() {
+                if param.is_simple_fmt() {
                     write!(f, "{param}")?;
                 } else {
                     write!(f, "({param})")?;
@@ -206,7 +210,7 @@ impl Display for Ty {
             Self::Named { name, args } => {
                 write!(f, "{name}")?;
                 for arg in args.iter() {
-                    if arg.is_simple_format() {
+                    if arg.is_simple_fmt() {
                         write!(f, " {arg}")?;
                     } else {
                         write!(f, " ({arg})")?;

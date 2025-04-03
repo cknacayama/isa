@@ -111,8 +111,27 @@ impl<'a> Lexer<'a> {
         self.make_token(TokenKind::Integer(s.parse().unwrap()))
     }
 
+    fn character(&mut self) -> LexResult<Token> {
+        let c = self
+            .bump()
+            .ok_or_else(|| self.make_err(LexError::UnterminatedChar))?;
+
+        let c = match c {
+            '\\' => todo!(),
+            '\'' => return Err(self.make_err(LexError::EmptyChar)),
+            _ if c.is_ascii() => c as u8,
+            _ => return Err(self.make_err(LexError::InvalidChar(c))),
+        };
+
+        if self.match_cur('\'') {
+            Ok(self.make_token(TokenKind::Char(c)))
+        } else {
+            Err(self.make_err(LexError::UnterminatedChar))
+        }
+    }
+
     fn identifier_or_keyword(&mut self) -> Token {
-        self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_' || c == '\'');
+        self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_');
         let s = &self.input[self.start..self.cur];
         TokenKind::keyword(s).map_or_else(
             || self.make_token(TokenKind::Ident(global::intern_symbol(s))),
@@ -167,7 +186,8 @@ impl<'a> Lexer<'a> {
             '<' => token!(Lt, '=' => Le),
             '>' => token!(Gt, '=' => Ge),
             '0'..='9' => Some(Ok(self.number())),
-            '\'' | '_' | 'a'..='z' | 'A'..='Z' => Some(Ok(self.identifier_or_keyword())),
+            '\'' => Some(self.character()),
+            '_' | 'a'..='z' | 'A'..='Z' => Some(Ok(self.identifier_or_keyword())),
             '.' => match (self.peek(), self.peek_next()) {
                 (Some('.'), Some('=')) => {
                     self.bump_twice();

@@ -5,7 +5,7 @@ use super::ast::untyped::{
     UntypedExpr, UntypedExprKind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat,
     UntypedPatKind,
 };
-use super::ast::{BinOp, Constructor, IntRangePat, ModuleIdent, PathIdent, UnOp};
+use super::ast::{BinOp, Constructor, ModuleIdent, PathIdent, RangePat, UnOp};
 use super::error::ParseError;
 use super::lexer::Lexer;
 use super::token::{Token, TokenKind};
@@ -442,6 +442,7 @@ impl<'a> Parser<'a> {
                 }
             }
             TokenKind::Integer(lit) => Ok(UntypedExpr::untyped(UntypedExprKind::Int(lit), span)),
+            TokenKind::Char(lit) => Ok(UntypedExpr::untyped(UntypedExprKind::Char(lit), span)),
             TokenKind::Ident(id) => {
                 if self.next_if_match(TokenKind::Dot).is_some() {
                     let member = self.expect_id()?;
@@ -484,6 +485,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::KwInt => Ok(Spanned::new(Ty::Int, span)),
             TokenKind::KwBool => Ok(Spanned::new(Ty::Bool, span)),
+            TokenKind::KwChar => Ok(Spanned::new(Ty::Char, span)),
             TokenKind::Ident(name) => {
                 let (path, span) = self.parse_path(name, span)?;
                 Ok(Spanned::new(
@@ -654,6 +656,20 @@ impl<'a> Parser<'a> {
         ))
     }
 
+    fn try_parse_char(&mut self) -> Option<ParseResult<Spanned<u8>>> {
+        match self.peek()?.copied() {
+            Ok(Token {
+                data: TokenKind::Char(c),
+                span,
+            }) => {
+                self.next();
+                Some(Ok(Spanned::new(c, span)))
+            }
+            Err(err) => Some(Err(err)),
+            _ => None,
+        }
+    }
+
     fn try_parse_integer(&mut self) -> Option<ParseResult<Spanned<i64>>> {
         if let Some(span) = self.next_if_match(TokenKind::Minus) {
             let mut int = match self.expect_integer() {
@@ -677,19 +693,19 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_range_pat(&mut self, lhs: i64, lhs_span: Span) -> ParseResult<UntypedPat> {
+    fn parse_int_range_pat(&mut self, lhs: i64, lhs_span: Span) -> ParseResult<UntypedPat> {
         if let Some(span) = self.next_if_match(TokenKind::DotDot) {
             match self.try_parse_integer() {
                 Some(rhs) => {
                     let rhs = rhs?;
                     let span = lhs_span.union(rhs.span);
                     Ok(UntypedPat::untyped(
-                        UntypedPatKind::IntRange(IntRangePat::Exclusive(lhs, rhs.data)),
+                        UntypedPatKind::IntRange(RangePat::Exclusive(lhs, rhs.data)),
                         span,
                     ))
                 }
                 None => Ok(UntypedPat::untyped(
-                    UntypedPatKind::IntRange(IntRangePat::From(lhs)),
+                    UntypedPatKind::IntRange(RangePat::From(lhs)),
                     lhs_span.union(span),
                 )),
             }
@@ -699,7 +715,7 @@ impl<'a> Parser<'a> {
             })??;
             let span = lhs_span.union(rhs.span);
             Ok(UntypedPat::untyped(
-                UntypedPatKind::IntRange(IntRangePat::Inclusive(lhs, rhs.data)),
+                UntypedPatKind::IntRange(RangePat::Inclusive(lhs, rhs.data)),
                 span,
             ))
         } else {
@@ -707,30 +723,82 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_char_range_pat(&mut self, lhs: u8, lhs_span: Span) -> ParseResult<UntypedPat> {
+        if let Some(span) = self.next_if_match(TokenKind::DotDot) {
+            match self.try_parse_char() {
+                Some(rhs) => {
+                    let rhs = rhs?;
+                    let span = lhs_span.union(rhs.span);
+                    Ok(UntypedPat::untyped(
+                        UntypedPatKind::CharRange(RangePat::Exclusive(lhs, rhs.data)),
+                        span,
+                    ))
+                }
+                None => Ok(UntypedPat::untyped(
+                    UntypedPatKind::CharRange(RangePat::From(lhs)),
+                    lhs_span.union(span),
+                )),
+            }
+        } else if let Some(span) = self.next_if_match(TokenKind::DotDotEq) {
+            let rhs = self.try_parse_char().ok_or_else(|| {
+                Spanned::new(ParseError::ExpectedPattern(TokenKind::DotDotEq), span)
+            })??;
+            let span = lhs_span.union(rhs.span);
+            Ok(UntypedPat::untyped(
+                UntypedPatKind::CharRange(RangePat::Inclusive(lhs, rhs.data)),
+                span,
+            ))
+        } else {
+            Ok(UntypedPat::untyped(UntypedPatKind::Char(lhs), lhs_span))
+        }
+    }
+
     fn parse_simple_pat(&mut self) -> ParseResult<UntypedPat> {
         if let Some(int) = self.try_parse_integer() {
             let int = int?;
-            return self.parse_range_pat(int.data, int.span);
+            return self.parse_int_range_pat(int.data, int.span);
+        }
+        if let Some(c) = self.try_parse_char() {
+            let c = c?;
+            return self.parse_char_range_pat(c.data, c.span);
         }
 
         let Token { data, span } = self.next_or_eof()?;
 
         match data {
             TokenKind::DotDot => {
-                let int = self.expect_integer()?;
-                let span = span.union(int.span);
-                Ok(UntypedPat::untyped(
-                    UntypedPatKind::IntRange(IntRangePat::To(int.data)),
-                    span,
-                ))
+                if let Some(char) = self.try_parse_char() {
+                    let char = char?;
+                    let span = span.union(char.span);
+                    Ok(UntypedPat::untyped(
+                        UntypedPatKind::CharRange(RangePat::To(char.data)),
+                        span,
+                    ))
+                } else {
+                    let int = self.expect_integer()?;
+                    let span = span.union(int.span);
+                    Ok(UntypedPat::untyped(
+                        UntypedPatKind::IntRange(RangePat::To(int.data)),
+                        span,
+                    ))
+                }
             }
             TokenKind::DotDotEq => {
-                let int = self.expect_integer()?;
-                let span = span.union(int.span);
-                Ok(UntypedPat::untyped(
-                    UntypedPatKind::IntRange(IntRangePat::ToInclusive(int.data)),
-                    span,
-                ))
+                if let Some(char) = self.try_parse_char() {
+                    let char = char?;
+                    let span = span.union(char.span);
+                    Ok(UntypedPat::untyped(
+                        UntypedPatKind::CharRange(RangePat::ToInclusive(char.data)),
+                        span,
+                    ))
+                } else {
+                    let int = self.expect_integer()?;
+                    let span = span.union(int.span);
+                    Ok(UntypedPat::untyped(
+                        UntypedPatKind::IntRange(RangePat::ToInclusive(int.data)),
+                        span,
+                    ))
+                }
             }
             TokenKind::KwTrue => Ok(UntypedPat::untyped(UntypedPatKind::Bool(true), span)),
             TokenKind::KwFalse => Ok(UntypedPat::untyped(UntypedPatKind::Bool(false), span)),

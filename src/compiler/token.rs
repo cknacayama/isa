@@ -38,6 +38,7 @@ pub enum TokenKind {
 
     Integer(i64),
     Ident(Symbol),
+    Char(u8),
 
     KwTrue,
     KwFalse,
@@ -52,6 +53,7 @@ pub enum TokenKind {
 
     KwInt,
     KwBool,
+    KwChar,
 
     KwAnd,
     KwOr,
@@ -87,6 +89,7 @@ impl TokenKind {
             "module" => Some(Self::KwModule),
             "int" => Some(Self::KwInt),
             "bool" => Some(Self::KwBool),
+            "char" => Some(Self::KwChar),
             "_" => Some(Self::Underscore),
             _ => None,
         }
@@ -122,6 +125,7 @@ impl Display for TokenKind {
             Self::Arrow => write!(f, "->"),
             Self::Integer(v) => write!(f, "{v}"),
             Self::Ident(v) => write!(f, "{v}"),
+            Self::Char(v) => write!(f, "\'{v}\'"),
             Self::KwTrue => write!(f, "true"),
             Self::KwFalse => write!(f, "false"),
             Self::KwType => write!(f, "type"),
@@ -133,6 +137,7 @@ impl Display for TokenKind {
             Self::KwModule => write!(f, "module"),
             Self::KwInt => write!(f, "int"),
             Self::KwBool => write!(f, "bool"),
+            Self::KwChar => write!(f, "char"),
             Self::KwAnd => write!(f, "and"),
             Self::KwOr => write!(f, "or"),
             Self::KwNot => write!(f, "not"),

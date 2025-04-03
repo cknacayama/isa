@@ -1,24 +1,24 @@
 module List
-    type List 'a = Nil | Cons 'a (List 'a);
+    type List a = Nil | Cons a (List a);
     
-    val return 'a: 'a -> List 'a;
+    val return a: a -> List a;
     let return v = Cons v Nil;
 
-    val lenght 'a: List 'a -> int;
+    val lenght a: List a -> int;
     let lenght list =
         match list with
             Nil -> 0,
             Cons _ list -> 1 + lenght list,
     ;
 
-    val head 'a: List 'a -> Option.Option 'a;
+    val head a: List a -> Option.Option a;
     let head list =
         match list with
             Nil -> Option.None,
             Cons v _ -> Option.Some v,
         ;
 
-    val tail 'a: List 'a -> Option.Option 'a;
+    val tail a: List a -> Option.Option a;
     let tail list =
         match list with
             Nil -> Option.None,
@@ -28,12 +28,12 @@ module List
 
 module Option
 
-    type Option 'a = None | Some 'a;
+    type Option a = None | Some a;
     
-    val return 'a: 'a -> Option 'a;
+    val return a: a -> Option a;
     let return a = Some a;
     
-    val bind 'a 'b: Option 'a -> ('a -> Option 'b) -> Option 'b;
+    val bind a b: Option a -> (a -> Option b) -> Option b;
     let bind opt f = 
         match opt with
             Some a -> f a,

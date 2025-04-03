@@ -11,6 +11,18 @@ pub trait CtxFmt {
     type Ctx;
 
     fn ctx_fmt(&self, f: &mut impl fmt::Write, ctx: &Self::Ctx) -> fmt::Result;
+    fn is_simple_fmt(&self) -> bool;
+    fn ctx_simple_fmt(&self, f: &mut impl fmt::Write, ctx: &Self::Ctx) -> fmt::Result {
+        let simple = self.is_simple_fmt();
+        if !simple {
+            write!(f, "(")?;
+        }
+        self.ctx_fmt(f, ctx)?;
+        if !simple {
+            write!(f, ")")?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -100,7 +112,7 @@ impl TypeCtx {
             .iter()
             .copied()
             .zip(args.iter())
-            .filter_map(|(ty, arg)| Some(Subs::new(ty, arg.clone())))
+            .map(|(ty, arg)| Subs::new(ty, arg.clone()))
             .collect::<Vec<_>>();
 
         let mut ctor = data.constructors.swap_remove(idx);

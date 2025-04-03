@@ -92,6 +92,7 @@ impl TokenKind {
             Self::LParen
                 | Self::Integer(_)
                 | Self::Ident(_)
+                | Self::Char(_)
                 | Self::KwTrue
                 | Self::KwFalse
                 | Self::KwLet
@@ -107,7 +108,7 @@ impl TokenKind {
     pub const fn can_start_type(&self) -> bool {
         matches!(
             self,
-            Self::LParen | Self::Ident(_) | Self::KwInt | Self::KwBool
+            Self::LParen | Self::Ident(_) | Self::KwInt | Self::KwBool | Self::KwChar
         )
     }
 
@@ -121,6 +122,7 @@ impl TokenKind {
                 | Self::Underscore
                 | Self::Ident(_)
                 | Self::Integer(_)
+                | Self::Char(_)
                 | Self::KwTrue
                 | Self::KwFalse
                 | Self::KwNot
@@ -230,22 +232,37 @@ impl Display for PathIdent {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum IntRangePat {
-    From(i64),
-    To(i64),
-    ToInclusive(i64),
-    Exclusive(i64, i64),
-    Inclusive(i64, i64),
+pub enum RangePat<T> {
+    From(T),
+    To(T),
+    ToInclusive(T),
+    Exclusive(T, T),
+    Inclusive(T, T),
 }
 
-impl Display for IntRangePat {
+impl<T> RangePat<T> {
+    pub fn map<U, F>(self, f: F) -> RangePat<U>
+    where
+        F: Fn(T) -> U,
+    {
+        match self {
+            Self::From(lo) => RangePat::From(f(lo)),
+            Self::To(hi) => RangePat::To(f(hi)),
+            Self::ToInclusive(hi) => RangePat::ToInclusive(f(hi)),
+            Self::Exclusive(lo, hi) => RangePat::Exclusive(f(lo), f(hi)),
+            Self::Inclusive(lo, hi) => RangePat::Inclusive(f(lo), f(hi)),
+        }
+    }
+}
+
+impl<T: Debug> Display for RangePat<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::From(i) => write!(f, "{i}.."),
-            Self::To(i) => write!(f, "..{i}"),
-            Self::ToInclusive(i) => write!(f, "..={i}"),
-            Self::Exclusive(lo, hi) => write!(f, "{lo}..{hi}"),
-            Self::Inclusive(lo, hi) => write!(f, "{lo}..={hi}"),
+            Self::From(i) => write!(f, "{i:?}.."),
+            Self::To(i) => write!(f, "..{i:?}"),
+            Self::ToInclusive(i) => write!(f, "..={i:?}"),
+            Self::Exclusive(lo, hi) => write!(f, "{lo:?}..{hi:?}"),
+            Self::Inclusive(lo, hi) => write!(f, "{lo:?}..={hi:?}"),
         }
     }
 }
@@ -262,7 +279,11 @@ pub enum PatKind<T> {
 
     Int(i64),
 
-    IntRange(IntRangePat),
+    Char(u8),
+
+    IntRange(RangePat<i64>),
+
+    CharRange(RangePat<u8>),
 
     Bool(bool),
 
@@ -311,7 +332,9 @@ impl<T> Pat<T> {
             }
             PatKind::Unit => write!(f, "()"),
             PatKind::Int(i) => write!(f, "{i}"),
+            PatKind::Char(c) => write!(f, "{:?}", *c as char),
             PatKind::IntRange(i) => write!(f, "{i}"),
+            PatKind::CharRange(range) => write!(f, "{}", range.map(|c| c as char)),
             PatKind::Bool(b) => write!(f, "{b}"),
             PatKind::Constructor { name, args } => {
                 write!(f, "({name}")?;
@@ -403,6 +426,8 @@ pub enum ExprKind<T> {
     Int(i64),
 
     Bool(bool),
+
+    Char(u8),
 
     Ident(Symbol),
 
@@ -500,6 +525,7 @@ impl<T: Display> Expr<T> {
             ExprKind::Unit => write!(f, "()"),
             ExprKind::Int(i) => write!(f, "{i}"),
             ExprKind::Bool(b) => write!(f, "{b}"),
+            ExprKind::Char(c) => write!(f, "\'{}\'", *c as char),
             ExprKind::Ident(id) => write!(f, "{id}"),
             ExprKind::Bin { op, lhs, rhs } => {
                 write!(f, "(")?;
@@ -729,6 +755,7 @@ impl Substitute for Expr<Ty> {
             ExprKind::Unit
             | ExprKind::Int(_)
             | ExprKind::Bool(_)
+            | ExprKind::Char(_)
             | ExprKind::Ident(_)
             | ExprKind::ModuleIdent(_) => (),
         }
@@ -768,7 +795,9 @@ impl Substitute for Pat<Ty> {
             | PatKind::Int(_)
             | PatKind::Bool(_)
             | PatKind::Ident(_)
-            | PatKind::IntRange(_) => (),
+            | PatKind::Char(_)
+            | PatKind::IntRange(_)
+            | PatKind::CharRange(_) => (),
         }
         self.ty.substitute(subs);
     }

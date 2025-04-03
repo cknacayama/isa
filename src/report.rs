@@ -37,10 +37,15 @@ impl MatchNonExhaustive {
         } else {
             let _ = write!(out, "pattern");
         }
+        let mut first = true;
         for w in self.witnessess() {
-            let _ = write!(out, " `");
+            if first {
+                first = false;
+            } else {
+                let _ = write!(out, ",");
+            }
+            let _ = write!(out, " ");
             let _ = w.ctx_fmt(&mut out, ctx);
-            let _ = write!(out, "`");
         }
         let _ = write!(out, " not covered");
         out

@@ -16,6 +16,19 @@ impl CtxFmt for &WitnessPat {
     fn ctx_fmt(&self, f: &mut impl std::fmt::Write, ctx: &Self::Ctx) -> std::fmt::Result {
         self.ctor.fmt_fields(f, &self.ty, self.iter_fields(), ctx)
     }
+
+    fn is_simple_fmt(&self) -> bool {
+        match self.ctor {
+            Ctor::Missing
+            | Ctor::Wildcard
+            | Ctor::NonExhaustive
+            | Ctor::Bool(_)
+            | Ctor::IntRange(_) => true,
+
+            Ctor::Type(_) => self.fields.is_empty(),
+            Ctor::Or => false,
+        }
+    }
 }
 
 impl WitnessPat {

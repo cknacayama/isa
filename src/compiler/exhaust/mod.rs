@@ -7,7 +7,7 @@ use ctor::{Ctor, CtorSet, IntRange, MaybeInfinite};
 use pat::{Pat, PatMatrix, PatMatrixRow, PatOrWild, PatVector, WitnessPat};
 
 use super::ast::typed::{TypedExpr, TypedPat, TypedPatKind};
-use super::ast::{ExprKind, IntRangePat, MatchArm};
+use super::ast::{ExprKind, MatchArm, RangePat};
 use super::ctx::TypeCtx;
 use super::error::MatchNonExhaustive;
 use super::types::Ty;
@@ -27,8 +27,9 @@ impl<'a> Ctx<'a> {
             Ty::Unit => Some(CtorSet::Type {
                 variants: NonZeroUsize::new(1).unwrap(),
             }),
-            Ty::Int => Some(CtorSet::Integers),
+            Ty::Int => Some(CtorSet::Integers(IntRange::infinite())),
             Ty::Bool => Some(CtorSet::Bool),
+            Ty::Char => Some(CtorSet::Integers(IntRange::character())),
             Ty::Scheme { ty, .. } => self.ctors_for_ty(ty),
             Ty::Named { .. } => {
                 let variants = self.ctx.get_constructors(ty).len();
@@ -101,6 +102,10 @@ impl Pat {
                 Ctor::IntRange(IntRange::from_singleton(MaybeInfinite::Finite(*i))),
                 Vec::new(),
             ),
+            TypedPatKind::Char(c) => Self::new(
+                Ctor::IntRange(IntRange::from_singleton(MaybeInfinite::Finite(i64::from(*c)))),
+                Vec::new(),
+            ),
             TypedPatKind::Bool(b) => Self::new(Ctor::Bool(*b), Vec::new()),
             TypedPatKind::Constructor { name, args } => {
                 let fields = args
@@ -119,30 +124,59 @@ impl Pat {
                 Ctor::IntRange(IntRange::from_int_range_pat(*int_range_pat)),
                 Vec::new(),
             ),
+            TypedPatKind::CharRange(char_range_pat) => Self::new(
+                Ctor::IntRange(IntRange::from_char_range_pat(*char_range_pat)),
+                Vec::new(),
+            ),
         }
     }
 }
 
 impl IntRange {
-    fn from_int_range_pat(range: IntRangePat) -> Self {
+    fn from_char_range_pat(range: RangePat<u8>) -> Self {
         match range {
-            IntRangePat::From(i) => Self {
+            RangePat::From(i) => Self {
+                lo: MaybeInfinite::Finite(i64::from(i)),
+                hi: MaybeInfinite::Finite(i64::from(u8::MAX)),
+            },
+            RangePat::To(i) => Self {
+                lo: MaybeInfinite::Finite(0),
+                hi: MaybeInfinite::Finite(i64::from(i)),
+            },
+            RangePat::ToInclusive(i) => Self {
+                lo: MaybeInfinite::Finite(0),
+                hi: MaybeInfinite::Finite(i64::from(i)).plus_one(),
+            },
+            RangePat::Exclusive(lo, hi) => Self {
+                lo: MaybeInfinite::Finite(i64::from(lo)),
+                hi: MaybeInfinite::Finite(i64::from(hi)),
+            },
+            RangePat::Inclusive(lo, hi) => Self {
+                lo: MaybeInfinite::Finite(i64::from(lo)),
+                hi: MaybeInfinite::Finite(i64::from(hi)).plus_one(),
+            },
+        }
+    }
+
+    fn from_int_range_pat(range: RangePat<i64>) -> Self {
+        match range {
+            RangePat::From(i) => Self {
                 lo: MaybeInfinite::Finite(i),
                 hi: MaybeInfinite::PosInfinity,
             },
-            IntRangePat::To(i) => Self {
+            RangePat::To(i) => Self {
                 lo: MaybeInfinite::NegInfinity,
                 hi: MaybeInfinite::Finite(i),
             },
-            IntRangePat::ToInclusive(i) => Self {
+            RangePat::ToInclusive(i) => Self {
                 lo: MaybeInfinite::NegInfinity,
                 hi: MaybeInfinite::Finite(i).plus_one(),
             },
-            IntRangePat::Exclusive(lo, hi) => Self {
+            RangePat::Exclusive(lo, hi) => Self {
                 lo: MaybeInfinite::Finite(lo),
                 hi: MaybeInfinite::Finite(hi),
             },
-            IntRangePat::Inclusive(lo, hi) => Self {
+            RangePat::Inclusive(lo, hi) => Self {
                 lo: MaybeInfinite::Finite(lo),
                 hi: MaybeInfinite::Finite(hi).plus_one(),
             },
