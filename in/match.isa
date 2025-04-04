@@ -14,6 +14,7 @@ module Main
     val bar a: Option.Option a -> Option.Option a -> bool;
     let bar = fn a -> fn b ->
         match (a,b) with
-            (Option.Some a, Option.Some b) -> a = b,
+            (Option.Some 10, Option.Some _) -> true,
             (Option.None, Option.None) -> false,
+            _ -> false,
         ;

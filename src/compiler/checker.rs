@@ -266,7 +266,7 @@ impl Checker {
             })
             .collect::<IsaResult<Box<_>>>()?;
 
-        let expr = if typed_params.is_empty() {
+        let mut expr = if typed_params.is_empty() {
             self.check(expr)?
         } else {
             self.insert_variable(name, val.ty().clone(), name_span);
@@ -283,25 +283,40 @@ impl Checker {
 
         self.env.pop_scope();
 
-        let ty = if val.ty().is_scheme() {
-            self.env.generalize(expr.ty.clone())
+        let ty = expr.ty.clone();
+
+        let val_ty = if let Ty::Scheme { ty, .. } = val.ty() {
+            ty.as_ref().clone()
         } else {
-            expr.ty.clone()
+            val.ty().clone()
         };
 
-        let constr = Constraint::new(val.ty().clone(), ty.clone(), expr.span);
+        let constr = Constraint::new(val_ty, ty, expr.span);
 
-        unify(constr).map_err(|err| {
+        let val_error = |ty: &Ty, span| {
             let fst = DiagnosticLabel::new(format!("expected {}", val.ty()), name_span);
-            let snd = DiagnosticLabel::new(
-                format!("this has type {}", err.constr().rhs()),
-                err.constr().span(),
-            );
+            let snd = DiagnosticLabel::new(format!("this has type {ty}"), span);
             let trd = DiagnosticLabel::new("expected due to this", val.span());
 
             IsaError::new("type mismatch", fst, vec![snd, trd])
                 .with_note("let bind should have same type as val declaration")
-        })?;
+        };
+
+        let subs = unify(constr)
+            .map_err(|err| val_error(err.constr().rhs(), err.constr().span()))
+            .and_then(|subs| match val.ty() {
+                Ty::Scheme { quant, .. } if subs.iter().any(|s| quant.contains(&s.old())) => {
+                    Err(val_error(&expr.ty, expr.span))
+                }
+                _ => Ok(subs),
+            })?;
+
+        expr.ty.substitute_many(&subs);
+        for p in &mut typed_params {
+            p.ty.substitute_many(&subs);
+        }
+
+        let ty = self.env.generalize(expr.ty.clone());
 
         Ok((ty, expr, typed_params))
     }
@@ -314,8 +329,12 @@ impl Checker {
         expr: UntypedExpr,
     ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>)> {
         let module_id = ModuleIdent::new(self.cur_module, name);
-        if let Ok(val) = self.get_val_from_module(module_id).cloned() {
-            return self.check_let_bind_with_val(name, name_span, params, expr, &val);
+        match self.get_val_from_module(module_id) {
+            Ok(val) if self.env.at_module_scope() => {
+                let val = val.clone();
+                return self.check_let_bind_with_val(name, name_span, params, expr, &val);
+            }
+            _ => (),
         }
 
         self.env.push_scope();
@@ -484,6 +503,75 @@ impl Checker {
         TypedExpr::new(kind, span, Ty::Unit)
     }
 
+    fn check_constructor_pat(
+        &mut self,
+        name: PathIdent,
+        args: Box<[UntypedPat]>,
+        span: Span,
+    ) -> IsaResult<TypedPat> {
+        let ctor = match name {
+            PathIdent::Module(module) => self
+                .env
+                .get_constructor_from_module(module)
+                .map_err(|err| InferError::new(err, span))?,
+
+            PathIdent::Ident(name) => match self.get_constructor(name) {
+                Some(ctor) => ctor,
+                None if args.is_empty() => {
+                    let var = self.gen_type_var();
+                    self.insert_variable(name, var.clone(), span);
+                    return Ok(TypedPat::new(TypedPatKind::Ident(name), span, var));
+                }
+                None => {
+                    return Err(InferError::new(InferErrorKind::Unbound(name), span).into());
+                }
+            },
+        };
+        let ctor = ctor.clone();
+
+        let mut ty = self.instantiate(ctor.ty().clone());
+
+        let mut c = ConstraintSet::new();
+        let mut typed_args = Vec::new();
+
+        for arg in args {
+            let arg = self.check_pat(arg)?;
+            let Ty::Fn { param, ret } = &ty else {
+                return Err(InferError::new(InferErrorKind::NotConstructor(ty), span).into());
+            };
+            c.push(Constraint::new(
+                param.as_ref().clone(),
+                arg.ty.clone(),
+                arg.span,
+            ));
+            ty = ret.as_ref().clone();
+            typed_args.push(arg);
+        }
+
+        if ty.is_fn() {
+            return Err(InferError::new(InferErrorKind::Kind(ty), span).into());
+        }
+
+        let subs = self.unify(c).map_err(|err| {
+            IsaError::from(err).with_label(DiagnosticLabel::new(
+                format!("constructor is of type {}", ctor.ty()),
+                ctor.span(),
+            ))
+        })?;
+
+        for arg in &mut typed_args {
+            arg.substitute_many(&subs);
+        }
+        ty.substitute_many(&subs);
+
+        let kind = TypedPatKind::Constructor {
+            name,
+            args: typed_args.into_boxed_slice(),
+        };
+
+        Ok(TypedPat::new(kind, span, ty))
+    }
+
     fn check_pat(&mut self, UntypedPat { kind, span, .. }: UntypedPat) -> IsaResult<TypedPat> {
         match kind {
             UntypedPatKind::Wild => {
@@ -543,69 +631,7 @@ impl Checker {
                 Ok(TypedPat::new(kind, span, ty))
             }
             UntypedPatKind::Constructor { name, args } => {
-                let ctor = match name {
-                    PathIdent::Module(module) => self
-                        .env
-                        .get_constructor_from_module(module)
-                        .map_err(|err| InferError::new(err, span))?,
-
-                    PathIdent::Ident(name) => match self.get_constructor(name) {
-                        Some(ctor) => ctor,
-                        None if args.is_empty() => {
-                            let var = self.gen_type_var();
-                            self.insert_variable(name, var.clone(), span);
-                            return Ok(TypedPat::new(TypedPatKind::Ident(name), span, var));
-                        }
-                        None => {
-                            return Err(InferError::new(InferErrorKind::Unbound(name), span).into());
-                        }
-                    },
-                };
-                let ctor = ctor.clone();
-
-                let mut ty = self.instantiate(ctor.ty().clone());
-
-                let mut c = ConstraintSet::new();
-                let mut typed_args = Vec::new();
-
-                for arg in args {
-                    let arg = self.check_pat(arg)?;
-                    let Ty::Fn { param, ret } = &ty else {
-                        return Err(
-                            InferError::new(InferErrorKind::NotConstructor(ty), span).into()
-                        );
-                    };
-                    c.push(Constraint::new(
-                        param.as_ref().clone(),
-                        arg.ty.clone(),
-                        arg.span,
-                    ));
-                    ty = ret.as_ref().clone();
-                    typed_args.push(arg);
-                }
-
-                if ty.is_fn() {
-                    return Err(InferError::new(InferErrorKind::Kind(ty), span).into());
-                }
-
-                let subs = self.unify(c).map_err(|err| {
-                    IsaError::from(err).with_label(DiagnosticLabel::new(
-                        format!("constructor is of type {}", ctor.ty()),
-                        ctor.span(),
-                    ))
-                })?;
-
-                for arg in &mut typed_args {
-                    arg.substitute_many(&subs);
-                }
-                ty.substitute_many(&subs);
-
-                let kind = TypedPatKind::Constructor {
-                    name,
-                    args: typed_args.into_boxed_slice(),
-                };
-
-                Ok(TypedPat::new(kind, span, ty))
+                self.check_constructor_pat(name, args, span)
             }
 
             UntypedPatKind::Ident(_) => {

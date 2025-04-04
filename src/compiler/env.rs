@@ -185,6 +185,14 @@ impl Env {
         self.env.pop()
     }
 
+    pub const fn at_module_scope(&self) -> bool {
+        self.scope_depth() == 2
+    }
+
+    pub const fn scope_depth(&self) -> usize {
+        self.env.len()
+    }
+
     fn free_type_variables(&self) -> FxHashSet<u64> {
         let mut free = FxHashSet::default();
         for t in self.env.iter().flat_map(FxHashMap::values) {

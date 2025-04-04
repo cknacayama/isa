@@ -19,6 +19,11 @@ impl Subs {
     pub const fn new(old: u64, new: Ty) -> Self {
         Self { old, new }
     }
+
+    #[must_use]
+    pub const fn old(&self) -> u64 {
+        self.old
+    }
 }
 
 pub trait Substitute {
@@ -169,7 +174,7 @@ where
                 lhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
                 rhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
             ) if lhs == rhs => {}
-            (Ty::Var(old), new) | (new, Ty::Var(old)) if !new.occurs(*old) => {
+            (new, Ty::Var(old)) | (Ty::Var(old), new) if !new.occurs(*old) => {
                 let s = Subs {
                     old: *old,
                     new: new.clone(),

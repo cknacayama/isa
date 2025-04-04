@@ -40,11 +40,6 @@ impl Ty {
         matches!(self, Self::Char)
     }
 
-    #[must_use]
-    pub const fn is_scheme(&self) -> bool {
-        matches!(self, Self::Scheme { .. })
-    }
-
     fn is_simple_fmt(&self) -> bool {
         match self {
             Self::Named { args, .. } => args.is_empty(),
@@ -72,39 +67,39 @@ impl Ty {
         }
     }
 
-    #[must_use]
-    pub fn free_type_variables(&self) -> Vec<u64> {
+    fn free_type_variables_inner(&self, free: &mut Vec<u64>) {
         match self {
-            Self::Unit | Self::Int | Self::Bool | Self::Char => Vec::new(),
-            Self::Named { args, .. } if args.is_empty() => Vec::new(),
-            Self::Var(id) => vec![*id],
+            Self::Unit | Self::Int | Self::Bool | Self::Char => (),
+            Self::Named { args, .. } if args.is_empty() => (),
+            Self::Var(id) if free.contains(id) => (),
+
+            Self::Var(id) => {
+                free.push(*id);
+            }
+
             Self::Fn { param, ret } => {
-                let mut param = param.free_type_variables();
-                for r in ret.free_type_variables() {
-                    if !param.contains(&r) {
-                        param.push(r);
-                    }
-                }
-                param
+                param.free_type_variables_inner(free);
+                ret.free_type_variables_inner(free);
             }
             Self::Scheme { quant, ty } => {
-                let mut ty = ty.free_type_variables();
-                ty.retain(|t| !quant.contains(t));
-                ty
+                ty.free_type_variables_inner(free);
+                while let Some(pos) = free.iter().position(|f| quant.contains(f)) {
+                    free.swap_remove(pos);
+                }
             }
             Self::Named { args, .. } | Self::Tuple(args) => {
-                let mut iter = args.iter();
-                let first = iter.next().unwrap().free_type_variables();
-                iter.fold(first, |mut acc, arg| {
-                    for t in arg.free_type_variables() {
-                        if !acc.contains(&t) {
-                            acc.push(t);
-                        }
-                    }
-                    acc
-                })
+                for arg in args.iter() {
+                    arg.free_type_variables_inner(free);
+                }
             }
         }
+    }
+
+    #[must_use]
+    pub fn free_type_variables(&self) -> Vec<u64> {
+        let mut free = Vec::new();
+        self.free_type_variables_inner(&mut free);
+        free
     }
 
     pub fn param_iter(&self) -> impl Iterator<Item = Self> {
