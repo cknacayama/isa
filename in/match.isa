@@ -2,13 +2,18 @@ module Option
 
     type Option a = None | Some a;
 
-module List
-
-    type List a = Nil | Cons a (List a);
+module Main
     
-    let tail list =
-        match list with
-            Nil -> Option.None,
-            Cons v Nil -> Option.Some v,
-            // Cons _ rest -> tail rest,
+    val foo: Option.Option () -> int;
+    let foo a =
+        match a with
+            Option.Some () -> 10,
+            Option.None -> 10,
+        ;
+
+    val bar a: Option.Option a -> Option.Option a -> bool;
+    let bar = fn a -> fn b ->
+        match (a,b) with
+            (Option.Some a, Option.Some b) -> a = b,
+            (Option.None, Option.None) -> false,
         ;

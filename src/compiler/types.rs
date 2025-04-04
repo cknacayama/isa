@@ -11,6 +11,7 @@ pub enum Ty {
     Bool,
     Char,
     Var(u64),
+    Tuple(Rc<[Ty]>),
     Fn { param: Rc<Ty>, ret: Rc<Ty> },
     Scheme { quant: Rc<[u64]>, ty: Rc<Ty> },
     Named { name: PathIdent, args: Rc<[Ty]> },
@@ -39,10 +40,17 @@ impl Ty {
         matches!(self, Self::Char)
     }
 
+    #[must_use]
+    pub const fn is_scheme(&self) -> bool {
+        matches!(self, Self::Scheme { .. })
+    }
+
     fn is_simple_fmt(&self) -> bool {
         match self {
             Self::Named { args, .. } => args.is_empty(),
-            Self::Unit | Self::Int | Self::Bool | Self::Char | Self::Var(_) => true,
+            Self::Unit | Self::Int | Self::Bool | Self::Char | Self::Var(_) | Self::Tuple(_) => {
+                true
+            }
             Self::Fn { .. } | Self::Scheme { .. } => false,
         }
     }
@@ -84,7 +92,7 @@ impl Ty {
                 ty.retain(|t| !quant.contains(t));
                 ty
             }
-            Self::Named { args, .. } => {
+            Self::Named { args, .. } | Self::Tuple(args) => {
                 let mut iter = args.iter();
                 let first = iter.next().unwrap().free_type_variables();
                 iter.fold(first, |mut acc, arg| {
@@ -97,6 +105,10 @@ impl Ty {
                 })
             }
         }
+    }
+
+    pub fn param_iter(&self) -> impl Iterator<Item = Self> {
+        ParamIter { ty: self.clone() }
     }
 }
 
@@ -113,7 +125,7 @@ impl Substitute for Ty {
             Self::Scheme { ty, .. } => {
                 ty.substitute(subs);
             }
-            Self::Named { args, .. } => {
+            Self::Named { args, .. } | Self::Tuple(args) => {
                 let mut new = args.to_vec();
                 for arg in &mut new {
                     arg.substitute(subs);
@@ -168,6 +180,14 @@ impl Substitute for Rc<Ty> {
                 let args = Rc::from(new_args);
                 Ty::Named { name: *name, args }
             }
+            Ty::Tuple(args) => {
+                let mut new_args = args.to_vec();
+                for arg in &mut new_args {
+                    arg.substitute(subs);
+                }
+                let args = Rc::from(new_args);
+                Ty::Tuple(args)
+            }
             Ty::Unit | Ty::Int | Ty::Bool | Ty::Char | Ty::Var(_) => {
                 if let Some(new) = subs(self) {
                     *self = Self::new(new);
@@ -181,6 +201,30 @@ impl Substitute for Rc<Ty> {
         }
         if self.as_ref() != &ty {
             *self = Self::new(ty);
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ParamIter {
+    ty: Ty,
+}
+
+impl Iterator for ParamIter {
+    type Item = Ty;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &self.ty {
+            Ty::Fn { param, ret } => {
+                let param = param.as_ref().clone();
+                self.ty = ret.as_ref().clone();
+                Some(param)
+            }
+            Ty::Scheme { ty, .. } => {
+                self.ty = ty.as_ref().clone();
+                self.next()
+            }
+            _ => None,
         }
     }
 }
@@ -217,6 +261,19 @@ impl Display for Ty {
                     }
                 }
                 Ok(())
+            }
+            Self::Tuple(types) => {
+                write!(f, "(")?;
+                let mut first = true;
+                for ty in types.iter() {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{ty}")?;
+                }
+                write!(f, ")")
             }
         }
     }

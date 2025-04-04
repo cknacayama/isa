@@ -275,7 +275,7 @@ pub enum PatKind<T> {
 
     Or(Box<[Pat<T>]>),
 
-    Unit,
+    Tuple(Box<[Pat<T>]>),
 
     Int(i64),
 
@@ -314,7 +314,9 @@ impl<T> Pat<T> {
     pub const fn new(kind: PatKind<T>, span: Span, ty: T) -> Self {
         Self { kind, span, ty }
     }
+}
 
+impl<T: Display> Pat<T> {
     fn format_helper(&self, f: &mut impl Write) -> std::fmt::Result {
         match &self.kind {
             PatKind::Wild => write!(f, "_"),
@@ -330,7 +332,19 @@ impl<T> Pat<T> {
                 }
                 write!(f, ")")
             }
-            PatKind::Unit => write!(f, "()"),
+            PatKind::Tuple(pats) => {
+                write!(f, "(")?;
+                let mut first = true;
+                for pat in pats {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    pat.format_helper(f)?;
+                }
+                write!(f, ")")
+            }
             PatKind::Int(i) => write!(f, "{i}"),
             PatKind::Char(c) => write!(f, "{:?}", *c as char),
             PatKind::IntRange(i) => write!(f, "{i}"),
@@ -345,6 +359,7 @@ impl<T> Pat<T> {
                 write!(f, ")")
             }
         }
+        .and_then(|()| write!(f, ": {}", self.ty))
     }
 }
 
@@ -421,8 +436,6 @@ impl<T: Display> Display for Param<T> {
 
 #[derive(Debug, Clone)]
 pub enum ExprKind<T> {
-    Unit,
-
     Int(i64),
 
     Bool(bool),
@@ -430,6 +443,8 @@ pub enum ExprKind<T> {
     Char(u8),
 
     Ident(Symbol),
+
+    Tuple(Box<[Expr<T>]>),
 
     ModuleIdent(ModuleIdent),
 
@@ -522,11 +537,23 @@ impl<T: Display> Expr<T> {
                 expr.format_helper(f, indentation)?;
                 write!(f, ";")
             }
-            ExprKind::Unit => write!(f, "()"),
             ExprKind::Int(i) => write!(f, "{i}"),
             ExprKind::Bool(b) => write!(f, "{b}"),
             ExprKind::Char(c) => write!(f, "\'{}\'", *c as char),
             ExprKind::Ident(id) => write!(f, "{id}"),
+            ExprKind::Tuple(exprs) => {
+                write!(f, "(")?;
+                let mut first = true;
+                for e in exprs {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    e.format_helper(f, indentation + 1)?;
+                }
+                write!(f, ")")
+            }
             ExprKind::Bin { op, lhs, rhs } => {
                 write!(f, "(")?;
                 lhs.format_helper(f, indentation + 1)?;
@@ -676,11 +703,11 @@ impl Substitute for Expr<()> {
                 semi.substitute(subs);
             }
             ExprKind::Type { constructors, .. } => {
-                constructors.iter_mut().for_each(|c| {
-                    c.params.iter_mut().for_each(|t| {
+                for c in constructors {
+                    for t in &mut c.params {
                         t.substitute(subs);
-                    });
-                });
+                    }
+                }
             }
             ExprKind::Alias { ty, .. } | ExprKind::Val { ty, .. } => {
                 ty.substitute(subs);
@@ -699,9 +726,9 @@ impl Substitute for Expr<Ty> {
             ExprKind::Let {
                 params, expr, body, ..
             } => {
-                params.iter_mut().for_each(|p| {
+                for p in params {
                     p.substitute(subs);
-                });
+                }
                 expr.substitute(subs);
                 if let Some(body) = body.as_mut() {
                     body.substitute(subs);
@@ -726,23 +753,28 @@ impl Substitute for Expr<Ty> {
             }
             ExprKind::Match { expr, arms } => {
                 expr.substitute(subs);
-                arms.iter_mut().for_each(|arm| {
+                for arm in arms {
                     arm.pat.substitute(subs);
                     arm.expr.substitute(subs);
-                });
+                }
             }
             ExprKind::Semi(semi) => {
                 semi.substitute(subs);
             }
             ExprKind::Type { constructors, .. } => {
-                constructors.iter_mut().for_each(|c| {
-                    c.params.iter_mut().for_each(|t| {
+                for c in constructors {
+                    for t in &mut c.params {
                         t.substitute(subs);
-                    });
-                });
+                    }
+                }
             }
             ExprKind::Val { ty, .. } | ExprKind::Alias { ty, .. } => {
                 ty.substitute(subs);
+            }
+            ExprKind::Tuple(exprs) => {
+                for expr in exprs {
+                    expr.substitute(subs);
+                }
             }
             ExprKind::Bin { lhs, rhs, .. } => {
                 lhs.substitute(subs);
@@ -752,8 +784,7 @@ impl Substitute for Expr<Ty> {
                 expr.substitute(subs);
             }
 
-            ExprKind::Unit
-            | ExprKind::Int(_)
+            ExprKind::Int(_)
             | ExprKind::Bool(_)
             | ExprKind::Char(_)
             | ExprKind::Ident(_)
@@ -784,14 +815,13 @@ impl Substitute for Pat<Ty> {
         S: FnMut(&Ty) -> Option<Ty>,
     {
         match &mut self.kind {
-            PatKind::Or(args) | PatKind::Constructor { args, .. } => {
-                args.iter_mut().for_each(|p| {
+            PatKind::Tuple(args) | PatKind::Or(args) | PatKind::Constructor { args, .. } => {
+                for p in args {
                     p.substitute(subs);
-                });
+                }
             }
 
             PatKind::Wild
-            | PatKind::Unit
             | PatKind::Int(_)
             | PatKind::Bool(_)
             | PatKind::Ident(_)

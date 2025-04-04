@@ -165,8 +165,10 @@ where
     while let Some(c) = cset.constrs.pop_front() {
         let span = c.span;
         match (&c.lhs, &c.rhs) {
-            (lhs @ (Ty::Int | Ty::Bool | Ty::Var(_)), rhs @ (Ty::Int | Ty::Bool | Ty::Var(_)))
-                if lhs == rhs => {}
+            (
+                lhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
+                rhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
+            ) if lhs == rhs => {}
             (Ty::Var(old), new) | (new, Ty::Var(old)) if !new.occurs(*old) => {
                 let s = Subs {
                     old: *old,
@@ -197,6 +199,16 @@ where
             ) if n1 == n2 && args1.len() == args2.len() => {
                 let args1 = args1.clone();
                 let args2 = args2.clone();
+                let parent = Rc::new(c);
+                for (a1, a2) in args1.iter().zip(args2.iter()) {
+                    cset.push(
+                        Constraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
+                    );
+                }
+            }
+            (Ty::Tuple(t1), Ty::Tuple(t2)) if t1.len() == t2.len() => {
+                let args1 = t1.clone();
+                let args2 = t2.clone();
                 let parent = Rc::new(c);
                 for (a1, a2) in args1.iter().zip(args2.iter()) {
                     cset.push(

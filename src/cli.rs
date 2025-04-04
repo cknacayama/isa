@@ -79,10 +79,7 @@ impl Config {
         E: Report,
     {
         let writer = StandardStream::stderr(ColorChoice::Auto);
-        let config = term::Config {
-            chars: term::Chars::ascii(),
-            ..Default::default()
-        };
+        let config = term::Config::default();
         let diagnostic = err.diagnostic(self.file_id, ctx);
 
         let _ = term::emit(&mut writer.lock(), &config, &self.files, &diagnostic);

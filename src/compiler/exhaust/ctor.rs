@@ -6,6 +6,7 @@ use crate::compiler::types::Ty;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ctor {
+    Single,
     Type(usize),
     Bool(bool),
     IntRange(IntRange),
@@ -18,7 +19,7 @@ pub enum Ctor {
 impl Ctor {
     pub(super) fn is_covered_by(&self, other: &Self) -> bool {
         match (self, other) {
-            (_, Self::Wildcard) => true,
+            (_, Self::Wildcard) | (Self::Single, Self::Single) => true,
             (Self::Type(self_id), Self::Type(other_id)) => self_id == other_id,
             (Self::Bool(self_b), Self::Bool(other_b)) => self_b == other_b,
             (Self::IntRange(self_range), Self::IntRange(other_range)) => {
@@ -74,6 +75,14 @@ impl Ctor {
         };
 
         match self {
+            Self::Single => {
+                write!(f, "(")?;
+                for p in fields {
+                    write!(f, "{}", start_or_continue(", "))?;
+                    p.ctx_simple_fmt(f, ctx)?;
+                }
+                write!(f, ")")?;
+            }
             Self::Type(idx) => {
                 ctx.write_variant_name(f, ty, *idx)?;
                 if fields.len() > 0 {
@@ -223,6 +232,7 @@ impl IntRange {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CtorSet {
+    Single,
     Type { variants: NonZeroUsize },
     Integers(IntRange),
     Bool,
@@ -246,6 +256,13 @@ impl CtorSet {
         }
 
         match self {
+            Self::Single => {
+                if seen.is_empty() {
+                    missing.push(Ctor::Single);
+                } else {
+                    present.push(Ctor::Single);
+                }
+            }
             Self::Type { variants } => {
                 let variants = variants.get();
                 let mut seen_set = vec![false; variants];

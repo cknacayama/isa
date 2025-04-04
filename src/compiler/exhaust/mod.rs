@@ -24,9 +24,7 @@ impl<'a> Ctx<'a> {
 
     fn ctors_for_ty(&self, ty: &Ty) -> Option<CtorSet> {
         match ty {
-            Ty::Unit => Some(CtorSet::Type {
-                variants: NonZeroUsize::new(1).unwrap(),
-            }),
+            Ty::Tuple(_) | Ty::Unit => Some(CtorSet::Single),
             Ty::Int => Some(CtorSet::Integers(IntRange::infinite())),
             Ty::Bool => Some(CtorSet::Bool),
             Ty::Char => Some(CtorSet::Integers(IntRange::character())),
@@ -48,6 +46,7 @@ impl<'a> Ctx<'a> {
     fn ctor_subtypes(&self, ty: &Ty, ctor: &Ctor) -> Box<[Ty]> {
         match ctor {
             Ctor::Type(idx) => self.ctx.get_constructor_subtypes(ty, *idx),
+            Ctor::Single => self.ctx.get_constructor_subtypes(ty, 0),
             _ => Box::default(),
         }
     }
@@ -97,13 +96,22 @@ impl Pat {
                     .collect();
                 Self::new(Ctor::Or, fields)
             }
-            TypedPatKind::Unit => todo!(),
+            TypedPatKind::Tuple(pats) => {
+                let fields = pats
+                    .iter()
+                    .map(|pat| Self::from_ast_pat(pat, ctx))
+                    .enumerate()
+                    .collect();
+                Self::new(Ctor::Single, fields)
+            }
             TypedPatKind::Int(i) => Self::new(
                 Ctor::IntRange(IntRange::from_singleton(MaybeInfinite::Finite(*i))),
                 Vec::new(),
             ),
             TypedPatKind::Char(c) => Self::new(
-                Ctor::IntRange(IntRange::from_singleton(MaybeInfinite::Finite(i64::from(*c)))),
+                Ctor::IntRange(IntRange::from_singleton(MaybeInfinite::Finite(i64::from(
+                    *c,
+                )))),
                 Vec::new(),
             ),
             TypedPatKind::Bool(b) => Self::new(Ctor::Bool(*b), Vec::new()),

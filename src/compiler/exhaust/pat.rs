@@ -20,6 +20,7 @@ impl CtxFmt for &WitnessPat {
     fn is_simple_fmt(&self) -> bool {
         match self.ctor {
             Ctor::Missing
+            | Ctor::Single
             | Ctor::Wildcard
             | Ctor::NonExhaustive
             | Ctor::Bool(_)

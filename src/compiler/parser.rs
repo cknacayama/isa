@@ -429,16 +429,25 @@ impl<'a> Parser<'a> {
 
         match data {
             TokenKind::LParen => {
-                if let Some(rparen) = self.next_if_match(TokenKind::RParen) {
-                    let span = span.union(rparen);
-                    let kind = UntypedExprKind::Unit;
+                let mut exprs = Vec::new();
+                while !self.check(TokenKind::RParen) {
+                    let expr = self.parse_expr()?;
+                    exprs.push(expr);
+                    if self.next_if_match(TokenKind::Comma).is_none() {
+                        break;
+                    }
+                }
+                let span = span.union(self.expect(TokenKind::RParen)?);
 
-                    Ok(UntypedExpr::untyped(kind, span))
-                } else {
-                    let mut expr = self.parse_expr()?;
-                    expr.span = span.union(expr.span).union(self.expect(TokenKind::RParen)?);
-
+                if exprs.len() == 1 {
+                    let mut expr = exprs.pop().unwrap();
+                    expr.span = span;
                     Ok(expr)
+                } else {
+                    Ok(UntypedExpr::untyped(
+                        UntypedExprKind::Tuple(exprs.into_boxed_slice()),
+                        span,
+                    ))
                 }
             }
             TokenKind::Integer(lit) => Ok(UntypedExpr::untyped(UntypedExprKind::Int(lit), span)),
@@ -475,12 +484,23 @@ impl<'a> Parser<'a> {
 
         match data {
             TokenKind::LParen => {
-                if let Some(span) = self.next_if_match(TokenKind::RParen) {
-                    Ok(Spanned::new(Ty::Unit, span.union(span)))
+                let mut types = Vec::new();
+                while !self.check(TokenKind::RParen) {
+                    let ty = self.parse_type()?;
+                    types.push(ty.data);
+                    if self.next_if_match(TokenKind::Comma).is_none() {
+                        break;
+                    }
+                }
+                let span = span.union(self.expect(TokenKind::RParen)?);
+
+                if types.is_empty() {
+                    Ok(Spanned::new(Ty::Unit, span))
+                } else if types.len() == 1 {
+                    let ty = types.pop().unwrap();
+                    Ok(Spanned::new(ty, span))
                 } else {
-                    let t = self.parse_type()?;
-                    let span = span.union(self.expect(TokenKind::RParen)?);
-                    Ok(Spanned::new(t.data, span))
+                    Ok(Spanned::new(Ty::Tuple(types.into()), span))
                 }
             }
             TokenKind::KwInt => Ok(Spanned::new(Ty::Int, span)),
@@ -803,12 +823,25 @@ impl<'a> Parser<'a> {
             TokenKind::KwTrue => Ok(UntypedPat::untyped(UntypedPatKind::Bool(true), span)),
             TokenKind::KwFalse => Ok(UntypedPat::untyped(UntypedPatKind::Bool(false), span)),
             TokenKind::LParen => {
-                if let Some(rspan) = self.next_if_match(TokenKind::RParen) {
-                    Ok(UntypedPat::untyped(UntypedPatKind::Unit, span.union(rspan)))
+                let mut pats = Vec::new();
+                while !self.check(TokenKind::RParen) {
+                    let pat = self.parse_pat()?;
+                    pats.push(pat);
+                    if self.next_if_match(TokenKind::Comma).is_none() {
+                        break;
+                    }
+                }
+                let span = span.union(self.expect(TokenKind::RParen)?);
+
+                if pats.len() == 1 {
+                    let mut pat = pats.pop().unwrap();
+                    pat.span = span;
+                    Ok(pat)
                 } else {
-                    let t = self.parse_pat()?;
-                    let span = span.union(self.expect(TokenKind::RParen)?);
-                    Ok(UntypedPat::untyped(t.kind, span))
+                    Ok(UntypedPat::untyped(
+                        UntypedPatKind::Tuple(pats.into_boxed_slice()),
+                        span,
+                    ))
                 }
             }
             TokenKind::Ident(name) => {

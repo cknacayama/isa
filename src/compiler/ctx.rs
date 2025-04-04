@@ -101,6 +101,10 @@ impl TypeCtx {
 
     #[must_use]
     pub fn get_constructor_subtypes(&self, ty: &Ty, idx: usize) -> Box<[Ty]> {
+        if let Ty::Tuple(types) = ty {
+            return types.to_vec().into_boxed_slice();
+        }
+
         let Ty::Named { name, args } = ty else {
             return Box::default();
         };
@@ -111,8 +115,8 @@ impl TypeCtx {
             .params
             .iter()
             .copied()
-            .zip(args.iter())
-            .map(|(ty, arg)| Subs::new(ty, arg.clone()))
+            .zip(args.iter().cloned())
+            .map(|(ty, arg)| Subs::new(ty, arg))
             .collect::<Vec<_>>();
 
         let mut ctor = data.constructors.swap_remove(idx);

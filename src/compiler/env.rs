@@ -177,6 +177,10 @@ impl Env {
         self.env.push(FxHashMap::default());
     }
 
+    pub fn current_scope(&self) -> Option<&FxHashMap<Symbol, VarData>> {
+        self.env.last()
+    }
+
     pub fn pop_scope(&mut self) -> Option<FxHashMap<Symbol, VarData>> {
         self.env.pop()
     }
