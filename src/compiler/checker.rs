@@ -306,7 +306,9 @@ impl Checker {
             .map_err(|err| val_error(err.constr().rhs(), err.constr().span()))
             .and_then(|subs| match val.ty() {
                 Ty::Scheme { quant, .. } if subs.iter().any(|s| quant.contains(&s.old())) => {
-                    Err(val_error(&expr.ty, expr.span))
+                    expr.ty.substitute_many(&subs);
+                    let ty = self.env.generalize(expr.ty.clone());
+                    Err(val_error(&ty, expr.span))
                 }
                 _ => Ok(subs),
             })?;

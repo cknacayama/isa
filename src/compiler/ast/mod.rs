@@ -51,8 +51,8 @@ impl Display for BinOp {
             Self::Ge => write!(f, ">="),
             Self::Lt => write!(f, "<"),
             Self::Le => write!(f, "<="),
-            Self::And => write!(f, "and"),
-            Self::Or => write!(f, "or"),
+            Self::And => write!(f, "&&"),
+            Self::Or => write!(f, "||"),
             Self::Pipe => write!(f, "|>"),
         }
     }
@@ -98,7 +98,6 @@ impl TokenKind {
                 | Self::KwLet
                 | Self::KwFn
                 | Self::KwNot
-                | Self::KwType
                 | Self::KwMatch
                 | Self::KwIf
         )
