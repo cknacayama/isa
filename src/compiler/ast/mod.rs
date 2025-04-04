@@ -435,6 +435,41 @@ impl<T: Display> Display for Param<T> {
 }
 
 #[derive(Debug, Clone)]
+pub struct LetBind<T> {
+    pub name:      Symbol,
+    pub name_span: Span,
+    pub params:    Box<[Param<T>]>,
+    pub expr:      Box<Expr<T>>,
+}
+
+impl<T> LetBind<T> {
+    pub const fn new(
+        name: Symbol,
+        name_span: Span,
+        params: Box<[Param<T>]>,
+        expr: Box<Expr<T>>,
+    ) -> Self {
+        Self {
+            name,
+            name_span,
+            params,
+            expr,
+        }
+    }
+}
+
+impl<T: Display> LetBind<T> {
+    fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
+        write!(f, "let {} ", self.name)?;
+        for p in &self.params {
+            write!(f, "{p} ")?;
+        }
+        write!(f, "= ")?;
+        self.expr.format_helper(f, indentation + 1)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ExprKind<T> {
     Int(i64),
 
@@ -462,11 +497,8 @@ pub enum ExprKind<T> {
     Semi(Box<Expr<T>>),
 
     Let {
-        name:      Symbol,
-        name_span: Span,
-        params:    Box<[Param<T>]>,
-        expr:      Box<Expr<T>>,
-        body:      Option<Box<Expr<T>>>,
+        bind: LetBind<T>,
+        body: Option<Box<Expr<T>>>,
     },
 
     Val {
@@ -539,7 +571,7 @@ impl<T: Display> Expr<T> {
             }
             ExprKind::Int(i) => write!(f, "{i}"),
             ExprKind::Bool(b) => write!(f, "{b}"),
-            ExprKind::Char(c) => write!(f, "\'{}\'", *c as char),
+            ExprKind::Char(c) => write!(f, "{:?}", *c as char),
             ExprKind::Ident(id) => write!(f, "{id}"),
             ExprKind::Tuple(exprs) => {
                 write!(f, "(")?;
@@ -566,19 +598,9 @@ impl<T: Display> Expr<T> {
                 expr.format_helper(f, indentation + 1)?;
                 write!(f, ")")
             }
-            ExprKind::Let {
-                params,
-                name: id,
-                expr,
-                body,
-                ..
-            } => {
-                write!(f, "(let {id} ")?;
-                for p in params {
-                    write!(f, "{p} ")?;
-                }
-                write!(f, "= ")?;
-                expr.format_helper(f, indentation + 1)?;
+            ExprKind::Let { bind, body } => {
+                write!(f, "(")?;
+                bind.format_helper(f, indentation)?;
                 if let Some(body) = body {
                     writeln!(f, " in")?;
                     write!(f, "{tab}")?;
@@ -717,19 +739,26 @@ impl Substitute for Expr<()> {
     }
 }
 
+impl Substitute for LetBind<Ty> {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        for p in &mut self.params {
+            p.substitute(subs);
+        }
+        self.expr.substitute(subs);
+    }
+}
+
 impl Substitute for Expr<Ty> {
     fn substitute<S>(&mut self, subs: &mut S)
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
         match &mut self.kind {
-            ExprKind::Let {
-                params, expr, body, ..
-            } => {
-                for p in params {
-                    p.substitute(subs);
-                }
-                expr.substitute(subs);
+            ExprKind::Let { bind, body } => {
+                bind.substitute(subs);
                 if let Some(body) = body.as_mut() {
                     body.substitute(subs);
                 }

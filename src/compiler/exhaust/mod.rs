@@ -7,7 +7,7 @@ use ctor::{Ctor, CtorSet, IntRange, MaybeInfinite};
 use pat::{Pat, PatMatrix, PatMatrixRow, PatOrWild, PatVector, WitnessPat};
 
 use super::ast::typed::{TypedExpr, TypedPat, TypedPatKind};
-use super::ast::{ExprKind, MatchArm, RangePat};
+use super::ast::{ExprKind, LetBind, MatchArm, RangePat};
 use super::ctx::TypeCtx;
 use super::error::MatchNonExhaustive;
 use super::types::Ty;
@@ -205,13 +205,15 @@ impl TypeCtx {
             | ExprKind::Un { expr, .. }
             | ExprKind::Semi(expr)
             | ExprKind::Let {
-                expr, body: None, ..
+                bind: LetBind { expr, .. },
+                body: None,
+                ..
             } => {
                 self.check_single_match(expr)?;
             }
 
             ExprKind::Let {
-                expr,
+                bind: LetBind { expr, .. },
                 body: Some(body),
                 ..
             } => {

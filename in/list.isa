@@ -39,3 +39,19 @@ module Option
             Some a -> f a,
             None -> None,
         ;
+
+module Main
+
+    trait Eq a =
+        val eq: a -> a -> bool,
+        val ne: a -> a -> bool,
+    ;
+
+    impl Eq forall a in List.List a 
+        where Eq a =
+            let eq a b =
+                match (a,b) with
+                    (List.Cons v1 rest1, List.Cons v2 rest2) -> v1 = v2 && eq rest1 rest2,
+                    (Nil, Nil) -> true,
+                    _ -> false,
+    ;

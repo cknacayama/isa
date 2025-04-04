@@ -2,8 +2,8 @@ use std::iter::Peekable;
 use std::rc::Rc;
 
 use super::ast::untyped::{
-    UntypedExpr, UntypedExprKind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat,
-    UntypedPatKind,
+    UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
+    UntypedPat, UntypedPatKind,
 };
 use super::ast::{BinOp, Constructor, ModuleIdent, PathIdent, RangePat, UnOp};
 use super::error::ParseError;
@@ -145,7 +145,10 @@ impl<'a> Parser<'a> {
             span = span.union(expr.span);
         }
 
-        Ok(UntypedModule::untyped(name.data, exprs, span))
+        Ok({
+            let name = name.data;
+            UntypedModule::new(name, exprs, span)
+        })
     }
 
     pub fn parse_all(&mut self) -> ParseResult<Vec<UntypedModule>> {
@@ -280,7 +283,7 @@ impl<'a> Parser<'a> {
     fn parse_or(&mut self) -> ParseResult<UntypedExpr> {
         let mut lhs = self.parse_and()?;
 
-        while self.next_if_match(TokenKind::KwOr).is_some() {
+        while self.next_if_match(TokenKind::BarBar).is_some() {
             let rhs = self.parse_and()?;
             let span = lhs.span.union(rhs.span);
             lhs = UntypedExpr::untyped(
@@ -299,7 +302,7 @@ impl<'a> Parser<'a> {
     fn parse_and(&mut self) -> ParseResult<UntypedExpr> {
         let mut lhs = self.parse_cmp()?;
 
-        while self.next_if_match(TokenKind::KwAnd).is_some() {
+        while self.next_if_match(TokenKind::AmpAmp).is_some() {
             let rhs = self.parse_cmp()?;
             let span = lhs.span.union(rhs.span);
             lhs = UntypedExpr::untyped(
@@ -912,7 +915,7 @@ impl<'a> Parser<'a> {
         Ok(pat)
     }
 
-    fn parse_let(&mut self) -> ParseResult<UntypedExpr> {
+    fn parse_let_bind(&mut self) -> ParseResult<Spanned<UntypedLetBind>> {
         let mut span = self.expect(TokenKind::KwLet)?;
         let Spanned {
             data: name,
@@ -927,6 +930,24 @@ impl<'a> Parser<'a> {
         }
         self.expect(TokenKind::Eq)?;
         let expr = self.parse_expr()?;
+        span = span.union(expr.span);
+
+        Ok(Spanned::new(
+            UntypedLetBind::new(
+                name,
+                name_span,
+                parametes.into_boxed_slice(),
+                Box::new(expr),
+            ),
+            span,
+        ))
+    }
+
+    fn parse_let(&mut self) -> ParseResult<UntypedExpr> {
+        let Spanned {
+            data: bind,
+            mut span,
+        } = self.parse_let_bind()?;
         let body = if self.next_if_match(TokenKind::KwIn).is_some() {
             let body = self.parse_expr()?;
             span = span.union(body.span);
@@ -937,10 +958,7 @@ impl<'a> Parser<'a> {
 
         Ok(UntypedExpr::untyped(
             UntypedExprKind::Let {
-                name,
-                name_span,
-                params: parametes.into_boxed_slice(),
-                expr: Box::new(expr),
+                bind,
                 body: body.map(Box::new),
             },
             span,

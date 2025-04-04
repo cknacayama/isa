@@ -3,11 +3,12 @@ use std::rc::Rc;
 use rustc_hash::FxHashMap;
 
 use super::ast::typed::{
-    TypedExpr, TypedExprKind, TypedMatchArm, TypedModule, TypedParam, TypedPat, TypedPatKind,
+    TypedExpr, TypedExprKind, TypedLetBind, TypedMatchArm, TypedModule, TypedParam, TypedPat,
+    TypedPatKind,
 };
 use super::ast::untyped::{
-    UntypedExpr, UntypedExprKind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat,
-    UntypedPatKind,
+    UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
+    UntypedPat, UntypedPatKind,
 };
 use super::ast::{BinOp, Constructor, ModuleIdent, PathIdent, UnOp};
 use super::ctx::{AliasData, TypeCtx};
@@ -240,21 +241,20 @@ impl Checker {
 
     fn check_let_bind_with_val(
         &mut self,
-        name: Symbol,
-        name_span: Span,
-        params: Box<[UntypedParam]>,
-        expr: UntypedExpr,
+        bind: UntypedLetBind,
         val: &VarData,
     ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>)> {
         self.env.push_scope();
 
         let mut param_iter = val.ty().param_iter();
 
-        let mut typed_params = params
+        let mut typed_params = bind
+            .params
             .into_iter()
             .map(|p| {
                 let decl = param_iter.next().ok_or_else(|| {
-                    let fst = DiagnosticLabel::new(format!("expected {}", val.ty()), name_span);
+                    let fst =
+                        DiagnosticLabel::new(format!("expected {}", val.ty()), bind.name_span);
                     let snd = DiagnosticLabel::new("more parameters than expected", p.span);
                     let trd = DiagnosticLabel::new("expected due to this", val.span());
 
@@ -267,10 +267,10 @@ impl Checker {
             .collect::<IsaResult<Box<_>>>()?;
 
         let mut expr = if typed_params.is_empty() {
-            self.check(expr)?
+            self.check(*bind.expr)?
         } else {
-            self.insert_variable(name, val.ty().clone(), name_span);
-            let mut expr = self.check(expr)?;
+            self.insert_variable(bind.name, val.ty().clone(), bind.name_span);
+            let mut expr = self.check(*bind.expr)?;
 
             for p in &mut typed_params {
                 p.ty = self.get_variable(p.name).unwrap();
@@ -294,7 +294,7 @@ impl Checker {
         let constr = Constraint::new(val_ty, ty, expr.span);
 
         let val_error = |ty: &Ty, span| {
-            let fst = DiagnosticLabel::new(format!("expected {}", val.ty()), name_span);
+            let fst = DiagnosticLabel::new(format!("expected {}", val.ty()), bind.name_span);
             let snd = DiagnosticLabel::new(format!("this has type {ty}"), span);
             let trd = DiagnosticLabel::new("expected due to this", val.span());
 
@@ -323,23 +323,21 @@ impl Checker {
 
     fn check_let_bind(
         &mut self,
-        name: Symbol,
-        name_span: Span,
-        params: Box<[UntypedParam]>,
-        expr: UntypedExpr,
+        bind: UntypedLetBind,
     ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>)> {
-        let module_id = ModuleIdent::new(self.cur_module, name);
+        let module_id = ModuleIdent::new(self.cur_module, bind.name);
         match self.get_val_from_module(module_id) {
             Ok(val) if self.env.at_module_scope() => {
                 let val = val.clone();
-                return self.check_let_bind_with_val(name, name_span, params, expr, &val);
+                return self.check_let_bind_with_val(bind, &val);
             }
             _ => (),
         }
 
         self.env.push_scope();
 
-        let mut typed_params = params
+        let mut typed_params = bind
+            .params
             .into_iter()
             .map(|p| {
                 let var = self.gen_type_var();
@@ -349,13 +347,13 @@ impl Checker {
             .collect::<Box<_>>();
 
         let expr = if typed_params.is_empty() {
-            self.check(expr)?
+            self.check(*bind.expr)?
         } else {
             let var_id = self.gen_id();
             let var = Ty::Var(var_id);
-            self.insert_variable(name, var, name_span);
+            self.insert_variable(bind.name, var, bind.name_span);
 
-            let mut expr = self.check(expr)?;
+            let mut expr = self.check(*bind.expr)?;
 
             for p in &mut typed_params {
                 p.ty = self.get_variable(p.name).unwrap();
@@ -379,14 +377,14 @@ impl Checker {
 
     fn check_let(
         &mut self,
-        name: Symbol,
-        name_span: Span,
-        params: Box<[UntypedParam]>,
-        expr: UntypedExpr,
+        bind: UntypedLetBind,
         body: Option<UntypedExpr>,
         span: Span,
     ) -> IsaResult<TypedExpr> {
-        let (u1, expr, params) = self.check_let_bind(name, name_span, params, expr)?;
+        let name = bind.name;
+        let name_span = bind.name_span;
+
+        let (u1, expr, params) = self.check_let_bind(bind)?;
 
         let mut env1 = self.env.clone();
         std::mem::swap(&mut self.env, &mut env1);
@@ -402,11 +400,10 @@ impl Checker {
             None => (None, Ty::Unit),
         };
 
+        let bind = TypedLetBind::new(name, name_span, params, Box::new(expr));
+
         let kind = TypedExprKind::Let {
-            name,
-            name_span,
-            params,
-            expr: Box::new(expr),
+            bind,
             body: body.map(Box::new),
         };
 
@@ -1159,13 +1156,9 @@ impl Checker {
 
             UntypedExprKind::Call { callee, arg } => self.check_call(*callee, *arg, span),
 
-            UntypedExprKind::Let {
-                name,
-                name_span,
-                params,
-                expr,
-                body,
-            } => self.check_let(name, name_span, params, *expr, body.map(|body| *body), span),
+            UntypedExprKind::Let { bind, body } => {
+                self.check_let(bind, body.map(|body| *body), span)
+            }
 
             UntypedExprKind::Semi(expr) => {
                 let mut expr = self.check(*expr)?;
