@@ -3,7 +3,7 @@ use std::fmt::Display;
 use codespan_reporting::diagnostic::Label;
 
 use super::exhaust::pat::WitnessPat;
-use super::infer::{Constraint, Subs};
+use super::infer::{EqConstraint, Subs};
 use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;
@@ -74,18 +74,18 @@ impl std::error::Error for ParseError {
 
 #[derive(Debug, Clone)]
 pub struct Uninferable {
-    constr: Constraint,
+    constr: EqConstraint,
 
     /// Substitutions applied up until the error
     subs: Vec<Subs>,
 }
 
 impl Uninferable {
-    pub const fn new(constr: Constraint, subs: Vec<Subs>) -> Self {
+    pub const fn new(constr: EqConstraint, subs: Vec<Subs>) -> Self {
         Self { constr, subs }
     }
 
-    pub const fn constr(&self) -> &Constraint {
+    pub const fn constr(&self) -> &EqConstraint {
         &self.constr
     }
 

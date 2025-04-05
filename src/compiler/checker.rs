@@ -10,11 +10,11 @@ use super::ast::untyped::{
     UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
     UntypedPat, UntypedPatKind,
 };
-use super::ast::{BinOp, Constructor, ModuleIdent, PathIdent, UnOp};
+use super::ast::{BinOp, ConstraintSet, Constructor, ModuleIdent, PathIdent, UnOp};
 use super::ctx::{AliasData, TypeCtx};
 use super::env::{Env, VarData};
 use super::error::{DiagnosticLabel, InferError, InferErrorKind, IsaError, Uninferable};
-use super::infer::{Constraint, ConstraintSet, Subs, Substitute, unify};
+use super::infer::{EqConstraint, EqConstraintSet, Subs, Substitute, unify};
 use super::types::Ty;
 use crate::global::Symbol;
 use crate::span::Span;
@@ -36,7 +36,7 @@ impl Checker {
 
     fn unify<C>(&mut self, constr: C) -> Result<Vec<Subs>, Uninferable>
     where
-        ConstraintSet: From<C>,
+        EqConstraintSet: From<C>,
     {
         unify(constr).inspect(|subs| {
             self.env.substitute_many(subs);
@@ -107,9 +107,9 @@ impl Checker {
 
         let mut var = self.gen_type_var();
 
-        let c_cond = Constraint::new(Ty::Bool, cond.ty.clone(), cond.span);
-        let c_then = Constraint::new(var.clone(), then.ty.clone(), then.span);
-        let c_otherwise = Constraint::new(var.clone(), otherwise.ty.clone(), otherwise.span);
+        let c_cond = EqConstraint::new(Ty::Bool, cond.ty.clone(), cond.span);
+        let c_then = EqConstraint::new(var.clone(), then.ty.clone(), then.span);
+        let c_otherwise = EqConstraint::new(var.clone(), otherwise.ty.clone(), otherwise.span);
 
         let subs = self.unify([c_cond, c_then, c_otherwise]).map_err(|err| {
             let err_span = err.constr().span();
@@ -193,7 +193,7 @@ impl Checker {
             param: Rc::new(arg.ty.clone()),
             ret:   Rc::new(var.clone()),
         };
-        let constr = Constraint::new(callee.ty.clone(), fn_ty, span);
+        let constr = EqConstraint::new(callee.ty.clone(), fn_ty, span);
         let subs = self.unify(constr).map_err(|err| {
             callee.ty.substitute_many(err.subs());
             arg.ty.substitute_many(err.subs());
@@ -285,13 +285,10 @@ impl Checker {
 
         let ty = expr.ty.clone();
 
-        let val_ty = if let Ty::Scheme { ty, .. } = val.ty() {
-            ty.as_ref().clone()
-        } else {
-            val.ty().clone()
-        };
+        let val_ty = self.instantiate(val.ty().clone());
+        let val_free = val_ty.free_type_variables();
 
-        let constr = Constraint::new(val_ty, ty, expr.span);
+        let constr = EqConstraint::new(val_ty, ty, expr.span);
 
         let val_error = |ty: &Ty, span| {
             let fst = DiagnosticLabel::new(format!("expected {}", val.ty()), bind.name_span);
@@ -304,13 +301,14 @@ impl Checker {
 
         let subs = unify(constr)
             .map_err(|err| val_error(err.constr().rhs(), err.constr().span()))
-            .and_then(|subs| match val.ty() {
-                Ty::Scheme { quant, .. } if subs.iter().any(|s| quant.contains(&s.old())) => {
+            .and_then(|subs| {
+                if subs.iter().any(|s| val_free.contains(&s.old())) {
                     expr.ty.substitute_many(&subs);
                     let ty = self.env.generalize(expr.ty.clone());
                     Err(val_error(&ty, expr.span))
+                } else {
+                    Ok(subs)
                 }
-                _ => Ok(subs),
             })?;
 
         expr.ty.substitute_many(&subs);
@@ -467,15 +465,15 @@ impl Checker {
 
     fn check_val(
         &mut self,
+        set: ConstraintSet,
         name: Symbol,
-        params: Box<[Ty]>,
         mut ty: Ty,
         ty_span: Span,
         span: Span,
     ) -> TypedExpr {
         let mut subs = Vec::new();
         let mut quant = Vec::new();
-        for p in params {
+        for p in set.constrs {
             let new = self.gen_id();
             let old = p.get_name().and_then(PathIdent::as_ident).unwrap();
             quant.push(new);
@@ -492,9 +490,13 @@ impl Checker {
 
         self.insert_val(name, ty.clone(), ty_span);
 
+        let set = ConstraintSet {
+            constrs: quant.into_iter().map(Ty::Var).collect(),
+        };
+
         let kind = TypedExprKind::Val {
+            set,
             name,
-            parameters: quant.into_iter().map(Ty::Var).collect(),
             ty,
             ty_span,
         };
@@ -530,7 +532,7 @@ impl Checker {
 
         let mut ty = self.instantiate(ctor.ty().clone());
 
-        let mut c = ConstraintSet::new();
+        let mut c = EqConstraintSet::new();
         let mut typed_args = Vec::new();
 
         for arg in args {
@@ -538,7 +540,7 @@ impl Checker {
             let Ty::Fn { param, ret } = &ty else {
                 return Err(InferError::new(InferErrorKind::NotConstructor(ty), span).into());
             };
-            c.push(Constraint::new(
+            c.push(EqConstraint::new(
                 param.as_ref().clone(),
                 arg.ty.clone(),
                 arg.span,
@@ -579,12 +581,12 @@ impl Checker {
             }
             UntypedPatKind::Or(spanneds) => {
                 let mut patterns = Vec::new();
-                let mut c = ConstraintSet::new();
+                let mut c = EqConstraintSet::new();
 
                 let mut var = self.gen_type_var();
                 for pat in spanneds {
                     let pat = self.check_pat(pat)?;
-                    c.push(Constraint::new(pat.ty.clone(), var.clone(), pat.span));
+                    c.push(EqConstraint::new(pat.ty.clone(), var.clone(), pat.span));
                     patterns.push(pat);
                 }
 
@@ -686,12 +688,12 @@ impl Checker {
         let mut var = self.gen_type_var();
         let mut typed_arms = Vec::new();
 
-        let mut c = ConstraintSet::new();
+        let mut c = EqConstraintSet::new();
 
         for arm in arms {
             let (pat, aexpr) = self.check_match_arm(arm.pat, arm.expr)?;
-            c.push(Constraint::new(var.clone(), aexpr.ty.clone(), aexpr.span));
-            c.push(Constraint::new(expr.ty.clone(), pat.ty.clone(), pat.span));
+            c.push(EqConstraint::new(var.clone(), aexpr.ty.clone(), aexpr.span));
+            c.push(EqConstraint::new(expr.ty.clone(), pat.ty.clone(), pat.span));
             typed_arms.push(TypedMatchArm::new(pat, aexpr));
         }
 
@@ -754,8 +756,8 @@ impl Checker {
 
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
-                let c1 = Constraint::new(Ty::Int, lhs.ty.clone(), lhs.span);
-                let c2 = Constraint::new(Ty::Int, rhs.ty.clone(), rhs.span);
+                let c1 = EqConstraint::new(Ty::Int, lhs.ty.clone(), lhs.span);
+                let c2 = EqConstraint::new(Ty::Int, rhs.ty.clone(), rhs.span);
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
@@ -777,8 +779,8 @@ impl Checker {
                 Ok(TypedExpr::new(kind, span, Ty::Int))
             }
             BinOp::Gt | BinOp::Ge | BinOp::Lt | BinOp::Le => {
-                let c1 = Constraint::new(Ty::Int, lhs.ty.clone(), lhs.span);
-                let c2 = Constraint::new(Ty::Int, rhs.ty.clone(), rhs.span);
+                let c1 = EqConstraint::new(Ty::Int, lhs.ty.clone(), lhs.span);
+                let c2 = EqConstraint::new(Ty::Int, rhs.ty.clone(), rhs.span);
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
@@ -800,7 +802,7 @@ impl Checker {
                 Ok(TypedExpr::new(kind, span, Ty::Bool))
             }
             BinOp::Eq | BinOp::Ne => {
-                let c1 = Constraint::new(lhs.ty.clone(), rhs.ty.clone(), rhs.span);
+                let c1 = EqConstraint::new(lhs.ty.clone(), rhs.ty.clone(), rhs.span);
 
                 let subs = self.unify(c1).map_err(|err| {
                     let note = format!(
@@ -822,8 +824,8 @@ impl Checker {
                 Ok(TypedExpr::new(kind, span, Ty::Bool))
             }
             BinOp::And | BinOp::Or => {
-                let c1 = Constraint::new(Ty::Bool, lhs.ty.clone(), lhs.span);
-                let c2 = Constraint::new(Ty::Bool, rhs.ty.clone(), rhs.span);
+                let c1 = EqConstraint::new(Ty::Bool, lhs.ty.clone(), lhs.span);
+                let c2 = EqConstraint::new(Ty::Bool, rhs.ty.clone(), rhs.span);
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
@@ -856,7 +858,7 @@ impl Checker {
             UnOp::Not => Ty::Bool,
             UnOp::Neg => Ty::Int,
         };
-        let constr = Constraint::new(ty.clone(), expr.ty.clone(), expr.span);
+        let constr = EqConstraint::new(ty.clone(), expr.ty.clone(), expr.span);
 
         let subs = self.unify(constr).map_err(|err| {
             let note = format!("{op} operates on {ty}");
@@ -1189,11 +1191,11 @@ impl Checker {
             )),
 
             UntypedExprKind::Val {
+                set,
                 name,
-                parameters,
                 ty,
                 ty_span,
-            } => Ok(self.check_val(name, parameters, ty, ty_span, span)),
+            } => Ok(self.check_val(set, name, ty, ty_span, span)),
 
             UntypedExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
         }

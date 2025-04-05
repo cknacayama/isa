@@ -5,7 +5,7 @@ use super::ast::untyped::{
     UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
     UntypedPat, UntypedPatKind,
 };
-use super::ast::{BinOp, Constructor, ModuleIdent, PathIdent, RangePat, UnOp};
+use super::ast::{BinOp, ConstraintSet, Constructor, ModuleIdent, PathIdent, RangePat, UnOp};
 use super::error::ParseError;
 use super::lexer::Lexer;
 use super::token::{Token, TokenKind};
@@ -216,19 +216,37 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_val(&mut self) -> ParseResult<UntypedExpr> {
-        let span = self.expect(TokenKind::KwVal)?;
-        let Spanned { data: id, .. } = self.expect_id()?;
-        let mut params = Vec::new();
-        while !self.check(TokenKind::Colon) {
+    fn parse_constraint_set(&mut self) -> ParseResult<ConstraintSet> {
+        if self.next_if_match(TokenKind::LBrace).is_none() {
+            return Ok(ConstraintSet::default());
+        }
+
+        let mut constrs = Vec::new();
+
+        while !self.check(TokenKind::RBrace) {
             let Spanned { data, .. } = self.expect_id()?;
-            params.push(Ty::Named {
+            constrs.push(Ty::Named {
                 name: PathIdent::Ident(data),
                 args: Rc::from([]),
             });
+            if self.next_if_match(TokenKind::Comma).is_none() {
+                break;
+            }
         }
+
+        self.expect(TokenKind::RBrace)?;
+        self.expect(TokenKind::Rocket)?;
+
+        Ok(ConstraintSet {
+            constrs: constrs.into_boxed_slice(),
+        })
+    }
+
+    fn parse_val(&mut self) -> ParseResult<UntypedExpr> {
+        let span = self.expect(TokenKind::KwVal)?;
+        let set = self.parse_constraint_set()?;
+        let Spanned { data: name, .. } = self.expect_id()?;
         self.expect(TokenKind::Colon)?;
-        let parameters = params.into_boxed_slice();
         let Spanned {
             data: ty,
             span: ty_span,
@@ -237,8 +255,8 @@ impl<'a> Parser<'a> {
 
         Ok(UntypedExpr::untyped(
             UntypedExprKind::Val {
-                name: id,
-                parameters,
+                name,
+                set,
                 ty,
                 ty_span,
             },

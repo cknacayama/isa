@@ -68,14 +68,14 @@ pub trait Substitute {
 }
 
 #[derive(Debug, Clone)]
-pub struct Constraint {
+pub struct EqConstraint {
     lhs:    Ty,
     rhs:    Ty,
     span:   Span,
-    parent: Option<Rc<Constraint>>,
+    parent: Option<Rc<EqConstraint>>,
 }
 
-impl Substitute for Constraint {
+impl Substitute for EqConstraint {
     fn substitute<S>(&mut self, subs: &mut S)
     where
         S: FnMut(&Ty) -> Option<Ty>,
@@ -85,7 +85,7 @@ impl Substitute for Constraint {
     }
 }
 
-impl Constraint {
+impl EqConstraint {
     #[must_use]
     pub const fn new(lhs: Ty, rhs: Ty, span: Span) -> Self {
         Self {
@@ -126,11 +126,11 @@ impl Constraint {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct ConstraintSet {
-    constrs: VecDeque<Constraint>,
+pub struct EqConstraintSet {
+    constrs: VecDeque<EqConstraint>,
 }
 
-impl Substitute for ConstraintSet {
+impl Substitute for EqConstraintSet {
     fn substitute<S>(&mut self, subs: &mut S)
     where
         S: FnMut(&Ty) -> Option<Ty>,
@@ -141,9 +141,9 @@ impl Substitute for ConstraintSet {
     }
 }
 
-impl<T> From<T> for ConstraintSet
+impl<T> From<T> for EqConstraintSet
 where
-    VecDeque<Constraint>: From<T>,
+    VecDeque<EqConstraint>: From<T>,
 {
     fn from(value: T) -> Self {
         Self {
@@ -152,8 +152,8 @@ where
     }
 }
 
-impl From<Constraint> for ConstraintSet {
-    fn from(value: Constraint) -> Self {
+impl From<EqConstraint> for EqConstraintSet {
+    fn from(value: EqConstraint) -> Self {
         Self {
             constrs: VecDeque::from([value]),
         }
@@ -162,9 +162,9 @@ impl From<Constraint> for ConstraintSet {
 
 pub fn unify<C>(cset: C) -> Result<Vec<Subs>, Uninferable>
 where
-    ConstraintSet: From<C>,
+    EqConstraintSet: From<C>,
 {
-    let mut cset = ConstraintSet::from(cset);
+    let mut cset = EqConstraintSet::from(cset);
     let mut subs = Vec::new();
 
     while let Some(c) = cset.constrs.pop_front() {
@@ -185,8 +185,8 @@ where
                 subs.push(s);
             }
             (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
-                let c1 = Constraint::new(i1.as_ref().clone(), i2.as_ref().clone(), c.span);
-                let c2 = Constraint::new(o1.as_ref().clone(), o2.as_ref().clone(), c.span);
+                let c1 = EqConstraint::new(i1.as_ref().clone(), i2.as_ref().clone(), c.span);
+                let c2 = EqConstraint::new(o1.as_ref().clone(), o2.as_ref().clone(), c.span);
                 let parent = Rc::new(c);
 
                 cset.push(c1.with_parent(parent.clone()));
@@ -207,7 +207,7 @@ where
                 let parent = Rc::new(c);
                 for (a1, a2) in args1.iter().zip(args2.iter()) {
                     cset.push(
-                        Constraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
+                        EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
                     );
                 }
             }
@@ -217,14 +217,14 @@ where
                 let parent = Rc::new(c);
                 for (a1, a2) in args1.iter().zip(args2.iter()) {
                     cset.push(
-                        Constraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
+                        EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
                     );
                 }
             }
             (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 })
                 if q1.len() == q2.len() =>
             {
-                let constr = Constraint::new(t1.as_ref().clone(), t2.as_ref().clone(), span);
+                let constr = EqConstraint::new(t1.as_ref().clone(), t2.as_ref().clone(), span);
                 let parent = Rc::new(c);
                 cset.push(constr.with_parent(parent));
             }
@@ -245,13 +245,13 @@ where
     Ok(subs)
 }
 
-impl ConstraintSet {
+impl EqConstraintSet {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    pub fn push(&mut self, c: Constraint) {
+    pub fn push(&mut self, c: EqConstraint) {
         self.constrs.push_back(c);
     }
 }
@@ -262,13 +262,13 @@ impl Display for Subs {
     }
 }
 
-impl Display for Constraint {
+impl Display for EqConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} = {}", self.lhs, self.rhs)
     }
 }
 
-impl Display for ConstraintSet {
+impl Display for EqConstraintSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.constrs.iter().try_for_each(|c| write!(f, "{c}, "))
     }

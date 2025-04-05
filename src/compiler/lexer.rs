@@ -172,6 +172,8 @@ impl<'a> Lexer<'a> {
         match c {
             '(' => token!(LParen),
             ')' => token!(RParen),
+            '{' => token!(LBrace),
+            '}' => token!(RBrace),
             ',' => token!(Comma),
             ';' => token!(Semicolon),
             ':' => token!(Colon),
@@ -179,7 +181,7 @@ impl<'a> Lexer<'a> {
             '/' => token!(Slash),
             '%' => token!(Percent),
             '+' => token!(Plus),
-            '=' => token!(Eq),
+            '=' => token!(Eq, '>' => Rocket),
             '|' => token!(Bar, '>' => Pipe, '|' => BarBar),
             '&' => token!(Amp, '&' => AmpAmp),
             '-' => token!(Minus, '>' => Arrow),

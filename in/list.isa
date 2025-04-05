@@ -1,24 +1,24 @@
 module List
     type List a = Nil | Cons a (List a);
     
-    val return a: a -> List a;
+    val {a} => return: a -> List a;
     let return v = Cons v Nil;
 
-    val lenght a: List a -> int;
+    val {a} => lenght: List a -> int;
     let lenght list =
         match list with
             Nil -> 0,
             Cons _ list -> 1 + lenght list,
     ;
 
-    val head a: List a -> Option.Option a;
+    val {a} => head: List a -> Option.Option a;
     let head list =
         match list with
             Nil -> Option.None,
             Cons v _ -> Option.Some v,
         ;
 
-    val tail a: List a -> Option.Option a;
+    val {a} => tail: List a -> Option.Option a;
     let tail list =
         match list with
             Nil -> Option.None,
@@ -30,28 +30,27 @@ module Option
 
     type Option a = None | Some a;
     
-    val return a: a -> Option a;
+    val {a} => return: a -> Option a;
     let return a = Some a;
     
-    val bind a b: Option a -> (a -> Option b) -> Option b;
+    val {a, b} => bind: Option a -> (a -> Option b) -> Option b;
     let bind opt f = 
         match opt with
             Some a -> f a,
             None -> None,
         ;
 
-module Main
-
-    trait Eq a =
-        val eq: a -> a -> bool,
-        val ne: a -> a -> bool,
-    ;
-
-    impl Eq forall a in List.List a 
-        where Eq a =
-            let eq a b =
-                match (a,b) with
-                    (List.Cons v1 rest1, List.Cons v2 rest2) -> v1 = v2 && eq rest1 rest2,
-                    (Nil, Nil) -> true,
-                    _ -> false,
-    ;
+// module Main
+// 
+//     trait Eq a =
+//         val eq: a -> a -> bool,
+//         val ne: a -> a -> bool,
+//     ;
+// 
+//     impl {a, Eq a} => Eq List.List a =
+//        let eq a b =
+//            match (a,b) with
+//                (List.Cons v1 rest1, List.Cons v2 rest2) -> v1 = v2 && eq rest1 rest2,
+//                (Nil, Nil) -> true,
+//                _ -> false,
+//     ;

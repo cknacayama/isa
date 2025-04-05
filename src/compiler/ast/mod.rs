@@ -468,6 +468,27 @@ impl<T: Display> LetBind<T> {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ConstraintSet {
+    pub constrs: Box<[Ty]>,
+}
+
+impl Display for ConstraintSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{")?;
+        let mut first = true;
+        for ty in &self.constrs {
+            if first {
+                first = false;
+            } else {
+                write!(f, ", ")?;
+            }
+            write!(f, "{ty}")?;
+        }
+        write!(f, "}} =>")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ExprKind<T> {
     Int(i64),
@@ -501,10 +522,10 @@ pub enum ExprKind<T> {
     },
 
     Val {
-        name:       Symbol,
-        parameters: Box<[Ty]>,
-        ty:         Ty,
-        ty_span:    Span,
+        set:     ConstraintSet,
+        name:    Symbol,
+        ty:      Ty,
+        ty_span: Span,
     },
 
     Type {
@@ -607,17 +628,8 @@ impl<T: Display> Expr<T> {
                 }
                 write!(f, ")")
             }
-            ExprKind::Val {
-                name,
-                parameters,
-                ty,
-                ..
-            } => {
-                write!(f, "(val {name}")?;
-                for t in parameters {
-                    write!(f, " {t}")?;
-                }
-                write!(f, ": {ty})")
+            ExprKind::Val { set, name, ty, .. } => {
+                write!(f, "(val {set} {name}: {ty})")
             }
             ExprKind::Alias {
                 name,
@@ -747,6 +759,17 @@ impl Substitute for LetBind<Ty> {
             p.substitute(subs);
         }
         self.expr.substitute(subs);
+    }
+}
+
+impl Substitute for ConstraintSet {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        for ty in &mut self.constrs {
+            ty.substitute(subs);
+        }
     }
 }
 
