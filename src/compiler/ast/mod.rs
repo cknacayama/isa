@@ -468,9 +468,59 @@ impl<T: Display> LetBind<T> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct TraitConstraint {
+    trayt:       Symbol,
+    constrained: Ty,
+}
+
+impl TraitConstraint {
+    pub const fn new(trayt: Symbol, constrained: Ty) -> Self {
+        Self { trayt, constrained }
+    }
+}
+
+impl Display for TraitConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.trayt, self.constrained)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Constraint {
+    Parameter(Ty),
+    Trait(TraitConstraint),
+}
+
+impl Constraint {
+    #[must_use]
+    pub const fn as_parameter(&self) -> Option<&Ty> {
+        if let Self::Parameter(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+}
+
+impl From<TraitConstraint> for Constraint {
+    fn from(v: TraitConstraint) -> Self {
+        Self::Trait(v)
+    }
+}
+
+impl Display for Constraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parameter(ty) => Display::fmt(ty, f),
+            Self::Trait(trait_constraint) => Display::fmt(trait_constraint, f),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ConstraintSet {
-    pub constrs: Box<[Ty]>,
+    pub constrs: Box<[Constraint]>,
 }
 
 impl Display for ConstraintSet {
@@ -759,6 +809,18 @@ impl Substitute for LetBind<Ty> {
             p.substitute(subs);
         }
         self.expr.substitute(subs);
+    }
+}
+
+impl Substitute for Constraint {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        match self {
+            Self::Parameter(ty) => ty.substitute(subs),
+            Self::Trait(trait_constraint) => trait_constraint.constrained.substitute(subs),
+        }
     }
 }
 

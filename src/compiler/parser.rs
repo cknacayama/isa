@@ -5,7 +5,10 @@ use super::ast::untyped::{
     UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
     UntypedPat, UntypedPatKind,
 };
-use super::ast::{BinOp, ConstraintSet, Constructor, ModuleIdent, PathIdent, RangePat, UnOp};
+use super::ast::{
+    BinOp, Constraint, ConstraintSet, Constructor, ModuleIdent, PathIdent, RangePat,
+    TraitConstraint, UnOp,
+};
 use super::error::ParseError;
 use super::lexer::Lexer;
 use super::token::{Token, TokenKind};
@@ -225,10 +228,27 @@ impl<'a> Parser<'a> {
 
         while !self.check(TokenKind::RBrace) {
             let Spanned { data, .. } = self.expect_id()?;
-            constrs.push(Ty::Named {
-                name: PathIdent::Ident(data),
-                args: Rc::from([]),
-            });
+            let constr = self
+                .next_if_map(|tk| match tk.data {
+                    TokenKind::Ident(name) => {
+                        let trayt = TraitConstraint::new(
+                            data,
+                            Ty::Named {
+                                name: PathIdent::Ident(name),
+                                args: Rc::from([]),
+                            },
+                        );
+                        Some(Constraint::Trait(trayt))
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| {
+                    Constraint::Parameter(Ty::Named {
+                        name: PathIdent::Ident(data),
+                        args: Rc::from([]),
+                    })
+                });
+            constrs.push(constr);
             if self.next_if_match(TokenKind::Comma).is_none() {
                 break;
             }

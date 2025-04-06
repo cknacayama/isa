@@ -241,10 +241,17 @@ impl Display for Ty {
             }
             Self::Var(var) => write!(f, "'{var}"),
             Self::Scheme { quant, ty } => {
+                write!(f, "{{")?;
+                let mut first = true;
                 for n in quant.iter() {
-                    write!(f, "'{n} ")?;
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "'{n}")?;
                 }
-                write!(f, ". {ty}")
+                write!(f, "}} => {ty}")
             }
             Self::Named { name, args } => {
                 write!(f, "{name}")?;

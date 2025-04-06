@@ -10,7 +10,7 @@ use super::ast::untyped::{
     UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
     UntypedPat, UntypedPatKind,
 };
-use super::ast::{BinOp, ConstraintSet, Constructor, ModuleIdent, PathIdent, UnOp};
+use super::ast::{BinOp, Constraint, ConstraintSet, Constructor, ModuleIdent, PathIdent, UnOp};
 use super::ctx::{AliasData, TypeCtx};
 use super::env::{Env, VarData};
 use super::error::{DiagnosticLabel, InferError, InferErrorKind, IsaError, Uninferable};
@@ -465,7 +465,7 @@ impl Checker {
 
     fn check_val(
         &mut self,
-        set: ConstraintSet,
+        mut set: ConstraintSet,
         name: Symbol,
         mut ty: Ty,
         ty_span: Span,
@@ -473,7 +473,7 @@ impl Checker {
     ) -> TypedExpr {
         let mut subs = Vec::new();
         let mut quant = Vec::new();
-        for p in set.constrs {
+        for p in set.constrs.iter().filter_map(Constraint::as_parameter) {
             let new = self.gen_id();
             let old = p.get_name().and_then(PathIdent::as_ident).unwrap();
             quant.push(new);
@@ -482,17 +482,14 @@ impl Checker {
 
         if !subs.is_empty() {
             ty.substitute_param(&subs);
+            set.substitute_param(&subs);
             ty = Ty::Scheme {
-                quant: quant.clone().into(),
+                quant: quant.into(),
                 ty:    Rc::new(ty),
             }
         }
 
         self.insert_val(name, ty.clone(), ty_span);
-
-        let set = ConstraintSet {
-            constrs: quant.into_iter().map(Ty::Var).collect(),
-        };
 
         let kind = TypedExprKind::Val {
             set,
