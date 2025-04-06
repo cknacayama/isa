@@ -40,17 +40,17 @@ module Option
             None -> None,
         ;
 
-// module Main
-// 
-//     trait Eq a =
-//         val eq: a -> a -> bool,
-//         val ne: a -> a -> bool,
-//     ;
-// 
-//     impl {a, Eq a} => Eq List.List a =
-//        let eq a b =
-//            match (a,b) with
-//                (List.Cons v1 rest1, List.Cons v2 rest2) -> v1 = v2 && eq rest1 rest2,
-//                (Nil, Nil) -> true,
-//                _ -> false,
-//     ;
+module Main
+
+    class Eq a =
+        val eq: a -> a -> bool,
+        val ne: a -> a -> bool,
+    ;
+
+    instance {a, Eq a} => Eq List.List a =
+       let eq a b =
+           match (a,b) with
+               (List.Cons v1 rest1, List.Cons v2 rest2) -> v1 = v2 && eq rest1 rest2,
+               (Nil, Nil) -> true,
+               _ -> false,
+    ;

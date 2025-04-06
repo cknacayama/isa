@@ -28,9 +28,6 @@ pub enum BinOp {
 }
 
 impl BinOp {
-    /// Returns `true` if the bin op is [`Pipe`].
-    ///
-    /// [`Pipe`]: BinOp::Pipe
     #[must_use]
     pub const fn is_pipe(self) -> bool {
         matches!(self, Self::Pipe)
@@ -469,27 +466,27 @@ impl<T: Display> LetBind<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct TraitConstraint {
-    trayt:       Symbol,
+pub struct ClassConstraint {
+    class:       Symbol,
     constrained: Ty,
 }
 
-impl TraitConstraint {
-    pub const fn new(trayt: Symbol, constrained: Ty) -> Self {
-        Self { trayt, constrained }
+impl ClassConstraint {
+    pub const fn new(class: Symbol, constrained: Ty) -> Self {
+        Self { class, constrained }
     }
 }
 
-impl Display for TraitConstraint {
+impl Display for ClassConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.trayt, self.constrained)
+        write!(f, "{} {}", self.class, self.constrained)
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum Constraint {
     Parameter(Ty),
-    Trait(TraitConstraint),
+    Class(ClassConstraint),
 }
 
 impl Constraint {
@@ -503,9 +500,9 @@ impl Constraint {
     }
 }
 
-impl From<TraitConstraint> for Constraint {
-    fn from(v: TraitConstraint) -> Self {
-        Self::Trait(v)
+impl From<ClassConstraint> for Constraint {
+    fn from(v: ClassConstraint) -> Self {
+        Self::Class(v)
     }
 }
 
@@ -513,7 +510,7 @@ impl Display for Constraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Parameter(ty) => Display::fmt(ty, f),
-            Self::Trait(trait_constraint) => Display::fmt(trait_constraint, f),
+            Self::Class(trait_constraint) => Display::fmt(trait_constraint, f),
         }
     }
 }
@@ -536,6 +533,20 @@ impl Display for ConstraintSet {
             write!(f, "{ty}")?;
         }
         write!(f, "}} =>")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ValDeclaration {
+    pub set:     ConstraintSet,
+    pub name:    Symbol,
+    pub ty:      Ty,
+    pub ty_span: Span,
+}
+
+impl Display for ValDeclaration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "val {} {}: {}", self.set, self.name, self.ty)
     }
 }
 
@@ -571,11 +582,20 @@ pub enum ExprKind<T> {
         body: Option<Box<Expr<T>>>,
     },
 
-    Val {
-        set:     ConstraintSet,
-        name:    Symbol,
-        ty:      Ty,
-        ty_span: Span,
+    Val(ValDeclaration),
+
+    Class {
+        set:        ConstraintSet,
+        name:       Symbol,
+        instance:   Symbol,
+        signatures: Box<[ValDeclaration]>,
+    },
+
+    Instance {
+        set:      ConstraintSet,
+        name:     Symbol,
+        instance: Ty,
+        impls:    Box<[LetBind<T>]>,
     },
 
     Type {
@@ -678,9 +698,7 @@ impl<T: Display> Expr<T> {
                 }
                 write!(f, ")")
             }
-            ExprKind::Val { set, name, ty, .. } => {
-                write!(f, "(val {set} {name}: {ty})")
-            }
+            ExprKind::Val(val) => write!(f, "({val})"),
             ExprKind::Alias {
                 name,
                 parameters,
@@ -745,6 +763,31 @@ impl<T: Display> Expr<T> {
                 write!(f, ")")
             }
             ExprKind::ModuleIdent(module_access) => write!(f, "{module_access}"),
+            ExprKind::Class {
+                set,
+                name,
+                instance,
+                signatures,
+            } => {
+                writeln!(f, "(class {set} {name} {instance} =")?;
+                for val in signatures {
+                    writeln!(f, "{tab}{val}")?;
+                }
+                write!(f, ")")
+            }
+            ExprKind::Instance {
+                set,
+                name,
+                instance,
+                impls,
+            } => {
+                writeln!(f, "(instance {set} {name} {instance} =")?;
+                for i in impls {
+                    write!(f, "{tab}")?;
+                    i.format_helper(f, indentation + 1)?;
+                }
+                write!(f, ")")
+            }
         }
         .and_then(|()| write!(f, ": {}", self.ty))
     }
@@ -776,6 +819,16 @@ impl Substitute for Constructor {
     }
 }
 
+impl Substitute for ValDeclaration {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.set.substitute(subs);
+        self.ty.substitute(subs);
+    }
+}
+
 impl Substitute for Expr<()> {
     fn substitute<S>(&mut self, subs: &mut S)
     where
@@ -792,8 +845,11 @@ impl Substitute for Expr<()> {
                     }
                 }
             }
-            ExprKind::Alias { ty, .. } | ExprKind::Val { ty, .. } => {
+            ExprKind::Alias { ty, .. } => {
                 ty.substitute(subs);
+            }
+            ExprKind::Val(val) => {
+                val.substitute(subs);
             }
             _ => (),
         }
@@ -819,7 +875,7 @@ impl Substitute for Constraint {
     {
         match self {
             Self::Parameter(ty) => ty.substitute(subs),
-            Self::Trait(trait_constraint) => trait_constraint.constrained.substitute(subs),
+            Self::Class(trait_constraint) => trait_constraint.constrained.substitute(subs),
         }
     }
 }
@@ -881,8 +937,11 @@ impl Substitute for Expr<Ty> {
                     }
                 }
             }
-            ExprKind::Val { ty, .. } | ExprKind::Alias { ty, .. } => {
+            ExprKind::Alias { ty, .. } => {
                 ty.substitute(subs);
+            }
+            ExprKind::Val(val) => {
+                val.substitute(subs);
             }
             ExprKind::Tuple(exprs) => {
                 for expr in exprs {
@@ -896,12 +955,32 @@ impl Substitute for Expr<Ty> {
             ExprKind::Un { expr, .. } => {
                 expr.substitute(subs);
             }
-
             ExprKind::Int(_)
             | ExprKind::Bool(_)
             | ExprKind::Char(_)
             | ExprKind::Ident(_)
             | ExprKind::ModuleIdent(_) => (),
+
+            ExprKind::Class {
+                set, signatures, ..
+            } => {
+                set.substitute(subs);
+                for sig in signatures {
+                    sig.substitute(subs);
+                }
+            }
+            ExprKind::Instance {
+                set,
+                instance,
+                impls,
+                ..
+            } => {
+                set.substitute(subs);
+                instance.substitute(subs);
+                for i in impls {
+                    i.substitute(subs);
+                }
+            }
         }
 
         self.ty.substitute(subs);

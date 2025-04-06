@@ -10,7 +10,7 @@ use super::ast::untyped::{
     UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
     UntypedPat, UntypedPatKind,
 };
-use super::ast::{BinOp, Constraint, ConstraintSet, Constructor, ModuleIdent, PathIdent, UnOp};
+use super::ast::{BinOp, Constraint, Constructor, ModuleIdent, PathIdent, UnOp, ValDeclaration};
 use super::ctx::{AliasData, TypeCtx};
 use super::env::{Env, VarData};
 use super::error::{DiagnosticLabel, InferError, InferErrorKind, IsaError, Uninferable};
@@ -463,40 +463,39 @@ impl Checker {
         TypedExpr::new(kind, span, Ty::Unit)
     }
 
-    fn check_val(
-        &mut self,
-        mut set: ConstraintSet,
-        name: Symbol,
-        mut ty: Ty,
-        ty_span: Span,
-        span: Span,
-    ) -> TypedExpr {
+    fn check_val(&mut self, mut val: ValDeclaration) -> ValDeclaration {
         let mut subs = Vec::new();
         let mut quant = Vec::new();
-        for p in set.constrs.iter().filter_map(Constraint::as_parameter) {
-            let new = self.gen_id();
-            let old = p.get_name().and_then(PathIdent::as_ident).unwrap();
-            quant.push(new);
-            subs.push((old, new));
-        }
+
+        val.set
+            .constrs
+            .iter()
+            .filter_map(Constraint::as_parameter)
+            .for_each(|param| {
+                let new = self.gen_id();
+                let old = param.get_name().and_then(PathIdent::as_ident).unwrap();
+                quant.push(new);
+                subs.push((old, new));
+            });
 
         if !subs.is_empty() {
-            ty.substitute_param(&subs);
-            set.substitute_param(&subs);
-            ty = Ty::Scheme {
+            val.ty.substitute_param(&subs);
+            val.set.substitute_param(&subs);
+            val.ty = Ty::Scheme {
                 quant: quant.into(),
-                ty:    Rc::new(ty),
+                ty:    Rc::new(val.ty),
             }
         }
 
-        self.insert_val(name, ty.clone(), ty_span);
+        val
+    }
 
-        let kind = TypedExprKind::Val {
-            set,
-            name,
-            ty,
-            ty_span,
-        };
+    fn check_val_expr(&mut self, val: ValDeclaration, span: Span) -> TypedExpr {
+        let val = self.check_val(val);
+
+        self.insert_val(val.name, val.ty.clone(), val.ty_span);
+
+        let kind = TypedExprKind::Val(val);
 
         TypedExpr::new(kind, span, Ty::Unit)
     }
@@ -1187,14 +1186,12 @@ impl Checker {
                 Ty::Unit,
             )),
 
-            UntypedExprKind::Val {
-                set,
-                name,
-                ty,
-                ty_span,
-            } => Ok(self.check_val(set, name, ty, ty_span, span)),
+            UntypedExprKind::Val(val) => Ok(self.check_val_expr(val, span)),
 
             UntypedExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
+
+            UntypedExprKind::Class { .. } => todo!(),
+            UntypedExprKind::Instance { .. } => todo!(),
         }
     }
 }
