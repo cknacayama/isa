@@ -3,9 +3,11 @@ use std::rc::Rc;
 
 use rustc_hash::FxHashMap;
 
-use super::ast::{Constructor, PathIdent};
+use super::ast::{ConstraintSet, Constructor, PathIdent};
 use super::infer::{Subs, Substitute};
 use super::types::Ty;
+use crate::global::Symbol;
+use crate::span::Span;
 
 pub trait CtxFmt {
     type Ctx;
@@ -75,8 +77,30 @@ impl AliasData {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct ClassData {
+    constraints: ConstraintSet,
+    instance:    Symbol,
+    signatures:  FxHashMap<Symbol, (Ty, Span)>,
+}
+
+impl ClassData {
+    pub const fn new(
+        constraints: ConstraintSet,
+        instance: Symbol,
+        signatures: FxHashMap<Symbol, (Ty, Span)>,
+    ) -> Self {
+        Self {
+            constraints,
+            instance,
+            signatures,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct TypeCtx {
     constructors: FxHashMap<PathIdent, TyData>,
+    traits:       FxHashMap<Symbol, ClassData>,
     id_generator: u64,
 }
 
@@ -90,13 +114,31 @@ impl TypeCtx {
     }
 
     #[must_use]
-    pub fn get_constructors(&self, ty: &Ty) -> &[Constructor] {
-        let Ty::Named { name, .. } = ty else {
-            return &[];
-        };
+    pub fn get_constructors(&self, name: &PathIdent) -> &[Constructor] {
         self.constructors
             .get(name)
             .map_or(&[], |data| data.constructors.as_slice())
+    }
+
+    #[must_use]
+    pub fn get_type_arity(&self, name: &PathIdent) -> Option<usize> {
+        self.constructors.get(name).map(|data| data.params.len())
+    }
+
+    pub fn insert_class(&mut self, name: Symbol, data: ClassData) -> Option<ClassData> {
+        self.traits.insert(name, data)
+    }
+
+    #[must_use]
+    pub fn get_class(&self, name: Symbol) -> Option<&ClassData> {
+        self.traits.get(&name)
+    }
+
+    #[must_use]
+    pub fn get_class_member(&self, name: Symbol, member: Symbol) -> Option<&(Ty, Span)> {
+        self.traits
+            .get(&name)
+            .and_then(|class| class.signatures.get(&member))
     }
 
     #[must_use]
@@ -145,7 +187,10 @@ impl TypeCtx {
         ty: &Ty,
         idx: usize,
     ) -> std::fmt::Result {
-        let ctor = self.get_constructors(ty)[idx].name;
+        let Ty::Named { name, .. } = ty else {
+            return Ok(());
+        };
+        let ctor = self.get_constructors(name)[idx].name;
         write!(f, "{ctor}")
     }
 }

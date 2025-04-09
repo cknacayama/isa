@@ -245,7 +245,7 @@ impl<'a> Parser<'a> {
         }
         let impls = impls.into_boxed_slice();
 
-        Ok(dbg!(UntypedExpr::untyped(
+        Ok(UntypedExpr::untyped(
             UntypedExprKind::Instance {
                 set,
                 name,
@@ -253,7 +253,7 @@ impl<'a> Parser<'a> {
                 impls,
             },
             span,
-        )))
+        ))
     }
 
     fn parse_alias(&mut self) -> ParseResult<UntypedExpr> {

@@ -17,17 +17,11 @@ enum VarKind {
 }
 
 impl VarKind {
-    /// Returns `true` if the var kind is [`Constructor`].
-    ///
-    /// [`Constructor`]: VarKind::Constructor
     #[must_use]
     const fn is_constructor(self) -> bool {
         matches!(self, Self::Constructor)
     }
 
-    /// Returns `true` if the var kind is [`ValueDeclaration`].
-    ///
-    /// [`ValueDeclaration`]: VarKind::ValueDeclaration
     #[must_use]
     const fn is_value_declaration(self) -> bool {
         matches!(self, Self::ValueDeclaration)

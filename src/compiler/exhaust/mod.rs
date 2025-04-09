@@ -29,8 +29,8 @@ impl<'a> Ctx<'a> {
             Ty::Bool => Some(CtorSet::Bool),
             Ty::Char => Some(CtorSet::Integers(IntRange::character())),
             Ty::Scheme { ty, .. } => self.ctors_for_ty(ty),
-            Ty::Named { .. } => {
-                let variants = self.ctx.get_constructors(ty).len();
+            Ty::Named { name, .. } => {
+                let variants = self.ctx.get_constructors(name).len();
                 let variants = NonZeroUsize::new(variants)?;
                 Some(CtorSet::Type { variants })
             }
@@ -121,8 +121,14 @@ impl Pat {
                     .map(|pat| Self::from_ast_pat(pat, ctx))
                     .enumerate()
                     .collect();
+                let Ty::Named {
+                    name: ref ty_name, ..
+                } = pat.ty
+                else {
+                    unreachable!()
+                };
                 let idx = ctx
-                    .get_constructors(&pat.ty)
+                    .get_constructors(ty_name)
                     .iter()
                     .position(|c| c.name == name.ident())
                     .unwrap();

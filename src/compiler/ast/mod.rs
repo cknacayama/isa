@@ -498,6 +498,15 @@ impl Constraint {
             None
         }
     }
+
+    #[must_use]
+    pub const fn as_parameter_mut(&mut self) -> Option<&mut Ty> {
+        if let Self::Parameter(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
 }
 
 impl From<ClassConstraint> for Constraint {

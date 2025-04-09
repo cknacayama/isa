@@ -10,8 +10,11 @@ use super::ast::untyped::{
     UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
     UntypedPat, UntypedPatKind,
 };
-use super::ast::{BinOp, Constraint, Constructor, ModuleIdent, PathIdent, UnOp, ValDeclaration};
-use super::ctx::{AliasData, TypeCtx};
+use super::ast::{
+    BinOp, Constraint, ConstraintSet, Constructor, LetBind, ModuleIdent, PathIdent, UnOp,
+    ValDeclaration,
+};
+use super::ctx::{AliasData, ClassData, TypeCtx};
 use super::env::{Env, VarData};
 use super::error::{DiagnosticLabel, InferError, InferErrorKind, IsaError, Uninferable};
 use super::infer::{EqConstraint, EqConstraintSet, Subs, Substitute, unify};
@@ -242,11 +245,12 @@ impl Checker {
     fn check_let_bind_with_val(
         &mut self,
         bind: UntypedLetBind,
-        val: &VarData,
+        val_decl: &Ty,
+        ty_span: Span,
     ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>)> {
         self.env.push_scope();
 
-        let mut param_iter = val.ty().param_iter();
+        let mut param_iter = val_decl.param_iter();
 
         let mut typed_params = bind
             .params
@@ -254,9 +258,9 @@ impl Checker {
             .map(|p| {
                 let decl = param_iter.next().ok_or_else(|| {
                     let fst =
-                        DiagnosticLabel::new(format!("expected {}", val.ty()), bind.name_span);
+                        DiagnosticLabel::new(format!("expected {}", val_decl), bind.name_span);
                     let snd = DiagnosticLabel::new("more parameters than expected", p.span);
-                    let trd = DiagnosticLabel::new("expected due to this", val.span());
+                    let trd = DiagnosticLabel::new("expected due to this", ty_span);
 
                     IsaError::new("type mismatch", fst, vec![snd, trd])
                         .with_note("let bind should have same type as val declaration")
@@ -269,7 +273,7 @@ impl Checker {
         let mut expr = if typed_params.is_empty() {
             self.check(*bind.expr)?
         } else {
-            self.insert_variable(bind.name, val.ty().clone(), bind.name_span);
+            self.insert_variable(bind.name, val_decl.clone(), bind.name_span);
             let mut expr = self.check(*bind.expr)?;
 
             for p in &mut typed_params {
@@ -285,15 +289,15 @@ impl Checker {
 
         let ty = expr.ty.clone();
 
-        let val_ty = self.instantiate(val.ty().clone());
+        let val_ty = self.instantiate(val_decl.clone());
         let val_free = val_ty.free_type_variables();
 
         let constr = EqConstraint::new(val_ty, ty, expr.span);
 
         let val_error = |ty: &Ty, span| {
-            let fst = DiagnosticLabel::new(format!("expected {}", val.ty()), bind.name_span);
+            let fst = DiagnosticLabel::new(format!("expected {val_decl}"), bind.name_span);
             let snd = DiagnosticLabel::new(format!("this has type {ty}"), span);
-            let trd = DiagnosticLabel::new("expected due to this", val.span());
+            let trd = DiagnosticLabel::new("expected due to this", ty_span);
 
             IsaError::new("type mismatch", fst, vec![snd, trd])
                 .with_note("let bind should have same type as val declaration")
@@ -329,7 +333,7 @@ impl Checker {
         match self.get_val_from_module(module_id) {
             Ok(val) if self.env.at_module_scope() => {
                 let val = val.clone();
-                return self.check_let_bind_with_val(bind, &val);
+                return self.check_let_bind_with_val(bind, val.ty(), val.span());
             }
             _ => (),
         }
@@ -567,6 +571,48 @@ impl Checker {
         };
 
         Ok(TypedPat::new(kind, span, ty))
+    }
+
+    fn check_class(
+        &mut self,
+        set: ConstraintSet,
+        name: Symbol,
+        instance: Symbol,
+        signatures: Box<[ValDeclaration]>,
+        span: Span,
+    ) -> TypedExpr {
+        let signatures: Box<_> = signatures
+            .into_iter()
+            .map(|val| self.check_val(val))
+            .collect();
+
+        let val_signatures = FxHashMap::from_iter(
+            signatures
+                .iter()
+                .map(|val| (val.name, (val.ty.clone(), val.ty_span))),
+        );
+
+        self.type_ctx
+            .insert_class(name, ClassData::new(set.clone(), instance, val_signatures));
+        let kind = TypedExprKind::Class {
+            set,
+            name,
+            instance,
+            signatures,
+        };
+
+        TypedExpr::new(kind, span, Ty::Unit)
+    }
+
+    fn check_instance(
+        &mut self,
+        _set: ConstraintSet,
+        _name: Symbol,
+        _instance: Ty,
+        _impls: Box<[UntypedLetBind]>,
+        _span: Span,
+    ) -> IsaResult<TypedExpr> {
+        todo!()
     }
 
     fn check_pat(&mut self, UntypedPat { kind, span, .. }: UntypedPat) -> IsaResult<TypedPat> {
@@ -916,19 +962,18 @@ impl Checker {
     }
 
     fn check_module_types(&mut self, module: &mut UntypedModule) -> Vec<(ModuleIdent, AliasData)> {
-        let mut declared = Vec::new();
         let mod_name = module.name;
-
-        for decl in module
+        let declared = module
             .exprs
             .iter_mut()
             .filter_map(|expr| self.check_type_declaration(expr))
-        {
-            let module_id = ModuleIdent::new(mod_name, decl);
-            let new_name = PathIdent::Module(module_id);
-            let decl = PathIdent::Ident(decl);
-            declared.push((decl, new_name));
-        }
+            .map(|decl| {
+                let module_id = ModuleIdent::new(mod_name, decl);
+                let new_name = PathIdent::Module(module_id);
+                let decl = PathIdent::Ident(decl);
+                (decl, new_name)
+            })
+            .collect::<Vec<_>>();
 
         if declared.is_empty() {
             return Vec::new();
@@ -951,17 +996,15 @@ impl Checker {
             })
         });
 
-        let mut aliases = Vec::new();
-        for (name, alias) in module
+        module
             .exprs
             .iter()
             .filter_map(Self::check_alias_declaration)
-        {
-            let module_id = ModuleIdent::new(mod_name, name);
-            aliases.push((module_id, alias));
-        }
-
-        aliases
+            .map(|(name, alias)| {
+                let module_id = ModuleIdent::new(mod_name, name);
+                (module_id, alias)
+            })
+            .collect()
     }
 
     fn check_type_declaration(&mut self, expr: &mut UntypedExpr) -> Option<Symbol> {
@@ -988,6 +1031,7 @@ impl Checker {
 
                 Some(*name)
             }
+
             UntypedExprKind::Alias {
                 name,
                 parameters,
@@ -1006,6 +1050,51 @@ impl Checker {
                 ty.substitute_param(&subs);
 
                 Some(*name)
+            }
+
+            UntypedExprKind::Instance { set, .. } => {
+                let mut subs = Vec::new();
+
+                for param in set
+                    .constrs
+                    .iter_mut()
+                    .filter_map(Constraint::as_parameter_mut)
+                {
+                    let id = self.gen_id();
+                    let mut new = Ty::Var(id);
+                    std::mem::swap(param, &mut new);
+                    let old = new.get_name().and_then(PathIdent::as_ident).unwrap();
+                    subs.push((old, id));
+                }
+
+                set.substitute_param(&subs);
+
+                None
+            }
+
+            UntypedExprKind::Class {
+                set, signatures, ..
+            } => {
+                let mut subs = Vec::new();
+
+                for param in set
+                    .constrs
+                    .iter_mut()
+                    .filter_map(Constraint::as_parameter_mut)
+                {
+                    let id = self.gen_id();
+                    let mut new = Ty::Var(id);
+                    std::mem::swap(param, &mut new);
+                    let old = new.get_name().and_then(PathIdent::as_ident).unwrap();
+                    subs.push((old, id));
+                }
+
+                set.substitute_param(&subs);
+                for sig in signatures {
+                    sig.substitute_param(&subs);
+                }
+
+                None
             }
 
             _ => None,
@@ -1190,8 +1279,18 @@ impl Checker {
 
             UntypedExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
 
-            UntypedExprKind::Class { .. } => todo!(),
-            UntypedExprKind::Instance { .. } => todo!(),
+            UntypedExprKind::Class {
+                set,
+                name,
+                instance,
+                signatures,
+            } => Ok(self.check_class(set, name, instance, signatures, span)),
+            UntypedExprKind::Instance {
+                set,
+                name,
+                instance,
+                impls,
+            } => self.check_instance(set, name, instance, impls, span),
         }
     }
 }
