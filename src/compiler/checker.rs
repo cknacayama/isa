@@ -51,6 +51,13 @@ impl Checker {
         self.env.global_scope().iter()
     }
 
+    pub fn instances(&self) -> impl Iterator<Item = (&Ty, impl Iterator<Item = Symbol>)> {
+        self.type_ctx
+            .instances()
+            .iter()
+            .map(|(ty, classes)| (ty, classes.iter().copied()))
+    }
+
     fn insert_val(&mut self, id: Symbol, ty: Ty, span: Span) -> Option<VarData> {
         self.env.insert_val(id, ty, span)
     }
@@ -100,9 +107,10 @@ impl Checker {
             let err_span = err.constr().span();
 
             let (fst_label, labels) = if err_span == cond.span {
-                let fst = DiagnosticLabel::new("expected if condition to have type bool", err_span);
+                let fst =
+                    DiagnosticLabel::new("expected if condition to have type 'bool'", err_span);
                 let snd = DiagnosticLabel::new(
-                    format!("this is of type {}", err.constr().rhs()),
+                    format!("this is of type '{}'", err.constr().rhs()),
                     err_span,
                 );
                 (fst, vec![snd])
@@ -112,8 +120,8 @@ impl Checker {
                 then_ty.substitute_many(err.subs());
                 els_ty.substitute_many(err.subs());
                 let fst = DiagnosticLabel::new("if and else have different types", span);
-                let snd = DiagnosticLabel::new(format!("if has type {then_ty}"), then.span);
-                let trd = DiagnosticLabel::new(format!("else has type {els_ty}"), otherwise.span);
+                let snd = DiagnosticLabel::new(format!("if has type '{then_ty}'"), then.span);
+                let trd = DiagnosticLabel::new(format!("else has type '{els_ty}'"), otherwise.span);
 
                 (fst, vec![snd, trd])
             };
@@ -184,14 +192,15 @@ impl Checker {
             arg.ty.substitute_many(err.subs());
             let (fst, labels) = if let Ty::Fn { ref param, .. } = callee.ty {
                 let fst = DiagnosticLabel::new(
-                    format!("expected {param} argument, got {}", arg.ty),
+                    format!("expected '{param}' argument, got '{}'", arg.ty),
                     arg.span,
                 );
-                let snd = DiagnosticLabel::new(format!("this has type {}", callee.ty), callee.span);
+                let snd =
+                    DiagnosticLabel::new(format!("this has type '{}'", callee.ty), callee.span);
                 (fst, vec![snd])
             } else {
                 let fst = DiagnosticLabel::new(
-                    format!("expected callable, got {}", callee.ty),
+                    format!("expected callable, got '{}'", callee.ty),
                     callee.span,
                 );
                 (fst, Vec::new())
@@ -239,7 +248,8 @@ impl Checker {
             .into_iter()
             .map(|p| {
                 let decl = param_iter.next().ok_or_else(|| {
-                    let fst = DiagnosticLabel::new(format!("expected {val_decl}"), bind.name_span);
+                    let fst =
+                        DiagnosticLabel::new(format!("expected '{val_decl}'"), bind.name_span);
                     let snd = DiagnosticLabel::new("more parameters than expected", p.span);
                     let trd = DiagnosticLabel::new("expected due to this", ty_span);
 
@@ -276,8 +286,8 @@ impl Checker {
         let constr = EqConstraint::new(val_ty, ty, expr.span);
 
         let val_error = |ty: &Ty, span| {
-            let fst = DiagnosticLabel::new(format!("expected {val_decl}"), bind.name_span);
-            let snd = DiagnosticLabel::new(format!("this has type {ty}"), span);
+            let fst = DiagnosticLabel::new(format!("expected '{val_decl}'"), bind.name_span);
+            let snd = DiagnosticLabel::new(format!("this has type '{ty}'"), span);
             let trd = DiagnosticLabel::new("expected due to this", ty_span);
 
             IsaError::new("type mismatch", fst, vec![snd, trd])
@@ -523,7 +533,7 @@ impl Checker {
 
         let subs = self.unify(c).map_err(|err| {
             IsaError::from(err).with_label(DiagnosticLabel::new(
-                format!("constructor is of type {}", ctor.ty()),
+                format!("constructor is of type '{}'", ctor.ty()),
                 ctor.span(),
             ))
         })?;
@@ -559,8 +569,10 @@ impl Checker {
             .map(|val| (val.name, (val.ty.clone(), val.ty_span)))
             .collect();
 
-        self.type_ctx
-            .insert_class(name, ClassData::new(set.clone(), instance, val_signatures));
+        self.type_ctx.insert_class(
+            name,
+            ClassData::new(set.clone(), instance, val_signatures, span),
+        );
         let kind = TypedExprKind::Class {
             set,
             name,
@@ -573,7 +585,7 @@ impl Checker {
 
     fn check_instance_impls<F>(
         &mut self,
-        name: Symbol,
+        class: Symbol,
         mut set: ConstraintSet,
         impls: impl IntoIterator<Item = UntypedLetBind>,
         mut subs: F,
@@ -584,12 +596,20 @@ impl Checker {
         let impls = impls
             .into_iter()
             .map(|bind| {
-                let (mut ty, ty_span) = self
-                    .type_ctx
-                    .get_class_member(name, bind.name)
+                let class_data = self.type_ctx.get_class(class).unwrap();
+
+                let (mut ty, ty_span) = class_data
+                    .signatures()
+                    .get(&bind.name)
                     .cloned()
                     .ok_or_else(|| {
-                        InferError::new(InferErrorKind::Unbound(bind.name), bind.name_span)
+                        let fst = DiagnosticLabel::new(
+                            format!("'{}' is not a member o type class '{class}'", bind.name),
+                            bind.name_span,
+                        );
+                        let snd =
+                            DiagnosticLabel::new("type class declared here", class_data.span());
+                        IsaError::new("not a member", fst, vec![snd])
                     })?;
                 ty.substitute(&mut subs);
                 let name = bind.name;
@@ -606,16 +626,31 @@ impl Checker {
         &mut self,
         params: Box<[Ty]>,
         set: ConstraintSet,
-        name: Symbol,
+        class: Symbol,
         instance: Ty,
         impls: Box<[UntypedLetBind]>,
         span: Span,
     ) -> IsaResult<TypedExpr> {
-        let instance_var = self
+        let class_data = self
             .type_ctx
-            .get_class(name)
-            .ok_or_else(|| InferError::new(InferErrorKind::Unbound(name), span))?
-            .instance();
+            .get_class(class)
+            .ok_or_else(|| InferError::new(InferErrorKind::Unbound(class), span))?;
+
+        if let Some((not_implemented, (_, member_span))) = class_data
+            .signatures()
+            .iter()
+            .find(|(name, _)| !impls.iter().any(|bind| bind.name.eq(name)))
+        {
+            let fst = DiagnosticLabel::new(
+                format!("member '{not_implemented}' of '{class}' not implemented"),
+                span,
+            );
+            let snd = DiagnosticLabel::new("declared here", *member_span);
+
+            return Err(IsaError::new("member not implemented", fst, vec![snd]));
+        }
+
+        let instance_var = class_data.instance();
         let mut arity_error = false;
 
         let (impls, set) = if let Ty::Named {
@@ -625,7 +660,7 @@ impl Checker {
         {
             let arity = self.type_ctx.get_type_arity(instance_name).unwrap();
             let var_args_len = arity - args.len();
-            self.check_instance_impls(name, set, impls, |ty| match ty {
+            self.check_instance_impls(class, set, impls, |ty| match ty {
                 Ty::Named {
                     name: named,
                     args: var_args,
@@ -650,7 +685,7 @@ impl Checker {
                 _ => None,
             })
         } else {
-            self.check_instance_impls(name, set, impls, |ty| match ty {
+            self.check_instance_impls(class, set, impls, |ty| match ty {
                 Ty::Named { name: named, .. } if *named == instance_var => Some(instance.clone()),
                 _ => None,
             })
@@ -659,7 +694,7 @@ impl Checker {
         let kind = TypedExprKind::Instance {
             params,
             set,
-            name,
+            class,
             instance,
             impls: impls.into(),
         };
@@ -855,7 +890,7 @@ impl Checker {
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
-                        "operator {op} expects operands of type {}",
+                        "operator '{op}' expects operands of type '{}'",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -878,7 +913,7 @@ impl Checker {
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
-                        "operator {op} expects operands of type {}",
+                        "operator '{op}' expects operands of type '{}'",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -900,7 +935,7 @@ impl Checker {
 
                 let subs = self.unify(c1).map_err(|err| {
                     let note = format!(
-                        "operator {op} expects operands of same type ({})",
+                        "operator '{op}' expects operands of same type ({})",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -923,7 +958,7 @@ impl Checker {
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
-                        "operator {op} expects operands of type {}",
+                        "operator '{op}' expects operands of type '{}'",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -955,7 +990,7 @@ impl Checker {
         let constr = EqConstraint::new(ty.clone(), expr.ty.clone(), expr.span);
 
         let subs = self.unify(constr).map_err(|err| {
-            let note = format!("{op} operates on {ty}");
+            let note = format!("'{op}' operates on '{ty}'");
             IsaError::from(err).with_note(note)
         })?;
 
@@ -1080,6 +1115,7 @@ impl Checker {
                 params,
                 set,
                 instance,
+                class,
                 ..
             } => {
                 let mut subs = Vec::new();
@@ -1094,6 +1130,9 @@ impl Checker {
 
                 set.substitute_param(&subs);
                 instance.substitute_param(&subs);
+
+                let instance = self.env.generalize(instance.clone());
+                self.type_ctx.insert_instance(instance, *class);
 
                 None
             }
@@ -1151,7 +1190,7 @@ impl Checker {
 
             let exprs = module
                 .exprs
-                .extract_if(.., |e| e.kind.is_type_or_val())
+                .extract_if(.., |e| e.kind.is_type_or_val_or_class())
                 .map(|e| self.check(e).unwrap())
                 .collect::<Vec<_>>();
 
@@ -1261,12 +1300,12 @@ impl Checker {
             UntypedExprKind::Instance {
                 params,
                 set,
-                name,
+                class: name,
                 instance,
                 impls,
             } => self.check_instance(params, set, name, instance, impls, span),
 
-            _ => todo!(),
+            UntypedExprKind::ClassMember { .. } => todo!(),
         }
     }
 }

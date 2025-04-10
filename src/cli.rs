@@ -114,7 +114,13 @@ impl Config {
         let duration = start.elapsed();
 
         for (id, ty) in checker.declared() {
-            println!("    val {id}: {};", ty.ty());
+            println!("val {id}: {};", ty.ty());
+        }
+
+        for (ty, classes) in checker.instances() {
+            for class in classes {
+                println!("{class} {ty}");
+            }
         }
 
         println!("ran in {duration:?}");

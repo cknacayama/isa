@@ -184,19 +184,20 @@ impl From<InferError> for IsaError {
     fn from(value: InferError) -> Self {
         match value.kind() {
             InferErrorKind::Unbound(symbol) => {
-                let message = format!("undefined identifier {symbol}");
+                let message = format!("undefined identifier '{symbol}'");
                 let label = DiagnosticLabel::new("not previously defined", value.span());
                 Self::new(message, label, Vec::new())
             }
             InferErrorKind::NotConstructor(ty) => {
-                let message = format!("{ty} is not a constructor");
+                let message = format!("'{ty}' is not a constructor");
                 let label = DiagnosticLabel::new("expected a value constructor", value.span());
                 Self::new(message, label, Vec::new())
             }
             InferErrorKind::Kind(ty) => {
                 let label = DiagnosticLabel::new("pattern should have kind *", value.span());
-                let snd_label = DiagnosticLabel::new(format!("this is of type {ty}"), value.span());
-                Self::new("not matchable", label, vec![snd_label])
+                let snd_label =
+                    DiagnosticLabel::new(format!("this is of type '{ty}'"), value.span());
+                Self::new("kind error", label, vec![snd_label])
             }
         }
     }
@@ -206,7 +207,7 @@ impl From<Uninferable> for IsaError {
     fn from(value: Uninferable) -> Self {
         let fst = DiagnosticLabel::new(
             format!(
-                "expected {}, got {}",
+                "expected '{}', got '{}'",
                 value.constr().lhs(),
                 value.constr().rhs()
             ),

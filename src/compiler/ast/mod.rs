@@ -500,7 +500,7 @@ pub enum ExprKind<T> {
     Instance {
         params:   Box<[Ty]>,
         set:      ConstraintSet,
-        name:     Symbol,
+        class:    Symbol,
         instance: Ty,
         impls:    Box<[LetBind<T>]>,
     },
@@ -541,10 +541,10 @@ pub enum ExprKind<T> {
 
 impl<T> ExprKind<T> {
     #[must_use]
-    pub const fn is_type_or_val(&self) -> bool {
+    pub const fn is_type_or_val_or_class(&self) -> bool {
         match self {
-            Self::Type { .. } | Self::Val { .. } => true,
-            Self::Semi(e) => e.kind.is_type_or_val(),
+            Self::Type { .. } | Self::Val { .. } | Self::Class { .. } => true,
+            Self::Semi(e) => e.kind.is_type_or_val_or_class(),
             _ => false,
         }
     }
@@ -686,7 +686,7 @@ impl<T: Display> Expr<T> {
             }
             ExprKind::Instance {
                 set,
-                name,
+                class: name,
                 instance,
                 impls,
                 ..

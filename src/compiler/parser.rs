@@ -255,7 +255,7 @@ impl<'a> Parser<'a> {
             UntypedExprKind::Instance {
                 params,
                 set,
-                name,
+                class: name,
                 instance,
                 impls,
             },

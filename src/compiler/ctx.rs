@@ -1,7 +1,7 @@
 use std::fmt;
 use std::rc::Rc;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::ast::{ConstraintSet, Constructor};
 use super::infer::{Subs, Substitute};
@@ -81,6 +81,7 @@ pub struct ClassData {
     constraints: ConstraintSet,
     instance:    Symbol,
     signatures:  FxHashMap<Symbol, (Ty, Span)>,
+    span:        Span,
 }
 
 impl ClassData {
@@ -88,16 +89,26 @@ impl ClassData {
         constraints: ConstraintSet,
         instance: Symbol,
         signatures: FxHashMap<Symbol, (Ty, Span)>,
+        span: Span,
     ) -> Self {
         Self {
             constraints,
             instance,
             signatures,
+            span,
         }
     }
 
     pub const fn instance(&self) -> Symbol {
         self.instance
+    }
+
+    pub const fn signatures(&self) -> &FxHashMap<Symbol, (Ty, Span)> {
+        &self.signatures
+    }
+
+    pub const fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -105,6 +116,7 @@ impl ClassData {
 pub struct TypeCtx {
     constructors: FxHashMap<Symbol, TyData>,
     traits:       FxHashMap<Symbol, ClassData>,
+    instances:    FxHashMap<Ty, FxHashSet<Symbol>>,
     id_generator: u64,
 }
 
@@ -133,16 +145,13 @@ impl TypeCtx {
         self.traits.insert(name, data)
     }
 
-    #[must_use]
-    pub fn get_class(&self, name: Symbol) -> Option<&ClassData> {
-        self.traits.get(&name)
+    pub fn insert_instance(&mut self, ty: Ty, class: Symbol) {
+        self.instances.entry(ty).or_default().insert(class);
     }
 
     #[must_use]
-    pub fn get_class_member(&self, name: Symbol, member: Symbol) -> Option<&(Ty, Span)> {
-        self.traits
-            .get(&name)
-            .and_then(|class| class.signatures.get(&member))
+    pub fn get_class(&self, name: Symbol) -> Option<&ClassData> {
+        self.traits.get(&name)
     }
 
     #[must_use]
@@ -196,6 +205,10 @@ impl TypeCtx {
         };
         let ctor = self.get_constructors(*name)[idx].name;
         write!(f, "{ctor}")
+    }
+
+    pub const fn instances(&self) -> &FxHashMap<Ty, FxHashSet<Symbol>> {
+        &self.instances
     }
 }
 
