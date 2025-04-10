@@ -97,7 +97,6 @@ impl Uninferable {
 #[derive(Debug, Clone)]
 pub enum InferErrorKind {
     Unbound(Symbol),
-    UnboundModule(Symbol),
     NotConstructor(Ty),
     Kind(Ty),
 }
@@ -106,7 +105,6 @@ impl Display for InferErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unbound(id) => write!(f, "unbound identifier: {id}"),
-            Self::UnboundModule(module) => write!(f, "unbound module: {module}"),
             Self::NotConstructor(name) => write!(f, "'{name}' is not a constructor"),
             Self::Kind(ty) => write!(f, "{ty} is not of kind *"),
         }
@@ -189,13 +187,6 @@ impl From<InferError> for IsaError {
                 let message = format!("undefined identifier {symbol}");
                 let label = DiagnosticLabel::new("not previously defined", value.span());
                 Self::new(message, label, Vec::new())
-            }
-            InferErrorKind::UnboundModule(symbol) => {
-                let label = DiagnosticLabel::new(
-                    format!("module{symbol} not previously defined"),
-                    value.span(),
-                );
-                Self::new("undefined module", label, Vec::new())
             }
             InferErrorKind::NotConstructor(ty) => {
                 let message = format!("{ty} is not a constructor");

@@ -58,6 +58,13 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn check<P>(&self, pred: P) -> bool
+    where
+        P: FnOnce(char) -> bool,
+    {
+        self.peek().is_some_and(pred)
+    }
+
     fn check_next<P>(&self, pred: P) -> bool
     where
         P: FnOnce(char) -> bool,
@@ -131,12 +138,26 @@ impl<'a> Lexer<'a> {
     }
 
     fn identifier_or_keyword(&mut self) -> Token {
-        self.eat_while(|c| c.is_ascii_alphanumeric() || c == '_');
+        const fn is_identifier_char(c: char) -> bool {
+            c == '_' || c.is_ascii_alphanumeric()
+        }
+
+        self.eat_while(is_identifier_char);
+        let mut doted = false;
+        while self.check(|c| c == '.') && self.check_next(is_identifier_char) {
+            doted = true;
+            self.bump();
+            self.eat_while(is_identifier_char);
+        }
         let s = &self.input[self.start..self.cur];
-        TokenKind::keyword(s).map_or_else(
-            || self.make_token(TokenKind::Ident(global::intern_symbol(s))),
-            |kw| self.make_token(kw),
-        )
+        if doted {
+            self.make_token(TokenKind::DotedIdent(global::intern_symbol(s)))
+        } else {
+            TokenKind::keyword(s).map_or_else(
+                || self.make_token(TokenKind::Ident(global::intern_symbol(s))),
+                |kw| self.make_token(kw),
+            )
+        }
     }
 
     pub fn next_token(&mut self) -> Option<LexResult<Token>> {
@@ -176,11 +197,11 @@ impl<'a> Lexer<'a> {
             '}' => token!(RBrace),
             ',' => token!(Comma),
             ';' => token!(Semicolon),
-            ':' => token!(Colon),
             '*' => token!(Star),
             '/' => token!(Slash),
             '%' => token!(Percent),
             '+' => token!(Plus),
+            ':' => token!(Colon, ':' => ColonColon),
             '=' => token!(Eq, '>' => Rocket),
             '|' => token!(Bar, '>' => Pipe, '|' => BarBar),
             '&' => token!(Amp, '&' => AmpAmp),

@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use rustc_hash::FxHashMap;
 
-use super::ast::{ConstraintSet, Constructor, PathIdent};
+use super::ast::{ConstraintSet, Constructor};
 use super::infer::{Subs, Substitute};
 use super::types::Ty;
 use crate::global::Symbol;
@@ -95,17 +95,21 @@ impl ClassData {
             signatures,
         }
     }
+
+    pub const fn instance(&self) -> Symbol {
+        self.instance
+    }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct TypeCtx {
-    constructors: FxHashMap<PathIdent, TyData>,
+    constructors: FxHashMap<Symbol, TyData>,
     traits:       FxHashMap<Symbol, ClassData>,
     id_generator: u64,
 }
 
 impl TypeCtx {
-    pub fn insert_constructor(&mut self, name: PathIdent, params: &Rc<[u64]>, ctor: Constructor) {
+    pub fn insert_constructor(&mut self, name: Symbol, params: &Rc<[u64]>, ctor: Constructor) {
         self.constructors
             .entry(name)
             .or_insert_with(|| TyData::new(params.clone(), Vec::default()))
@@ -114,15 +118,15 @@ impl TypeCtx {
     }
 
     #[must_use]
-    pub fn get_constructors(&self, name: &PathIdent) -> &[Constructor] {
+    pub fn get_constructors(&self, name: Symbol) -> &[Constructor] {
         self.constructors
-            .get(name)
+            .get(&name)
             .map_or(&[], |data| data.constructors.as_slice())
     }
 
     #[must_use]
-    pub fn get_type_arity(&self, name: &PathIdent) -> Option<usize> {
-        self.constructors.get(name).map(|data| data.params.len())
+    pub fn get_type_arity(&self, name: Symbol) -> Option<usize> {
+        self.constructors.get(&name).map(|data| data.params.len())
     }
 
     pub fn insert_class(&mut self, name: Symbol, data: ClassData) -> Option<ClassData> {
@@ -190,7 +194,7 @@ impl TypeCtx {
         let Ty::Named { name, .. } = ty else {
             return Ok(());
         };
-        let ctor = self.get_constructors(name)[idx].name;
+        let ctor = self.get_constructors(*name)[idx].name;
         write!(f, "{ctor}")
     }
 }

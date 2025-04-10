@@ -2,8 +2,6 @@ use std::rc::Rc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::ast::ModuleIdent;
-use super::error::InferErrorKind;
 use super::infer::Substitute;
 use super::types::Ty;
 use crate::global::Symbol;
@@ -57,15 +55,13 @@ impl VarData {
 
 #[derive(Debug, Clone)]
 pub struct Env {
-    env:     Vec<FxHashMap<Symbol, VarData>>,
-    modules: FxHashMap<Symbol, FxHashMap<Symbol, VarData>>,
+    env: Vec<FxHashMap<Symbol, VarData>>,
 }
 
 impl Default for Env {
     fn default() -> Self {
         Self {
-            env:     vec![FxHashMap::default()],
-            modules: FxHashMap::default(),
+            env: vec![FxHashMap::default()],
         }
     }
 }
@@ -91,6 +87,21 @@ impl Env {
             })
     }
 
+    #[must_use]
+    pub fn get_val(&self, id: Symbol) -> Option<&VarData> {
+        self.env
+            .iter()
+            .rev()
+            .find_map(|e| e.get(&id))
+            .and_then(|var| {
+                if var.kind().is_value_declaration() {
+                    Some(var)
+                } else {
+                    None
+                }
+            })
+    }
+
     pub fn insert(&mut self, id: Symbol, ty: Ty, span: Span) -> Option<VarData> {
         self.env
             .last_mut()
@@ -109,64 +120,6 @@ impl Env {
             .and_then(|env| env.insert(id, VarData::new(VarKind::ValueDeclaration, ty, span)))
     }
 
-    pub fn get_from_module(&self, module_access: ModuleIdent) -> Result<&VarData, InferErrorKind> {
-        let Some(module) = self.modules.get(&module_access.module()) else {
-            return Err(InferErrorKind::UnboundModule(module_access.module()));
-        };
-
-        let Some(var) = module.get(&module_access.member()) else {
-            return Err(InferErrorKind::Unbound(module_access.member()));
-        };
-
-        Ok(var)
-    }
-
-    pub fn get_val_from_module(
-        &self,
-        module_access: ModuleIdent,
-    ) -> Result<&VarData, InferErrorKind> {
-        let Some(module) = self.modules.get(&module_access.module()) else {
-            return Err(InferErrorKind::UnboundModule(module_access.module()));
-        };
-
-        let Some(var) = module.get(&module_access.member()) else {
-            return Err(InferErrorKind::Unbound(module_access.member()));
-        };
-
-        if var.kind().is_value_declaration() {
-            Ok(var)
-        } else {
-            Err(InferErrorKind::Unbound(module_access.member()))
-        }
-    }
-
-    pub fn get_constructor_from_module(
-        &self,
-        module_access: ModuleIdent,
-    ) -> Result<&VarData, InferErrorKind> {
-        let Some(module) = self.modules.get(&module_access.module()) else {
-            return Err(InferErrorKind::UnboundModule(module_access.module()));
-        };
-
-        let Some(var) = module.get(&module_access.member()) else {
-            return Err(InferErrorKind::Unbound(module_access.member()));
-        };
-
-        if var.kind().is_constructor() {
-            Ok(var)
-        } else {
-            Err(InferErrorKind::Unbound(module_access.member()))
-        }
-    }
-
-    pub fn extend_module(
-        &mut self,
-        module: Symbol,
-        declared: impl Iterator<Item = (Symbol, VarData)>,
-    ) {
-        self.modules.entry(module).or_default().extend(declared);
-    }
-
     pub fn push_scope(&mut self) {
         self.env.push(FxHashMap::default());
     }
@@ -179,8 +132,12 @@ impl Env {
         self.env.pop()
     }
 
-    pub const fn at_module_scope(&self) -> bool {
-        self.scope_depth() == 2
+    pub const fn at_global_scope(&self) -> bool {
+        self.scope_depth() == 1
+    }
+
+    pub fn global_scope(&self) -> &FxHashMap<Symbol, VarData> {
+        self.env.first().unwrap()
     }
 
     pub const fn scope_depth(&self) -> usize {
@@ -226,10 +183,6 @@ impl Env {
                 ty:    Rc::new(ty),
             },
         }
-    }
-
-    pub const fn modules(&self) -> &FxHashMap<Symbol, FxHashMap<Symbol, VarData>> {
-        &self.modules
     }
 }
 

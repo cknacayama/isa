@@ -30,7 +30,7 @@ impl<'a> Ctx<'a> {
             Ty::Char => Some(CtorSet::Integers(IntRange::character())),
             Ty::Scheme { ty, .. } => self.ctors_for_ty(ty),
             Ty::Named { name, .. } => {
-                let variants = self.ctx.get_constructors(name).len();
+                let variants = self.ctx.get_constructors(*name).len();
                 let variants = NonZeroUsize::new(variants)?;
                 Some(CtorSet::Type { variants })
             }
@@ -121,16 +121,13 @@ impl Pat {
                     .map(|pat| Self::from_ast_pat(pat, ctx))
                     .enumerate()
                     .collect();
-                let Ty::Named {
-                    name: ref ty_name, ..
-                } = pat.ty
-                else {
+                let Ty::Named { name: ty_name, .. } = pat.ty else {
                     unreachable!()
                 };
                 let idx = ctx
                     .get_constructors(ty_name)
                     .iter()
-                    .position(|c| c.name == name.ident())
+                    .position(|c| c.name == *name)
                     .unwrap();
                 Self::new(Ctor::Type(idx), fields)
             }
@@ -206,7 +203,6 @@ impl TypeCtx {
                 self.check_single_match(lhs)?;
                 self.check_single_match(rhs)?;
             }
-
             ExprKind::Fn { expr, .. }
             | ExprKind::Un { expr, .. }
             | ExprKind::Semi(expr)
@@ -217,7 +213,6 @@ impl TypeCtx {
             } => {
                 self.check_single_match(expr)?;
             }
-
             ExprKind::Let {
                 bind: LetBind { expr, .. },
                 body: Some(body),
@@ -226,7 +221,6 @@ impl TypeCtx {
                 self.check_single_match(expr)?;
                 self.check_single_match(body)?;
             }
-
             ExprKind::Match { expr, arms } => {
                 self.check_single_match(expr)?;
 
@@ -254,8 +248,22 @@ impl TypeCtx {
                 self.check_single_match(callee)?;
                 self.check_single_match(arg)?;
             }
+            ExprKind::Instance { impls, .. } => {
+                for bind in impls {
+                    self.check_single_match(&bind.expr)?;
+                }
+            }
 
-            _ => (),
+            ExprKind::Int(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Char(_)
+            | ExprKind::Ident(_)
+            | ExprKind::Tuple(_)
+            | ExprKind::Val(_)
+            | ExprKind::Class { .. }
+            | ExprKind::Alias { .. }
+            | ExprKind::Type { .. }
+            | ExprKind::ClassMember { .. } => (),
         }
 
         Ok(())

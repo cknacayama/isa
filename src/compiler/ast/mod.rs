@@ -164,69 +164,6 @@ impl<T: Debug> Debug for Module<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ModuleIdent {
-    module: Symbol,
-    member: Symbol,
-}
-
-impl ModuleIdent {
-    #[must_use]
-    pub const fn new(module: Symbol, member: Symbol) -> Self {
-        Self { module, member }
-    }
-
-    #[must_use]
-    pub const fn module(self) -> Symbol {
-        self.module
-    }
-
-    #[must_use]
-    pub const fn member(self) -> Symbol {
-        self.member
-    }
-}
-
-impl Display for ModuleIdent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}", self.module, self.member)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PathIdent {
-    Module(ModuleIdent),
-    Ident(Symbol),
-}
-
-impl PathIdent {
-    #[must_use]
-    pub const fn ident(&self) -> Symbol {
-        match self {
-            Self::Module(module_ident) => module_ident.member(),
-            Self::Ident(symbol) => *symbol,
-        }
-    }
-
-    #[must_use]
-    pub const fn as_ident(&self) -> Option<Symbol> {
-        if let Self::Ident(v) = self {
-            Some(*v)
-        } else {
-            None
-        }
-    }
-}
-
-impl Display for PathIdent {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Module(module) => write!(f, "{module}"),
-            Self::Ident(id) => write!(f, "{id}"),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum RangePat<T> {
     From(T),
@@ -283,10 +220,7 @@ pub enum PatKind<T> {
 
     Bool(bool),
 
-    Constructor {
-        name: PathIdent,
-        args: Box<[Pat<T>]>,
-    },
+    Constructor { name: Symbol, args: Box<[Pat<T>]> },
 }
 
 #[derive(Clone)]
@@ -483,50 +417,9 @@ impl Display for ClassConstraint {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Constraint {
-    Parameter(Ty),
-    Class(ClassConstraint),
-}
-
-impl Constraint {
-    #[must_use]
-    pub const fn as_parameter(&self) -> Option<&Ty> {
-        if let Self::Parameter(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-
-    #[must_use]
-    pub const fn as_parameter_mut(&mut self) -> Option<&mut Ty> {
-        if let Self::Parameter(v) = self {
-            Some(v)
-        } else {
-            None
-        }
-    }
-}
-
-impl From<ClassConstraint> for Constraint {
-    fn from(v: ClassConstraint) -> Self {
-        Self::Class(v)
-    }
-}
-
-impl Display for Constraint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Parameter(ty) => Display::fmt(ty, f),
-            Self::Class(trait_constraint) => Display::fmt(trait_constraint, f),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct ConstraintSet {
-    pub constrs: Box<[Constraint]>,
+    pub constrs: Box<[ClassConstraint]>,
 }
 
 impl Display for ConstraintSet {
@@ -547,6 +440,7 @@ impl Display for ConstraintSet {
 
 #[derive(Debug, Clone)]
 pub struct ValDeclaration {
+    pub params:  Box<[Ty]>,
     pub set:     ConstraintSet,
     pub name:    Symbol,
     pub ty:      Ty,
@@ -571,7 +465,10 @@ pub enum ExprKind<T> {
 
     Tuple(Box<[Expr<T>]>),
 
-    ModuleIdent(ModuleIdent),
+    ClassMember {
+        class:  Symbol,
+        member: Symbol,
+    },
 
     Bin {
         op:  BinOp,
@@ -601,6 +498,7 @@ pub enum ExprKind<T> {
     },
 
     Instance {
+        params:   Box<[Ty]>,
         set:      ConstraintSet,
         name:     Symbol,
         instance: Ty,
@@ -707,6 +605,9 @@ impl<T: Display> Expr<T> {
                 }
                 write!(f, ")")
             }
+            ExprKind::ClassMember { class, member } => {
+                write!(f, "{class}::{member}")
+            }
             ExprKind::Val(val) => write!(f, "({val})"),
             ExprKind::Alias {
                 name,
@@ -771,7 +672,6 @@ impl<T: Display> Expr<T> {
                 arg.format_helper(f, indentation + 1)?;
                 write!(f, ")")
             }
-            ExprKind::ModuleIdent(module_access) => write!(f, "{module_access}"),
             ExprKind::Class {
                 set,
                 name,
@@ -789,6 +689,7 @@ impl<T: Display> Expr<T> {
                 name,
                 instance,
                 impls,
+                ..
             } => {
                 writeln!(f, "(instance {set} {name} {instance} =")?;
                 for i in impls {
@@ -835,6 +736,9 @@ impl Substitute for ValDeclaration {
     {
         self.set.substitute(subs);
         self.ty.substitute(subs);
+        for p in &mut self.params {
+            p.substitute(subs);
+        }
     }
 }
 
@@ -860,6 +764,14 @@ impl Substitute for Expr<()> {
             ExprKind::Val(val) => {
                 val.substitute(subs);
             }
+            ExprKind::Class { signatures, .. } => {
+                for sig in signatures {
+                    sig.substitute(subs);
+                }
+            }
+            ExprKind::Instance { instance, .. } => {
+                instance.substitute(subs);
+            }
             _ => (),
         }
     }
@@ -877,15 +789,12 @@ impl Substitute for LetBind<Ty> {
     }
 }
 
-impl Substitute for Constraint {
+impl Substitute for ClassConstraint {
     fn substitute<S>(&mut self, subs: &mut S)
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
-        match self {
-            Self::Parameter(ty) => ty.substitute(subs),
-            Self::Class(trait_constraint) => trait_constraint.constrained.substitute(subs),
-        }
+        self.constrained.substitute(subs);
     }
 }
 
@@ -964,11 +873,6 @@ impl Substitute for Expr<Ty> {
             ExprKind::Un { expr, .. } => {
                 expr.substitute(subs);
             }
-            ExprKind::Int(_)
-            | ExprKind::Bool(_)
-            | ExprKind::Char(_)
-            | ExprKind::Ident(_)
-            | ExprKind::ModuleIdent(_) => (),
 
             ExprKind::Class {
                 set, signatures, ..
@@ -979,6 +883,7 @@ impl Substitute for Expr<Ty> {
                 }
             }
             ExprKind::Instance {
+                params,
                 set,
                 instance,
                 impls,
@@ -989,7 +894,16 @@ impl Substitute for Expr<Ty> {
                 for i in impls {
                     i.substitute(subs);
                 }
+                for p in params {
+                    p.substitute(subs);
+                }
             }
+
+            ExprKind::Int(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Char(_)
+            | ExprKind::Ident(_)
+            | ExprKind::ClassMember { .. } => (),
         }
 
         self.ty.substitute(subs);

@@ -113,11 +113,8 @@ impl Config {
 
         let duration = start.elapsed();
 
-        for (module, declared) in checker.modules() {
-            println!("module {module}");
-            for (id, ty) in declared {
-                println!("    val {id}: {};", ty.ty());
-            }
+        for (id, ty) in checker.declared() {
+            println!("    val {id}: {};", ty.ty());
         }
 
         println!("ran in {duration:?}");

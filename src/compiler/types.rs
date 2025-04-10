@@ -1,8 +1,8 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
-use super::ast::PathIdent;
 use super::infer::Substitute;
+use crate::global::Symbol;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
@@ -14,7 +14,7 @@ pub enum Ty {
     Tuple(Rc<[Ty]>),
     Fn { param: Rc<Ty>, ret: Rc<Ty> },
     Scheme { quant: Rc<[u64]>, ty: Rc<Ty> },
-    Named { name: PathIdent, args: Rc<[Ty]> },
+    Named { name: Symbol, args: Rc<[Ty]> },
 }
 
 impl Ty {
@@ -50,9 +50,9 @@ impl Ty {
         }
     }
 
-    pub const fn get_name(&self) -> Option<&PathIdent> {
+    pub const fn get_name(&self) -> Option<Symbol> {
         if let Self::Named { name, .. } = self {
-            Some(name)
+            Some(*name)
         } else {
             None
         }
@@ -81,12 +81,14 @@ impl Ty {
                 param.free_type_variables_inner(free);
                 ret.free_type_variables_inner(free);
             }
+
             Self::Scheme { quant, ty } => {
                 ty.free_type_variables_inner(free);
                 while let Some(pos) = free.iter().position(|f| quant.contains(f)) {
                     free.swap_remove(pos);
                 }
             }
+
             Self::Named { args, .. } | Self::Tuple(args) => {
                 for arg in args.iter() {
                     arg.free_type_variables_inner(free);

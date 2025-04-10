@@ -11,18 +11,18 @@ module List
             Cons _ list -> 1 + lenght list,
     ;
 
-    val {a} => head: List a -> Option.Option a;
+    val {a} => head: List a -> Option a;
     let head list =
         match list with
-            Nil -> Option.None,
-            Cons v _ -> Option.Some v,
+            Nil -> None,
+            Cons v _ -> Some v,
         ;
 
-    val {a} => tail: List a -> Option.Option a;
+    val {a} => tail: List a -> Option a;
     let tail list =
         match list with
-            Nil -> Option.None,
-            Cons v Nil -> Option.Some v,
+            Nil -> None,
+            Cons v Nil -> Some v,
             Cons _ rest -> tail rest,
         ;
 
@@ -33,15 +33,15 @@ module Option
     val {a, b} => fmap: (a -> b) -> Option a -> Option b;
     let fmap f opt =
         match opt with
-            Some a -> f a |> return,
+            Some a -> f a |> Option.return,
             None -> None,
         ;
 
-    val {a} => return: a -> Option a;
-    let return a = Some a;
+    val {a} => Option.return: a -> Option a;
+    let Option.return a = Some a;
     
-    val {a, b} => bind: Option a -> (a -> Option b) -> Option b;
-    let bind opt f = 
+    val {a, b} => Option.bind: Option a -> (a -> Option b) -> Option b;
+    let Option.bind opt f = 
         match opt with
             Some a -> f a,
             None -> None,
