@@ -104,7 +104,10 @@ impl<'a> Parser<'a> {
             if t.data == expected {
                 Ok(t.span)
             } else {
-                Err(t.map(|got| ParseError::ExpectedToken { expected, got }))
+                Err(t.map(|got| ParseError::ExpectedToken {
+                    expected,
+                    got: Some(got),
+                }))
             }
         })
     }
@@ -203,21 +206,32 @@ impl<'a> Parser<'a> {
         let (set, _) = self.parse_constraint_set()?;
         let Spanned { data: name, .. } = self.expect_id()?;
         let Spanned { data: instance, .. } = self.expect_id()?;
-        self.expect(TokenKind::Eq)?;
-
-        let mut signatures = Vec::new();
-        while self.check(TokenKind::KwVal) {
-            let Spanned {
-                data: val,
-                span: val_span,
-            } = self.parse_val()?;
-            signatures.push(val);
-            span = span.union(val_span);
-            if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
-                span = span.union(c_span);
+        let signatures = if self.next_if_match(TokenKind::Eq).is_some() {
+            let mut signatures = Vec::new();
+            while self.check(TokenKind::KwVal) {
+                let Spanned {
+                    data: val,
+                    span: val_span,
+                } = self.parse_val()?;
+                signatures.push(val);
+                span = span.union(val_span);
+                if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
+                    span = span.union(c_span);
+                }
             }
-        }
-        let signatures = signatures.into_boxed_slice();
+            if signatures.is_empty() {
+                return Err(Spanned::new(
+                    ParseError::ExpectedToken {
+                        expected: TokenKind::KwVal,
+                        got:      self.peek().transpose()?.map(|tk| tk.data),
+                    },
+                    span,
+                ));
+            }
+            signatures.into_boxed_slice()
+        } else {
+            Box::default()
+        };
 
         Ok(UntypedExpr::untyped(
             UntypedExprKind::Class {
@@ -235,21 +249,33 @@ impl<'a> Parser<'a> {
         let (set, params) = self.parse_constraint_set()?;
         let Spanned { data: name, .. } = self.expect_id()?;
         let Spanned { data: instance, .. } = self.parse_type()?;
-        self.expect(TokenKind::Eq)?;
 
-        let mut impls = Vec::new();
-        while self.check(TokenKind::KwLet) {
-            let Spanned {
-                data: bind,
-                span: bind_span,
-            } = self.parse_let_bind()?;
-            impls.push(bind);
-            span = span.union(bind_span);
-            if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
-                span = span.union(c_span);
+        let impls = if self.next_if_match(TokenKind::Eq).is_some() {
+            let mut impls = Vec::new();
+            while self.check(TokenKind::KwLet) {
+                let Spanned {
+                    data: bind,
+                    span: bind_span,
+                } = self.parse_let_bind()?;
+                impls.push(bind);
+                span = span.union(bind_span);
+                if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
+                    span = span.union(c_span);
+                }
             }
-        }
-        let impls = impls.into_boxed_slice();
+            if impls.is_empty() {
+                return Err(Spanned::new(
+                    ParseError::ExpectedToken {
+                        expected: TokenKind::KwLet,
+                        got:      self.peek().transpose()?.map(|tk| tk.data),
+                    },
+                    span,
+                ));
+            }
+            impls.into_boxed_slice()
+        } else {
+            Box::default()
+        };
 
         Ok(UntypedExpr::untyped(
             UntypedExprKind::Instance {

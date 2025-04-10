@@ -51,11 +51,11 @@ impl Checker {
         self.env.global_scope().iter()
     }
 
-    pub fn instances(&self) -> impl Iterator<Item = (&Ty, impl Iterator<Item = Symbol>)> {
+    pub fn instances(&self) -> impl Iterator<Item = (Symbol, impl Iterator<Item = &Ty>)> {
         self.type_ctx
-            .instances()
+            .classes()
             .iter()
-            .map(|(ty, classes)| (ty, classes.iter().copied()))
+            .map(|(&class, data)| (class, data.instances().keys()))
     }
 
     fn insert_val(&mut self, id: Symbol, ty: Ty, span: Span) -> Option<VarData> {
@@ -108,9 +108,9 @@ impl Checker {
 
             let (fst_label, labels) = if err_span == cond.span {
                 let fst =
-                    DiagnosticLabel::new("expected if condition to have type 'bool'", err_span);
+                    DiagnosticLabel::new("expected if condition to have type `bool`", err_span);
                 let snd = DiagnosticLabel::new(
-                    format!("this is of type '{}'", err.constr().rhs()),
+                    format!("this is of type `{}`", err.constr().rhs()),
                     err_span,
                 );
                 (fst, vec![snd])
@@ -120,8 +120,8 @@ impl Checker {
                 then_ty.substitute_many(err.subs());
                 els_ty.substitute_many(err.subs());
                 let fst = DiagnosticLabel::new("if and else have different types", span);
-                let snd = DiagnosticLabel::new(format!("if has type '{then_ty}'"), then.span);
-                let trd = DiagnosticLabel::new(format!("else has type '{els_ty}'"), otherwise.span);
+                let snd = DiagnosticLabel::new(format!("if has type `{then_ty}`"), then.span);
+                let trd = DiagnosticLabel::new(format!("else has type `{els_ty}`"), otherwise.span);
 
                 (fst, vec![snd, trd])
             };
@@ -192,15 +192,15 @@ impl Checker {
             arg.ty.substitute_many(err.subs());
             let (fst, labels) = if let Ty::Fn { ref param, .. } = callee.ty {
                 let fst = DiagnosticLabel::new(
-                    format!("expected '{param}' argument, got '{}'", arg.ty),
+                    format!("expected `{param}` argument, got `{}`", arg.ty),
                     arg.span,
                 );
                 let snd =
-                    DiagnosticLabel::new(format!("this has type '{}'", callee.ty), callee.span);
+                    DiagnosticLabel::new(format!("this has type `{}`", callee.ty), callee.span);
                 (fst, vec![snd])
             } else {
                 let fst = DiagnosticLabel::new(
-                    format!("expected callable, got '{}'", callee.ty),
+                    format!("expected callable, got `{}`", callee.ty),
                     callee.span,
                 );
                 (fst, Vec::new())
@@ -249,7 +249,7 @@ impl Checker {
             .map(|p| {
                 let decl = param_iter.next().ok_or_else(|| {
                     let fst =
-                        DiagnosticLabel::new(format!("expected '{val_decl}'"), bind.name_span);
+                        DiagnosticLabel::new(format!("expected `{val_decl}`"), bind.name_span);
                     let snd = DiagnosticLabel::new("more parameters than expected", p.span);
                     let trd = DiagnosticLabel::new("expected due to this", ty_span);
 
@@ -286,8 +286,8 @@ impl Checker {
         let constr = EqConstraint::new(val_ty, ty, expr.span);
 
         let val_error = |ty: &Ty, span| {
-            let fst = DiagnosticLabel::new(format!("expected '{val_decl}'"), bind.name_span);
-            let snd = DiagnosticLabel::new(format!("this has type '{ty}'"), span);
+            let fst = DiagnosticLabel::new(format!("expected `{val_decl}`"), bind.name_span);
+            let snd = DiagnosticLabel::new(format!("this has type `{ty}`"), span);
             let trd = DiagnosticLabel::new("expected due to this", ty_span);
 
             IsaError::new("type mismatch", fst, vec![snd, trd])
@@ -533,7 +533,7 @@ impl Checker {
 
         let subs = self.unify(c).map_err(|err| {
             IsaError::from(err).with_label(DiagnosticLabel::new(
-                format!("constructor is of type '{}'", ctor.ty()),
+                format!("constructor is of type `{}`", ctor.ty()),
                 ctor.span(),
             ))
         })?;
@@ -566,13 +566,13 @@ impl Checker {
 
         let val_signatures = signatures
             .iter()
-            .map(|val| (val.name, (val.ty.clone(), val.ty_span)))
-            .collect();
+            .map(|val| (val.name, (val.ty.clone(), val.ty_span)));
 
-        self.type_ctx.insert_class(
-            name,
-            ClassData::new(set.clone(), instance, val_signatures, span),
-        );
+        self.type_ctx
+            .get_class_mut(name)
+            .unwrap()
+            .extend_signature(val_signatures);
+
         let kind = TypedExprKind::Class {
             set,
             name,
@@ -604,7 +604,7 @@ impl Checker {
                     .cloned()
                     .ok_or_else(|| {
                         let fst = DiagnosticLabel::new(
-                            format!("'{}' is not a member o type class '{class}'", bind.name),
+                            format!("`{}` is not a member o type class `{class}`", bind.name),
                             bind.name_span,
                         );
                         let snd =
@@ -636,13 +636,26 @@ impl Checker {
             .get_class(class)
             .ok_or_else(|| InferError::new(InferErrorKind::Unbound(class), span))?;
 
+        let scheme = self.env.generalize(instance.clone());
+        for constr in class_data.constraints().iter() {
+            if self.type_ctx.implements(&scheme, constr.class()).is_none() {
+                let fst = DiagnosticLabel::new(
+                    format!("type `{scheme}` doesn't implement `{}`", constr.class()),
+                    span,
+                );
+                let snd = DiagnosticLabel::new("declared here", class_data.span());
+
+                return Err(IsaError::new("constraint violated", fst, vec![snd]));
+            }
+        }
+
         if let Some((not_implemented, (_, member_span))) = class_data
             .signatures()
             .iter()
             .find(|(name, _)| !impls.iter().any(|bind| bind.name.eq(name)))
         {
             let fst = DiagnosticLabel::new(
-                format!("member '{not_implemented}' of '{class}' not implemented"),
+                format!("member `{not_implemented}` of `{class}` not implemented"),
                 span,
             );
             let snd = DiagnosticLabel::new("declared here", *member_span);
@@ -650,7 +663,7 @@ impl Checker {
             return Err(IsaError::new("member not implemented", fst, vec![snd]));
         }
 
-        let instance_var = class_data.instance();
+        let instance_var = class_data.instance_var();
         let mut arity_error = false;
 
         let (impls, set) = if let Ty::Named {
@@ -890,7 +903,7 @@ impl Checker {
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
-                        "operator '{op}' expects operands of type '{}'",
+                        "operator `{op}` expects operands of type `{}`",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -913,7 +926,7 @@ impl Checker {
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
-                        "operator '{op}' expects operands of type '{}'",
+                        "operator `{op}` expects operands of type `{}`",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -935,7 +948,7 @@ impl Checker {
 
                 let subs = self.unify(c1).map_err(|err| {
                     let note = format!(
-                        "operator '{op}' expects operands of same type ({})",
+                        "operator `{op}` expects operands of same type ({})",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -958,7 +971,7 @@ impl Checker {
 
                 let subs = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
-                        "operator '{op}' expects operands of type '{}'",
+                        "operator `{op}` expects operands of type `{}`",
                         err.constr().lhs()
                     );
                     IsaError::from(err).with_note(note)
@@ -990,7 +1003,7 @@ impl Checker {
         let constr = EqConstraint::new(ty.clone(), expr.ty.clone(), expr.span);
 
         let subs = self.unify(constr).map_err(|err| {
-            let note = format!("'{op}' operates on '{ty}'");
+            let note = format!("`{op}` operates on `{ty}`");
             IsaError::from(err).with_note(note)
         })?;
 
@@ -1048,27 +1061,35 @@ impl Checker {
         ty
     }
 
-    fn check_module_types(&mut self, module: &mut UntypedModule) -> Vec<(Symbol, AliasData)> {
-        let declared = module
-            .exprs
-            .iter_mut()
-            .filter_map(|expr| self.check_type_declaration(expr))
-            .fold(false, |_, _| true);
-
-        if !declared {
-            return Vec::new();
+    fn check_module_types(
+        &mut self,
+        module: &mut UntypedModule,
+    ) -> IsaResult<Vec<(Symbol, AliasData)>> {
+        let mut declared = FxHashMap::default();
+        for expr in &mut module.exprs {
+            self.check_type_declaration(expr, &mut declared)?;
         }
 
-        module
+        if declared.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        self.type_ctx.update_instances()?;
+
+        Ok(module
             .exprs
             .iter()
             .filter_map(Self::check_alias_declaration)
-            .collect()
+            .collect())
     }
 
-    fn check_type_declaration(&mut self, expr: &mut UntypedExpr) -> Option<Symbol> {
-        match &mut expr.kind {
-            UntypedExprKind::Semi(e) => self.check_type_declaration(e),
+    fn check_type_declaration(
+        &mut self,
+        expr: &mut UntypedExpr,
+        declared: &mut FxHashMap<Symbol, Span>,
+    ) -> IsaResult<()> {
+        if let Some((name, span)) = match &mut expr.kind {
+            UntypedExprKind::Semi(e) => return self.check_type_declaration(e, declared),
             UntypedExprKind::Type {
                 name,
                 parameters,
@@ -1088,7 +1109,7 @@ impl Checker {
                     ctor.substitute_param(&subs);
                 }
 
-                Some(*name)
+                Some((*name, expr.span))
             }
 
             UntypedExprKind::Alias {
@@ -1108,7 +1129,19 @@ impl Checker {
 
                 ty.substitute_param(&subs);
 
-                Some(*name)
+                Some((*name, expr.span))
+            }
+
+            UntypedExprKind::Class {
+                set,
+                name,
+                instance,
+                ..
+            } => {
+                let class = ClassData::new(set.clone(), *instance, expr.span);
+                self.type_ctx.insert_class(*name, class);
+
+                Some((*name, expr.span))
             }
 
             UntypedExprKind::Instance {
@@ -1132,13 +1165,30 @@ impl Checker {
                 instance.substitute_param(&subs);
 
                 let instance = self.env.generalize(instance.clone());
-                self.type_ctx.insert_instance(instance, *class);
+                if let Some(previous) = self.type_ctx.implements(&instance, *class) {
+                    let fst = DiagnosticLabel::new(
+                        format!("multiple instantiations of `{class}` for {instance}"),
+                        expr.span,
+                    );
+                    let snd = DiagnosticLabel::new("previously instantiated here", previous);
+                    return Err(IsaError::new("multiple instantiations", fst, vec![snd]));
+                }
+
+                self.type_ctx.insert_instance(instance, *class, expr.span);
 
                 None
             }
 
             _ => None,
+        } {
+            if let Some(previous) = declared.insert(name, span) {
+                let fst = DiagnosticLabel::new(format!("multiple definitons of `{name}`"), span);
+                let snd = DiagnosticLabel::new("previously defined here", previous);
+                return Err(IsaError::new("multiple definitons", fst, vec![snd]));
+            }
         }
+
+        Ok(())
     }
 
     fn check_alias_declaration(expr: &UntypedExpr) -> Option<(Symbol, AliasData)> {
@@ -1167,13 +1217,14 @@ impl Checker {
         &mut self,
         mut modules: Vec<UntypedModule>,
     ) -> IsaResult<Vec<TypedModule>> {
-        let aliases = modules
+        let mut aliases = FxHashMap::default();
+
+        for types in modules
             .iter_mut()
             .map(|module| self.check_module_types(module))
-            .fold(FxHashMap::default(), |mut acc, aliases| {
-                acc.extend(aliases);
-                acc
-            });
+        {
+            aliases.extend(types?);
+        }
 
         let mut decl = Vec::new();
 

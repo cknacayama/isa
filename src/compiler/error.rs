@@ -21,7 +21,7 @@ pub enum LexError {
 impl Display for LexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidChar(c) => write!(f, "invalid character '{c}'"),
+            Self::InvalidChar(c) => write!(f, "invalid character `{c}`"),
             Self::UnterminatedChar => write!(f, "unterminated character"),
             Self::EmptyChar => write!(f, "empty character"),
             Self::UnrecognizedEscape => write!(f, "unrecognized escape sequence"),
@@ -38,7 +38,7 @@ pub enum ParseError {
     UnexpectedEof,
     ExpectedToken {
         expected: TokenKind,
-        got:      TokenKind,
+        got:      Option<TokenKind>,
     },
     ExpectedExpr(TokenKind),
     ExpectedId(TokenKind),
@@ -59,13 +59,18 @@ impl Display for ParseError {
             Self::LexError(lex_error) => lex_error.fmt(f),
             Self::UnexpectedEof => write!(f, "unexpected end-of-file"),
             Self::ExpectedToken { expected, got } => {
-                write!(f, "expected '{expected}', got '{got}'")
+                write!(f, "expected `{expected}`")?;
+                if let Some(got) = got {
+                    write!(f, ", got `{got}`")
+                } else {
+                    Ok(())
+                }
             }
-            Self::ExpectedExpr(got) => write!(f, "expected expression, got '{got}'"),
-            Self::ExpectedId(got) => write!(f, "expected identifier, got '{got}'"),
-            Self::ExpectedInt(got) => write!(f, "expected integer literal, got '{got}'"),
-            Self::ExpectedType(got) => write!(f, "expected type, got '{got}'"),
-            Self::ExpectedPattern(got) => write!(f, "expected pattern, got '{got}'"),
+            Self::ExpectedExpr(got) => write!(f, "expected expression, got `{got}`"),
+            Self::ExpectedId(got) => write!(f, "expected identifier, got `{got}`"),
+            Self::ExpectedInt(got) => write!(f, "expected integer literal, got `{got}`"),
+            Self::ExpectedType(got) => write!(f, "expected type, got `{got}`"),
+            Self::ExpectedPattern(got) => write!(f, "expected pattern, got `{got}`"),
         }
     }
 }
@@ -105,7 +110,7 @@ impl Display for InferErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unbound(id) => write!(f, "unbound identifier: {id}"),
-            Self::NotConstructor(name) => write!(f, "'{name}' is not a constructor"),
+            Self::NotConstructor(name) => write!(f, "`{name}` is not a constructor"),
             Self::Kind(ty) => write!(f, "{ty} is not of kind *"),
         }
     }
@@ -184,19 +189,19 @@ impl From<InferError> for IsaError {
     fn from(value: InferError) -> Self {
         match value.kind() {
             InferErrorKind::Unbound(symbol) => {
-                let message = format!("undefined identifier '{symbol}'");
-                let label = DiagnosticLabel::new("not previously defined", value.span());
+                let message = format!("undefined identifier `{symbol}`");
+                let label = DiagnosticLabel::new("not defined", value.span());
                 Self::new(message, label, Vec::new())
             }
             InferErrorKind::NotConstructor(ty) => {
-                let message = format!("'{ty}' is not a constructor");
+                let message = format!("`{ty}` is not a constructor");
                 let label = DiagnosticLabel::new("expected a value constructor", value.span());
                 Self::new(message, label, Vec::new())
             }
             InferErrorKind::Kind(ty) => {
                 let label = DiagnosticLabel::new("pattern should have kind *", value.span());
                 let snd_label =
-                    DiagnosticLabel::new(format!("this is of type '{ty}'"), value.span());
+                    DiagnosticLabel::new(format!("this is of type `{ty}`"), value.span());
                 Self::new("kind error", label, vec![snd_label])
             }
         }
@@ -207,7 +212,7 @@ impl From<Uninferable> for IsaError {
     fn from(value: Uninferable) -> Self {
         let fst = DiagnosticLabel::new(
             format!(
-                "expected '{}', got '{}'",
+                "expected `{}`, got `{}`",
                 value.constr().lhs(),
                 value.constr().rhs()
             ),

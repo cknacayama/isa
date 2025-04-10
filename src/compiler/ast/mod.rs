@@ -409,6 +409,14 @@ impl ClassConstraint {
     pub const fn new(class: Symbol, constrained: Ty) -> Self {
         Self { class, constrained }
     }
+
+    pub const fn class(&self) -> Symbol {
+        self.class
+    }
+
+    pub const fn constrained(&self) -> &Ty {
+        &self.constrained
+    }
 }
 
 impl Display for ClassConstraint {
@@ -420,6 +428,14 @@ impl Display for ClassConstraint {
 #[derive(Debug, Clone, Default)]
 pub struct ConstraintSet {
     pub constrs: Box<[ClassConstraint]>,
+}
+
+impl ConstraintSet {
+    pub fn iter(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &ClassConstraint> + DoubleEndedIterator {
+        self.constrs.iter()
+    }
 }
 
 impl Display for ConstraintSet {

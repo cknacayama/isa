@@ -117,8 +117,8 @@ impl Config {
             println!("val {id}: {};", ty.ty());
         }
 
-        for (ty, classes) in checker.instances() {
-            for class in classes {
+        for (class, instances) in checker.instances() {
+            for ty in instances {
                 println!("{class} {ty}");
             }
         }

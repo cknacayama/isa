@@ -1,9 +1,11 @@
 use std::fmt;
 use std::rc::Rc;
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 
 use super::ast::{ConstraintSet, Constructor};
+use super::checker::IsaResult;
+use super::error::{InferError, InferErrorKind};
 use super::infer::{Subs, Substitute};
 use super::types::Ty;
 use crate::global::Symbol;
@@ -78,29 +80,51 @@ impl AliasData {
 
 #[derive(Debug, Clone, Default)]
 pub struct ClassData {
-    constraints: ConstraintSet,
-    instance:    Symbol,
-    signatures:  FxHashMap<Symbol, (Ty, Span)>,
-    span:        Span,
+    constraints:  ConstraintSet,
+    instance_var: Symbol,
+    signatures:   FxHashMap<Symbol, (Ty, Span)>,
+    instances:    FxHashMap<Ty, Span>,
+    span:         Span,
 }
 
 impl ClassData {
-    pub const fn new(
-        constraints: ConstraintSet,
-        instance: Symbol,
-        signatures: FxHashMap<Symbol, (Ty, Span)>,
-        span: Span,
-    ) -> Self {
+    pub fn new(constraints: ConstraintSet, instance_var: Symbol, span: Span) -> Self {
         Self {
             constraints,
-            instance,
-            signatures,
+            instance_var,
+            signatures: FxHashMap::default(),
+            instances: FxHashMap::default(),
             span,
         }
     }
 
-    pub const fn instance(&self) -> Symbol {
-        self.instance
+    pub fn insert_instance(&mut self, ty: Ty, span: Span) -> Option<Span> {
+        self.instances.insert(ty, span)
+    }
+
+    pub fn extend_signature(&mut self, iter: impl Iterator<Item = (Symbol, (Ty, Span))>) {
+        self.signatures.extend(iter);
+    }
+
+    pub fn implements(&self, ty: &Ty) -> Option<Span> {
+        if ty.is_scheme() {
+            self.instances
+                .iter()
+                .find_map(|(instance, span)| {
+                    if ty.is_equivalent(instance) {
+                        Some(span)
+                    } else {
+                        None
+                    }
+                })
+                .copied()
+        } else {
+            self.instances.get(ty).copied()
+        }
+    }
+
+    pub const fn instance_var(&self) -> Symbol {
+        self.instance_var
     }
 
     pub const fn signatures(&self) -> &FxHashMap<Symbol, (Ty, Span)> {
@@ -110,13 +134,21 @@ impl ClassData {
     pub const fn span(&self) -> Span {
         self.span
     }
+
+    pub const fn constraints(&self) -> &ConstraintSet {
+        &self.constraints
+    }
+
+    pub const fn instances(&self) -> &FxHashMap<Ty, Span> {
+        &self.instances
+    }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct TypeCtx {
     constructors: FxHashMap<Symbol, TyData>,
-    traits:       FxHashMap<Symbol, ClassData>,
-    instances:    FxHashMap<Ty, FxHashSet<Symbol>>,
+    classes:      FxHashMap<Symbol, ClassData>,
+    instances:    FxHashMap<Ty, FxHashMap<Symbol, Span>>,
     id_generator: u64,
 }
 
@@ -142,16 +174,21 @@ impl TypeCtx {
     }
 
     pub fn insert_class(&mut self, name: Symbol, data: ClassData) -> Option<ClassData> {
-        self.traits.insert(name, data)
+        self.classes.insert(name, data)
     }
 
-    pub fn insert_instance(&mut self, ty: Ty, class: Symbol) {
-        self.instances.entry(ty).or_default().insert(class);
+    pub fn insert_instance(&mut self, ty: Ty, class: Symbol, span: Span) -> Option<Span> {
+        self.instances.entry(ty).or_default().insert(class, span)
     }
 
     #[must_use]
     pub fn get_class(&self, name: Symbol) -> Option<&ClassData> {
-        self.traits.get(&name)
+        self.classes.get(&name)
+    }
+
+    #[must_use]
+    pub fn get_class_mut(&mut self, name: Symbol) -> Option<&mut ClassData> {
+        self.classes.get_mut(&name)
     }
 
     #[must_use]
@@ -207,8 +244,40 @@ impl TypeCtx {
         write!(f, "{ctor}")
     }
 
-    pub const fn instances(&self) -> &FxHashMap<Ty, FxHashSet<Symbol>> {
-        &self.instances
+    pub fn implements(&self, ty: &Ty, class: Symbol) -> Option<Span> {
+        if ty.is_scheme() {
+            self.instances
+                .iter()
+                .find_map(|(instance, classes)| {
+                    if ty.is_equivalent(instance) {
+                        classes.get(&class)
+                    } else {
+                        None
+                    }
+                })
+                .copied()
+        } else {
+            self.instances
+                .get(ty)
+                .and_then(|classes| classes.get(&class).copied())
+        }
+    }
+
+    pub fn update_instances(&mut self) -> IsaResult<()> {
+        for (ty, classes) in &self.instances {
+            for (&class, &span) in classes {
+                self.classes
+                    .get_mut(&class)
+                    .ok_or_else(|| InferError::new(InferErrorKind::Unbound(class), span))?
+                    .insert_instance(ty.clone(), span);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub const fn classes(&self) -> &FxHashMap<Symbol, ClassData> {
+        &self.classes
     }
 }
 

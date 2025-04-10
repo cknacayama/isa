@@ -30,6 +30,33 @@ impl Ty {
         }
     }
 
+    pub fn is_equivalent(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Named { name: n1, args: a1 }, Self::Named { name: n2, args: a2 }) => {
+                n1 == n2
+                    && a1
+                        .iter()
+                        .zip(a2.iter())
+                        .all(|(t1, t2)| t1.is_equivalent(t2))
+            }
+
+            (Self::Tuple(a1), Self::Tuple(a2)) => a1
+                .iter()
+                .zip(a2.iter())
+                .all(|(t1, t2)| t1.is_equivalent(t2)),
+            (Self::Fn { param: p1, ret: r1 }, Self::Fn { param: p2, ret: r2 }) => {
+                p1.is_equivalent(p2) && r1.is_equivalent(r2)
+            }
+            (Self::Scheme { quant: q1, ty: t1 }, Self::Scheme { quant: q2, ty: t2 }) => {
+                q1.len() == q2.len() && t1.is_equivalent(t2)
+            }
+
+            (Self::Var(_), Self::Var(_)) => true,
+
+            (lhs, rhs) => lhs == rhs,
+        }
+    }
+
     #[must_use]
     pub const fn is_fn(&self) -> bool {
         matches!(self, Self::Fn { .. })
@@ -106,6 +133,11 @@ impl Ty {
 
     pub fn param_iter(&self) -> impl Iterator<Item = Self> {
         ParamIter { ty: self.clone() }
+    }
+
+    #[must_use]
+    pub const fn is_scheme(&self) -> bool {
+        matches!(self, Self::Scheme { .. })
     }
 }
 
