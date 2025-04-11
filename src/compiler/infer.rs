@@ -162,11 +162,16 @@ impl From<EqConstraint> for EqConstraintSet {
 pub struct ClassConstraint {
     class:       Symbol,
     constrained: Ty,
+    span:        Span,
 }
 
 impl ClassConstraint {
-    pub const fn new(class: Symbol, constrained: Ty) -> Self {
-        Self { class, constrained }
+    pub const fn new(class: Symbol, constrained: Ty, span: Span) -> Self {
+        Self {
+            class,
+            constrained,
+            span,
+        }
     }
 
     pub const fn class(&self) -> Symbol {
@@ -175,6 +180,10 @@ impl ClassConstraint {
 
     pub const fn constrained(&self) -> &Ty {
         &self.constrained
+    }
+
+    pub const fn span(&self) -> Span {
+        self.span
     }
 }
 
@@ -187,9 +196,31 @@ impl Substitute for ClassConstraint {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Constraint {
+    Eq(EqConstraint),
+    Class(ClassConstraint),
+}
+
+impl Constraint {
+    pub const fn span(&self) -> Span {
+        match self {
+            Self::Eq(eq_constraint) => eq_constraint.span(),
+            Self::Class(class_constraint) => class_constraint.span(),
+        }
+    }
+
+    pub const fn rhs(&self) -> &Ty {
+        match self {
+            Self::Eq(eq_constraint) => eq_constraint.rhs(),
+            Self::Class(class_constraint) => class_constraint.constrained(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ClassConstraintSet {
-    pub constrs: VecDeque<ClassConstraint>,
+    pub constrs: Vec<ClassConstraint>,
 }
 
 impl ClassConstraintSet {
@@ -197,8 +228,40 @@ impl ClassConstraintSet {
         self.constrs.iter()
     }
 
+    pub fn push(&mut self, class: ClassConstraint) {
+        self.constrs.push(class);
+    }
+
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn append(&mut self, other: &mut Self) {
+        self.constrs.append(&mut other.constrs);
+    }
+
+    pub fn concat(mut self, mut other: Self) -> Self {
+        self.append(&mut other);
+        self
+    }
+}
+
+impl<T> From<T> for ClassConstraintSet
+where
+    Vec<ClassConstraint>: From<T>,
+{
+    fn from(value: T) -> Self {
+        Self {
+            constrs: Vec::from(value),
+        }
+    }
+}
+
+impl From<ClassConstraint> for ClassConstraintSet {
+    fn from(value: ClassConstraint) -> Self {
+        Self {
+            constrs: Vec::from([value]),
+        }
     }
 }
 
@@ -232,11 +295,11 @@ fn unify_eq(
             cset.push(c2.with_parent(parent));
         }
         (
-            Ty::Named {
+            Ty::Poly {
                 name: n1,
                 args: args1,
             },
-            Ty::Named {
+            Ty::Poly {
                 name: n2,
                 args: args2,
             },
@@ -276,22 +339,49 @@ fn unify_eq(
             } else {
                 c
             };
-            return Err(Uninferable::new(c, std::mem::take(subs)));
+            return Err(Uninferable::new(Constraint::Eq(c), std::mem::take(subs)));
         }
     }
 
     Ok(())
 }
 
-pub fn unify<C>(
-    cset: C,
-    mut classes: ClassConstraintSet,
+fn unify_class(
+    classes: ClassConstraintSet,
+    ctx: &TypeCtx,
+) -> Result<ClassConstraintSet, ClassConstraint> {
+    let mut constrs = Vec::new();
+
+    for constr in classes
+        .constrs
+        .into_iter()
+        .filter_map(|c| {
+            ctx.instantiate_class(c.class(), c.constrained(), c.span())
+                .err()
+        })
+        .flat_map(Vec::into_iter)
+    {
+        if constr.constrained().is_var() {
+            constrs.push(constr);
+        } else {
+            return Err(constr);
+        }
+    }
+
+    Ok(ClassConstraintSet { constrs })
+}
+
+pub fn unify<EqSet, ClassSet>(
+    cset: EqSet,
+    classes: ClassSet,
     ctx: &TypeCtx,
 ) -> Result<(Vec<Subs>, ClassConstraintSet), Uninferable>
 where
-    EqConstraintSet: From<C>,
+    EqConstraintSet: From<EqSet>,
+    ClassConstraintSet: From<ClassSet>,
 {
     let mut cset = EqConstraintSet::from(cset);
+    let mut classes = ClassConstraintSet::from(classes);
     let mut subs = Vec::new();
 
     while let Some(c) = cset.constrs.pop_front() {
@@ -300,7 +390,10 @@ where
 
     classes.substitute_many(&subs);
 
-    Ok((subs, classes))
+    let constrs = unify_class(classes, ctx)
+        .map_err(|c| Uninferable::new(Constraint::Class(c), subs.clone()))?;
+
+    Ok((subs, constrs))
 }
 
 impl EqConstraintSet {

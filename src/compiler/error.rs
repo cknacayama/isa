@@ -3,7 +3,7 @@ use std::fmt::Display;
 use codespan_reporting::diagnostic::Label;
 
 use super::exhaust::pat::WitnessPat;
-use super::infer::{EqConstraint, Subs};
+use super::infer::{Constraint, EqConstraint, Subs};
 use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;
@@ -75,18 +75,18 @@ impl std::error::Error for ParseError {
 
 #[derive(Debug, Clone)]
 pub struct Uninferable {
-    constr: EqConstraint,
+    constr: Constraint,
 
     /// Substitutions applied up until the error
     subs: Vec<Subs>,
 }
 
 impl Uninferable {
-    pub const fn new(constr: EqConstraint, subs: Vec<Subs>) -> Self {
+    pub const fn new(constr: Constraint, subs: Vec<Subs>) -> Self {
         Self { constr, subs }
     }
 
-    pub const fn constr(&self) -> &EqConstraint {
+    pub const fn constr(&self) -> &Constraint {
         &self.constr
     }
 
@@ -206,15 +206,26 @@ impl From<InferError> for IsaError {
 
 impl From<Uninferable> for IsaError {
     fn from(value: Uninferable) -> Self {
-        let fst = DiagnosticLabel::new(
-            format!(
-                "expected `{}`, got `{}`",
-                value.constr().lhs(),
-                value.constr().rhs()
-            ),
-            value.constr().span(),
-        );
-        Self::new("type mismatch", fst, Vec::new())
+        match value.constr() {
+            Constraint::Eq(value) => {
+                let fst = DiagnosticLabel::new(
+                    format!("expected `{}`, got `{}`", value.lhs(), value.rhs()),
+                    value.span(),
+                );
+                Self::new("type mismatch", fst, Vec::new())
+            }
+            Constraint::Class(class) => {
+                let fst = DiagnosticLabel::new(
+                    format!(
+                        "type `{}` is not instance of class `{}`",
+                        class.constrained(),
+                        class.class()
+                    ),
+                    class.span(),
+                );
+                Self::new("type mismatch", fst, Vec::new())
+            }
+        }
     }
 }
 

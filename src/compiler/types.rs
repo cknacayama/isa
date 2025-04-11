@@ -14,7 +14,7 @@ pub enum Ty {
     Tuple(Rc<[Ty]>),
     Fn { param: Rc<Ty>, ret: Rc<Ty> },
     Scheme { quant: Rc<[u64]>, ty: Rc<Ty> },
-    Named { name: Symbol, args: Rc<[Ty]> },
+    Poly { name: Symbol, args: Rc<[Ty]> },
 }
 
 impl From<Rc<Self>> for Ty {
@@ -36,15 +36,26 @@ impl Ty {
             Self::Fn { param, ret } => param.occurs(var) || ret.occurs(var),
             Self::Var(n) => *n == var,
             Self::Scheme { ty, .. } => ty.occurs(var),
-            Self::Named { args, .. } => args.iter().any(|t| t.occurs(var)),
+            Self::Poly { args, .. } => args.iter().any(|t| t.occurs(var)),
 
             _ => false,
         }
     }
 
+    pub fn function_type<I>(params: I, ret: Ty) -> Ty
+    where
+        I: IntoIterator<Item = Ty>,
+        I::IntoIter: DoubleEndedIterator,
+    {
+        params.into_iter().rev().fold(ret, |ret, param| Ty::Fn {
+            param: Rc::new(param),
+            ret:   Rc::new(ret),
+        })
+    }
+
     pub fn equivalent(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Named { name: n1, args: a1 }, Self::Named { name: n2, args: a2 }) => {
+            (Self::Poly { name: n1, args: a1 }, Self::Poly { name: n2, args: a2 }) => {
                 n1 == n2
                     && a1.len() == a2.len()
                     && a1.iter().zip(a2.iter()).all(|(t1, t2)| t1.equivalent(t2))
@@ -78,7 +89,7 @@ impl Ty {
 
     fn is_simple_fmt(&self) -> bool {
         match self {
-            Self::Named { args, .. } => args.is_empty(),
+            Self::Poly { args, .. } => args.is_empty(),
             Self::Unit | Self::Int | Self::Bool | Self::Char | Self::Var(_) | Self::Tuple(_) => {
                 true
             }
@@ -88,7 +99,7 @@ impl Ty {
 
     pub fn zip_args(&self, other: &Self) -> Option<Vec<(Self, Self)>> {
         match (self, other) {
-            (Self::Named { name: n1, args: a1 }, Self::Named { name: n2, args: a2 })
+            (Self::Poly { name: n1, args: a1 }, Self::Poly { name: n2, args: a2 })
                 if n1 == n2 && a1.len() == a2.len() =>
             {
                 Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
@@ -114,7 +125,7 @@ impl Ty {
     }
 
     pub const fn get_name(&self) -> Option<Symbol> {
-        if let Self::Named { name, .. } = self {
+        if let Self::Poly { name, .. } = self {
             Some(*name)
         } else {
             None
@@ -133,7 +144,7 @@ impl Ty {
     fn free_type_variables_inner(&self, free: &mut Vec<u64>) {
         match self {
             Self::Unit | Self::Int | Self::Bool | Self::Char => (),
-            Self::Named { args, .. } if args.is_empty() => (),
+            Self::Poly { args, .. } if args.is_empty() => (),
             Self::Var(id) if free.contains(id) => (),
 
             Self::Var(id) => {
@@ -152,7 +163,7 @@ impl Ty {
                 }
             }
 
-            Self::Named { args, .. } | Self::Tuple(args) => {
+            Self::Poly { args, .. } | Self::Tuple(args) => {
                 for arg in args.iter() {
                     arg.free_type_variables_inner(free);
                 }
@@ -175,6 +186,11 @@ impl Ty {
     pub const fn is_scheme(&self) -> bool {
         matches!(self, Self::Scheme { .. })
     }
+
+    #[must_use]
+    pub const fn is_var(&self) -> bool {
+        matches!(self, Self::Var(..))
+    }
 }
 
 impl Substitute for Ty {
@@ -190,7 +206,7 @@ impl Substitute for Ty {
             Self::Scheme { ty, .. } => {
                 ty.substitute(subs);
             }
-            Self::Named { args, .. } | Self::Tuple(args) => {
+            Self::Poly { args, .. } | Self::Tuple(args) => {
                 let mut new = args.to_vec();
                 for arg in &mut new {
                     arg.substitute(subs);
@@ -237,13 +253,13 @@ impl Substitute for Rc<Ty> {
                     ty,
                 }
             }
-            Ty::Named { name, args } => {
+            Ty::Poly { name, args } => {
                 let mut new_args = args.to_vec();
                 for arg in &mut new_args {
                     arg.substitute(subs);
                 }
                 let args = Rc::from(new_args);
-                Ty::Named { name: *name, args }
+                Ty::Poly { name: *name, args }
             }
             Ty::Tuple(args) => {
                 let mut new_args = args.to_vec();
@@ -323,7 +339,7 @@ impl Display for Ty {
                 }
                 write!(f, "}} => {ty}")
             }
-            Self::Named { name, args } => {
+            Self::Poly { name, args } => {
                 write!(f, "{name}")?;
                 for arg in args.iter() {
                     if arg.is_simple_fmt() {

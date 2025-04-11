@@ -6,7 +6,7 @@ use rustc_hash::FxHashMap;
 use super::ast::Constructor;
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::types::Ty;
-use crate::global::Symbol;
+use crate::global::{self, Symbol};
 use crate::span::Span;
 
 pub trait CtxFmt {
@@ -117,7 +117,7 @@ impl ClassData {
         }
     }
 
-    pub fn extend_signature(&mut self, iter: impl Iterator<Item = (Symbol, (Ty, Span))>) {
+    pub fn extend_signature(&mut self, iter: impl IntoIterator<Item = (Symbol, (Ty, Span))>) {
         self.signatures.extend(iter);
     }
 
@@ -138,12 +138,112 @@ impl ClassData {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TypeCtx {
     constructors: FxHashMap<Symbol, TyData>,
     classes:      FxHashMap<Symbol, ClassData>,
     instances:    FxHashMap<Ty, FxHashMap<Symbol, InstanceData>>,
     id_generator: u64,
+}
+
+fn default_classes() -> FxHashMap<Symbol, ClassData> {
+    use global::intern_symbol as intern;
+
+    let instance_ty = Ty::Poly {
+        name: intern("'a"),
+        args: Rc::default(),
+    };
+
+    macro_rules! class {
+        ($classes:ident, {$($constr:ident)+} => $name:ident, $($member:ident: [$($t:expr,)+], $ret:expr;)+) => {{
+            let set = ClassConstraintSet::from([$(ClassConstraint::new(intern(stringify!($constr)), instance_ty.clone(), Span::default()),)+]);
+            let mut data = ClassData::new(set, intern("'a"), Span::default());
+            data.extend_signature([
+                $(signature!($member: [$($t,)+], $ret)),+
+            ]);
+            $classes.insert(intern(stringify!($name)), data);
+        }};
+        ($classes:ident, $name:ident, $($member:ident: [$($t:expr,)+], $ret:expr;)+) => {{
+            let mut data = ClassData::new(ClassConstraintSet::new(), intern("'a"), Span::default());
+            data.extend_signature([
+                $(signature!($member: [$($t,)+], $ret)),+
+            ]);
+            $classes.insert(intern(stringify!($name)), data);
+        }};
+    }
+
+    macro_rules! signature {
+        ($name:ident: [$($t:expr,)+], $ret:expr) => {
+            (
+                intern(stringify!($name)),
+                (
+                    Ty::function_type([$($t),+], $ret),
+                    Span::default(),
+                )
+            )
+        };
+    }
+
+    let mut classes = FxHashMap::default();
+
+    class!(classes, Eq,
+        eq: [instance_ty.clone(), instance_ty.clone(),], Ty::Bool;
+        ne: [instance_ty.clone(), instance_ty.clone(),], Ty::Bool;
+    );
+    class!(classes, {Eq} => Cmp,
+        lt: [instance_ty.clone(), instance_ty.clone(),], Ty::Bool;
+        gt: [instance_ty.clone(), instance_ty.clone(),], Ty::Bool;
+        ge: [instance_ty.clone(), instance_ty.clone(),], Ty::Bool;
+        le: [instance_ty.clone(), instance_ty.clone(),], Ty::Bool;
+    );
+    class!(classes, {Cmp} => Number,
+        add: [instance_ty.clone(), instance_ty.clone(),], instance_ty.clone();
+        sub: [instance_ty.clone(), instance_ty.clone(),], instance_ty.clone();
+        mult: [instance_ty.clone(), instance_ty.clone(),], instance_ty.clone();
+        div: [instance_ty.clone(), instance_ty.clone(),], instance_ty.clone();
+        rem: [instance_ty.clone(), instance_ty.clone(),], instance_ty.clone();
+    );
+
+    classes
+}
+
+fn default_instances() -> FxHashMap<Ty, FxHashMap<Symbol, InstanceData>> {
+    use global::intern_symbol as intern;
+
+    let mut instances = FxHashMap::default();
+
+    macro_rules! instance {
+        ($ty:expr, $($name:ident,)+) => {{
+            let constraints = ClassConstraintSet::new();
+            let span = Span::default();
+            let data = InstanceData { constraints, span };
+            instances.insert(
+                $ty,
+                [$((intern(stringify!($name)),data.clone()),)+].into_iter().collect()
+            )
+        }};
+    }
+
+    instance!(Ty::Int, Eq, Cmp, Number,);
+    instance!(Ty::Bool, Eq,);
+    instance!(Ty::Unit, Eq,);
+    instance!(Ty::Char, Eq, Cmp, Number,);
+
+    instances
+}
+
+impl Default for TypeCtx {
+    fn default() -> Self {
+        let classes = default_classes();
+        let instances = default_instances();
+
+        Self {
+            constructors: FxHashMap::default(),
+            classes,
+            instances,
+            id_generator: 0,
+        }
+    }
 }
 
 impl TypeCtx {
@@ -196,7 +296,7 @@ impl TypeCtx {
             return types.to_vec().into_boxed_slice();
         }
 
-        let Ty::Named { name, args } = ty else {
+        let Ty::Poly { name, args } = ty else {
             return Box::default();
         };
 
@@ -230,13 +330,19 @@ impl TypeCtx {
         Ty::Var(id)
     }
 
+    pub fn gen_named_var(&mut self) -> Symbol {
+        let id = self.gen_id();
+        let name = format!("'{id}");
+        global::intern_symbol(&name)
+    }
+
     pub fn write_variant_name(
         &self,
         f: &mut impl std::fmt::Write,
         ty: &Ty,
         idx: usize,
     ) -> std::fmt::Result {
-        let Ty::Named { name, .. } = ty else {
+        let Ty::Poly { name, .. } = ty else {
             return Ok(());
         };
         let ctor = self.get_constructors(*name)[idx].name;
@@ -275,7 +381,12 @@ impl TypeCtx {
         }
     }
 
-    pub fn instantiate_class(&self, class: Symbol, ty: &Ty) -> Result<(), ClassConstraint> {
+    pub fn instantiate_class(
+        &self,
+        class: Symbol,
+        ty: &Ty,
+        span: Span,
+    ) -> Result<(), Vec<ClassConstraint>> {
         if self.implementation(ty, class).is_some() {
             return Ok(());
         }
@@ -293,24 +404,29 @@ impl TypeCtx {
                     continue;
                 };
 
-                data.constraints()
-                    .iter()
-                    .filter_map(|constr| {
-                        args.iter().find_map(|(a1, a2)| {
-                            if constr.constrained() == a1 {
-                                Some(self.instantiate_class(constr.class(), a2))
-                            } else {
-                                None
-                            }
-                        })
+                let mut constraints = Vec::new();
+                for mut constr in data.constraints().iter().filter_map(|constr| {
+                    args.iter().find_map(|(a1, a2)| {
+                        if constr.constrained() == a1 {
+                            self.instantiate_class(constr.class(), a2, constr.span())
+                                .err()
+                        } else {
+                            None
+                        }
                     })
-                    .try_for_each(std::convert::identity)?;
+                }) {
+                    constraints.append(&mut constr);
+                }
 
-                return Ok(());
+                return if constraints.is_empty() {
+                    Ok(())
+                } else {
+                    Err(constraints)
+                };
             }
         }
 
-        Err(ClassConstraint::new(class, ty.clone()))
+        Err(vec![ClassConstraint::new(class, ty.clone(), span)])
     }
 
     pub fn set_constraints(&mut self, class: Symbol, ty: &Ty, constr: ClassConstraintSet) {
