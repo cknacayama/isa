@@ -17,6 +17,18 @@ pub enum Ty {
     Named { name: Symbol, args: Rc<[Ty]> },
 }
 
+impl From<Rc<Self>> for Ty {
+    fn from(value: Rc<Self>) -> Self {
+        value.as_ref().clone()
+    }
+}
+
+impl From<&Rc<Self>> for Ty {
+    fn from(value: &Rc<Self>) -> Self {
+        value.as_ref().clone()
+    }
+}
+
 impl Ty {
     #[must_use]
     pub fn occurs(&self, var: u64) -> bool {
@@ -30,25 +42,22 @@ impl Ty {
         }
     }
 
-    pub fn is_equivalent(&self, other: &Self) -> bool {
+    pub fn equivalent(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Named { name: n1, args: a1 }, Self::Named { name: n2, args: a2 }) => {
                 n1 == n2
-                    && a1
-                        .iter()
-                        .zip(a2.iter())
-                        .all(|(t1, t2)| t1.is_equivalent(t2))
+                    && a1.len() == a2.len()
+                    && a1.iter().zip(a2.iter()).all(|(t1, t2)| t1.equivalent(t2))
             }
 
-            (Self::Tuple(a1), Self::Tuple(a2)) => a1
-                .iter()
-                .zip(a2.iter())
-                .all(|(t1, t2)| t1.is_equivalent(t2)),
+            (Self::Tuple(a1), Self::Tuple(a2)) => {
+                a1.len() == a2.len() && a1.iter().zip(a2.iter()).all(|(t1, t2)| t1.equivalent(t2))
+            }
             (Self::Fn { param: p1, ret: r1 }, Self::Fn { param: p2, ret: r2 }) => {
-                p1.is_equivalent(p2) && r1.is_equivalent(r2)
+                p1.equivalent(p2) && r1.equivalent(r2)
             }
             (Self::Scheme { quant: q1, ty: t1 }, Self::Scheme { quant: q2, ty: t2 }) => {
-                q1.len() == q2.len() && t1.is_equivalent(t2)
+                q1.len() == q2.len() && t1.equivalent(t2)
             }
 
             (Self::Var(_), Self::Var(_)) => true,
@@ -74,6 +83,33 @@ impl Ty {
                 true
             }
             Self::Fn { .. } | Self::Scheme { .. } => false,
+        }
+    }
+
+    pub fn zip_args(&self, other: &Self) -> Option<Vec<(Self, Self)>> {
+        match (self, other) {
+            (Self::Named { name: n1, args: a1 }, Self::Named { name: n2, args: a2 })
+                if n1 == n2 && a1.len() == a2.len() =>
+            {
+                Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
+            }
+            (Self::Tuple(a1), Self::Tuple(a2)) if a1.len() == a2.len() => {
+                Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
+            }
+            (Self::Fn { param: p1, ret: r1 }, Self::Fn { param: p2, ret: r2 }) => {
+                Some(vec![(p1.into(), p2.into()), (r1.into(), r2.into())])
+            }
+            (Self::Scheme { quant: q1, ty: t1 }, Self::Scheme { quant: q2, ty: t2 })
+                if q1.len() == q2.len() =>
+            {
+                t1.zip_args(t2)
+            }
+
+            (Self::Var(_), Self::Var(_)) => Some(Vec::new()),
+
+            (lhs, rhs) if lhs == rhs => Some(Vec::new()),
+
+            _ => None,
         }
     }
 

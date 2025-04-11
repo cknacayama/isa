@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 use std::rc::Rc;
 
+use super::ctx::TypeCtx;
 use super::error::Uninferable;
 use super::types::Ty;
 use crate::global::Symbol;
@@ -157,7 +158,136 @@ impl From<EqConstraint> for EqConstraintSet {
     }
 }
 
-pub fn unify<C>(cset: C) -> Result<Vec<Subs>, Uninferable>
+#[derive(Debug, Clone)]
+pub struct ClassConstraint {
+    class:       Symbol,
+    constrained: Ty,
+}
+
+impl ClassConstraint {
+    pub const fn new(class: Symbol, constrained: Ty) -> Self {
+        Self { class, constrained }
+    }
+
+    pub const fn class(&self) -> Symbol {
+        self.class
+    }
+
+    pub const fn constrained(&self) -> &Ty {
+        &self.constrained
+    }
+}
+
+impl Substitute for ClassConstraint {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.constrained.substitute(subs);
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ClassConstraintSet {
+    pub constrs: VecDeque<ClassConstraint>,
+}
+
+impl ClassConstraintSet {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &ClassConstraint> + DoubleEndedIterator {
+        self.constrs.iter()
+    }
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+fn unify_eq(
+    c: EqConstraint,
+    cset: &mut EqConstraintSet,
+    subs: &mut Vec<Subs>,
+) -> Result<(), Uninferable> {
+    let span = c.span;
+    match (&c.lhs, &c.rhs) {
+        (
+            lhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
+            rhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
+        ) if lhs == rhs => {}
+        (new, Ty::Var(old)) | (Ty::Var(old), new) if !new.occurs(*old) => {
+            let s = Subs {
+                old: *old,
+                new: new.clone(),
+            };
+
+            cset.substitute_eq(&s);
+
+            subs.push(s);
+        }
+        (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
+            let c1 = EqConstraint::new(i1.into(), i2.into(), c.span);
+            let c2 = EqConstraint::new(o1.into(), o2.into(), c.span);
+            let parent = Rc::new(c);
+
+            cset.push(c1.with_parent(parent.clone()));
+            cset.push(c2.with_parent(parent));
+        }
+        (
+            Ty::Named {
+                name: n1,
+                args: args1,
+            },
+            Ty::Named {
+                name: n2,
+                args: args2,
+            },
+        ) if n1 == n2 && args1.len() == args2.len() => {
+            let args1 = args1.clone();
+            let args2 = args2.clone();
+            let parent = Rc::new(c);
+            for (a1, a2) in args1.iter().zip(args2.iter()) {
+                cset.push(
+                    EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
+                );
+            }
+        }
+        (Ty::Tuple(t1), Ty::Tuple(t2)) if t1.len() == t2.len() => {
+            let args1 = t1.clone();
+            let args2 = t2.clone();
+            let parent = Rc::new(c);
+            for (a1, a2) in args1.iter().zip(args2.iter()) {
+                cset.push(
+                    EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
+                );
+            }
+        }
+        (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 })
+            if q1.len() == q2.len() =>
+        {
+            let constr = EqConstraint::new(t1.into(), t2.into(), span);
+            let parent = Rc::new(c);
+            cset.push(constr.with_parent(parent));
+        }
+
+        _ => {
+            let c = if let Some(parent) = c.parent {
+                let mut parent = parent.as_ref().clone();
+                parent.substitute_many(subs.as_slice());
+                parent
+            } else {
+                c
+            };
+            return Err(Uninferable::new(c, std::mem::take(subs)));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn unify<C>(
+    cset: C,
+    mut classes: ClassConstraintSet,
+    ctx: &TypeCtx,
+) -> Result<(Vec<Subs>, ClassConstraintSet), Uninferable>
 where
     EqConstraintSet: From<C>,
 {
@@ -165,81 +295,12 @@ where
     let mut subs = Vec::new();
 
     while let Some(c) = cset.constrs.pop_front() {
-        let span = c.span;
-        match (&c.lhs, &c.rhs) {
-            (
-                lhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
-                rhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
-            ) if lhs == rhs => {}
-            (new, Ty::Var(old)) | (Ty::Var(old), new) if !new.occurs(*old) => {
-                let s = Subs {
-                    old: *old,
-                    new: new.clone(),
-                };
-
-                cset.substitute_eq(&s);
-
-                subs.push(s);
-            }
-            (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
-                let c1 = EqConstraint::new(i1.as_ref().clone(), i2.as_ref().clone(), c.span);
-                let c2 = EqConstraint::new(o1.as_ref().clone(), o2.as_ref().clone(), c.span);
-                let parent = Rc::new(c);
-
-                cset.push(c1.with_parent(parent.clone()));
-                cset.push(c2.with_parent(parent));
-            }
-            (
-                Ty::Named {
-                    name: n1,
-                    args: args1,
-                },
-                Ty::Named {
-                    name: n2,
-                    args: args2,
-                },
-            ) if n1 == n2 && args1.len() == args2.len() => {
-                let args1 = args1.clone();
-                let args2 = args2.clone();
-                let parent = Rc::new(c);
-                for (a1, a2) in args1.iter().zip(args2.iter()) {
-                    cset.push(
-                        EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
-                    );
-                }
-            }
-            (Ty::Tuple(t1), Ty::Tuple(t2)) if t1.len() == t2.len() => {
-                let args1 = t1.clone();
-                let args2 = t2.clone();
-                let parent = Rc::new(c);
-                for (a1, a2) in args1.iter().zip(args2.iter()) {
-                    cset.push(
-                        EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
-                    );
-                }
-            }
-            (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 })
-                if q1.len() == q2.len() =>
-            {
-                let constr = EqConstraint::new(t1.as_ref().clone(), t2.as_ref().clone(), span);
-                let parent = Rc::new(c);
-                cset.push(constr.with_parent(parent));
-            }
-
-            _ => {
-                let c = if let Some(parent) = c.parent {
-                    let mut parent = parent.as_ref().clone();
-                    parent.substitute_many(&subs);
-                    parent
-                } else {
-                    c
-                };
-                return Err(Uninferable::new(c, subs));
-            }
-        }
+        unify_eq(c, &mut cset, &mut subs)?;
     }
 
-    Ok(subs)
+    classes.substitute_many(&subs);
+
+    Ok((subs, classes))
 }
 
 impl EqConstraintSet {
@@ -250,6 +311,22 @@ impl EqConstraintSet {
 
     pub fn push(&mut self, c: EqConstraint) {
         self.constrs.push_back(c);
+    }
+}
+
+impl Display for ClassConstraintSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{")?;
+        let mut first = true;
+        for ty in &self.constrs {
+            if first {
+                first = false;
+            } else {
+                write!(f, ", ")?;
+            }
+            write!(f, "{ty}")?;
+        }
+        write!(f, "}} =>")
     }
 }
 
@@ -268,5 +345,22 @@ impl Display for EqConstraint {
 impl Display for EqConstraintSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.constrs.iter().try_for_each(|c| write!(f, "{c}, "))
+    }
+}
+
+impl Display for ClassConstraint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.class, self.constrained)
+    }
+}
+
+impl Substitute for ClassConstraintSet {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        for ty in &mut self.constrs {
+            ty.substitute(subs);
+        }
     }
 }

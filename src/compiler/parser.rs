@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::iter::Peekable;
 use std::rc::Rc;
 
@@ -5,10 +6,9 @@ use super::ast::untyped::{
     UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
     UntypedPat, UntypedPatKind,
 };
-use super::ast::{
-    BinOp, ClassConstraint, ConstraintSet, Constructor, RangePat, UnOp, ValDeclaration,
-};
+use super::ast::{BinOp, Constructor, RangePat, UnOp, ValDeclaration};
 use super::error::ParseError;
+use super::infer::{ClassConstraint, ClassConstraintSet};
 use super::lexer::Lexer;
 use super::token::{Token, TokenKind};
 use super::types::Ty;
@@ -318,12 +318,12 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_constraint_set(&mut self) -> ParseResult<(ConstraintSet, Box<[Ty]>)> {
+    fn parse_constraint_set(&mut self) -> ParseResult<(ClassConstraintSet, Box<[Ty]>)> {
         if self.next_if_match(TokenKind::LBrace).is_none() {
             return Ok(Default::default());
         }
 
-        let mut constrs = Vec::new();
+        let mut constrs = VecDeque::new();
         let mut params = Vec::new();
 
         while !self.check(TokenKind::RBrace) {
@@ -331,7 +331,7 @@ impl<'a> Parser<'a> {
             match self.peek().transpose()?.map(|tk| tk.data) {
                 Some(TokenKind::Ident(name)) => {
                     self.next();
-                    constrs.push(ClassConstraint::new(
+                    constrs.push_back(ClassConstraint::new(
                         data,
                         Ty::Named {
                             name,
@@ -354,12 +354,7 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::RBrace)?;
         self.expect(TokenKind::Rocket)?;
 
-        Ok((
-            ConstraintSet {
-                constrs: constrs.into_boxed_slice(),
-            },
-            params.into_boxed_slice(),
-        ))
+        Ok((ClassConstraintSet { constrs }, params.into_boxed_slice()))
     }
 
     fn parse_val(&mut self) -> ParseResult<Spanned<ValDeclaration>> {

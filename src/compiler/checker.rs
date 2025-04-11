@@ -10,11 +10,14 @@ use super::ast::untyped::{
     UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
     UntypedPat, UntypedPatKind,
 };
-use super::ast::{BinOp, ConstraintSet, Constructor, UnOp, ValDeclaration};
-use super::ctx::{AliasData, ClassData, TypeCtx};
+use super::ast::{BinOp, Constructor, UnOp, ValDeclaration};
+use super::ctx::{AliasData, ClassData, InstanceData, TypeCtx};
 use super::env::{Env, VarData};
 use super::error::{DiagnosticLabel, InferError, InferErrorKind, IsaError, Uninferable};
-use super::infer::{EqConstraint, EqConstraintSet, Subs, Substitute, unify};
+use super::infer::{
+    ClassConstraint, ClassConstraintSet as Set, EqConstraint, EqConstraintSet, Subs, Substitute,
+    unify,
+};
 use super::types::Ty;
 use crate::global::Symbol;
 use crate::span::Span;
@@ -33,11 +36,11 @@ impl Checker {
         Self::default()
     }
 
-    fn unify<C>(&mut self, constr: C) -> Result<Vec<Subs>, Uninferable>
+    fn unify<C>(&mut self, constr: C) -> Result<(Vec<Subs>, Set), Uninferable>
     where
         EqConstraintSet: From<C>,
     {
-        unify(constr).inspect(|subs| {
+        unify(constr, Default::default(), &self.type_ctx).inspect(|(subs, _)| {
             self.env.substitute_many(subs);
         })
     }
@@ -51,11 +54,11 @@ impl Checker {
         self.env.global_scope().iter()
     }
 
-    pub fn instances(&self) -> impl Iterator<Item = (Symbol, impl Iterator<Item = &Ty>)> {
+    pub fn instances(&self) -> impl Iterator<Item = (&Ty, impl Iterator<Item = Symbol>)> {
         self.type_ctx
-            .classes()
+            .instances()
             .iter()
-            .map(|(&class, data)| (class, data.instances().keys()))
+            .map(|(ty, classes)| (ty, classes.keys().copied()))
     }
 
     fn insert_val(&mut self, id: Symbol, ty: Ty, span: Span) -> Option<VarData> {
@@ -92,10 +95,10 @@ impl Checker {
         then: UntypedExpr,
         otherwise: UntypedExpr,
         span: Span,
-    ) -> IsaResult<TypedExpr> {
-        let mut cond = self.check(cond)?;
-        let mut then = self.check(then)?;
-        let mut otherwise = self.check(otherwise)?;
+    ) -> IsaResult<(TypedExpr, Set)> {
+        let (mut cond, set) = self.check(cond)?;
+        let (mut then, set) = self.check(then)?;
+        let (mut otherwise, set) = self.check(otherwise)?;
 
         let mut var = self.gen_type_var();
 
@@ -103,7 +106,7 @@ impl Checker {
         let c_then = EqConstraint::new(var.clone(), then.ty.clone(), then.span);
         let c_otherwise = EqConstraint::new(var.clone(), otherwise.ty.clone(), otherwise.span);
 
-        let subs = self.unify([c_cond, c_then, c_otherwise]).map_err(|err| {
+        let (subs, set) = self.unify([c_cond, c_then, c_otherwise]).map_err(|err| {
             let err_span = err.constr().span();
 
             let (fst_label, labels) = if err_span == cond.span {
@@ -140,7 +143,7 @@ impl Checker {
             otherwise: Box::new(otherwise),
         };
 
-        Ok(TypedExpr::new(kind, span, var))
+        Ok((TypedExpr::new(kind, span, var), set))
     }
 
     fn check_fn(
@@ -148,13 +151,13 @@ impl Checker {
         param: UntypedParam,
         expr: UntypedExpr,
         span: Span,
-    ) -> IsaResult<TypedExpr> {
+    ) -> IsaResult<(TypedExpr, Set)> {
         self.env.push_scope();
 
         let var = self.gen_type_var();
         self.insert_variable(param.name, var, param.span);
 
-        let expr = self.check(expr)?;
+        let (expr, set) = self.check(expr)?;
         let var = self.get_variable(param.name).unwrap();
 
         self.env.pop_scope();
@@ -169,7 +172,7 @@ impl Checker {
             expr:  Box::new(expr),
         };
 
-        Ok(TypedExpr::new(kind, span, ty))
+        Ok((TypedExpr::new(kind, span, ty), set))
     }
 
     fn check_call(
@@ -177,9 +180,9 @@ impl Checker {
         callee: UntypedExpr,
         arg: UntypedExpr,
         span: Span,
-    ) -> IsaResult<TypedExpr> {
-        let mut callee = self.check(callee)?;
-        let mut arg = self.check(arg)?;
+    ) -> IsaResult<(TypedExpr, Set)> {
+        let (mut callee, set) = self.check(callee)?;
+        let (mut arg, set) = self.check(arg)?;
 
         let mut var = self.gen_type_var();
         let fn_ty = Ty::Fn {
@@ -187,7 +190,7 @@ impl Checker {
             ret:   Rc::new(var.clone()),
         };
         let constr = EqConstraint::new(callee.ty.clone(), fn_ty, span);
-        let subs = self.unify(constr).map_err(|err| {
+        let (subs, set) = self.unify(constr).map_err(|err| {
             callee.ty.substitute_many(err.subs());
             arg.ty.substitute_many(err.subs());
             let (fst, labels) = if let Ty::Fn { ref param, .. } = callee.ty {
@@ -219,7 +222,7 @@ impl Checker {
             arg:    Box::new(arg),
         };
 
-        Ok(TypedExpr::new(kind, span, var))
+        Ok((TypedExpr::new(kind, span, var), set))
     }
 
     fn function_type<I>(params: I, ret: Ty) -> Ty
@@ -238,7 +241,7 @@ impl Checker {
         bind: UntypedLetBind,
         val_decl: &Ty,
         ty_span: Span,
-    ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>)> {
+    ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>, Set)> {
         self.env.push_scope();
 
         let mut param_iter = val_decl.param_iter();
@@ -261,11 +264,11 @@ impl Checker {
             })
             .collect::<IsaResult<Box<_>>>()?;
 
-        let mut expr = if typed_params.is_empty() {
+        let (mut expr, set) = if typed_params.is_empty() {
             self.check(*bind.expr)?
         } else {
             self.insert_variable(bind.name, val_decl.clone(), bind.name_span);
-            let mut expr = self.check(*bind.expr)?;
+            let (mut expr, set) = self.check(*bind.expr)?;
 
             for p in &mut typed_params {
                 p.ty = self.get_variable(p.name).unwrap();
@@ -273,7 +276,7 @@ impl Checker {
 
             expr.ty =
                 Self::function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
-            expr
+            (expr, set)
         };
 
         self.env.pop_scope();
@@ -294,15 +297,15 @@ impl Checker {
                 .with_note("let bind should have same type as val declaration")
         };
 
-        let subs = unify(constr)
+        let (subs, set) = unify(constr, set, &self.type_ctx)
             .map_err(|err| val_error(err.constr().rhs(), err.constr().span()))
-            .and_then(|subs| {
+            .and_then(|(subs, set)| {
                 if subs.iter().any(|s| val_free.contains(&s.old())) {
                     expr.ty.substitute_many(&subs);
                     let ty = self.env.generalize(expr.ty.clone());
                     Err(val_error(&ty, expr.span))
                 } else {
-                    Ok(subs)
+                    Ok((subs, set))
                 }
             })?;
 
@@ -313,13 +316,13 @@ impl Checker {
 
         let ty = self.env.generalize(expr.ty.clone());
 
-        Ok((ty, expr, typed_params))
+        Ok((ty, expr, typed_params, set))
     }
 
     fn check_let_bind(
         &mut self,
         bind: UntypedLetBind,
-    ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>)> {
+    ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>, Set)> {
         match self.env.get_val(bind.name) {
             Some(val) if self.env.at_global_scope() => {
                 let val = val.clone();
@@ -340,14 +343,14 @@ impl Checker {
             })
             .collect::<Box<_>>();
 
-        let expr = if typed_params.is_empty() {
+        let (expr, set) = if typed_params.is_empty() {
             self.check(*bind.expr)?
         } else {
             let var_id = self.gen_id();
             let var = Ty::Var(var_id);
             self.insert_variable(bind.name, var, bind.name_span);
 
-            let mut expr = self.check(*bind.expr)?;
+            let (mut expr, set) = self.check(*bind.expr)?;
 
             for p in &mut typed_params {
                 p.ty = self.get_variable(p.name).unwrap();
@@ -359,14 +362,14 @@ impl Checker {
             let subs = Subs::new(var_id, expr.ty.clone());
 
             expr.substitute_eq(&subs);
-            expr
+            (expr, set)
         };
 
         self.env.pop_scope();
 
         let ty = self.env.generalize(expr.ty.clone());
 
-        Ok((ty, expr, typed_params))
+        Ok((ty, expr, typed_params, set))
     }
 
     fn check_let(
@@ -374,24 +377,24 @@ impl Checker {
         bind: UntypedLetBind,
         body: Option<UntypedExpr>,
         span: Span,
-    ) -> IsaResult<TypedExpr> {
+    ) -> IsaResult<(TypedExpr, Set)> {
         let name = bind.name;
         let name_span = bind.name_span;
 
-        let (u1, expr, params) = self.check_let_bind(bind)?;
+        let (u1, expr, params, set) = self.check_let_bind(bind)?;
 
         let mut env1 = self.env.clone();
         std::mem::swap(&mut self.env, &mut env1);
         self.insert_variable(name, u1, name_span);
 
-        let (body, ty) = match body {
+        let (body, ty, set) = match body {
             Some(body) => {
-                let body = self.check(body)?;
+                let (body, set) = self.check(body)?;
                 std::mem::swap(&mut self.env, &mut env1);
                 let ty = body.ty.clone();
-                (Some(body), ty)
+                (Some(body), ty, set)
             }
-            None => (None, Ty::Unit),
+            None => (None, Ty::Unit, Set::new()),
         };
 
         let bind = TypedLetBind::new(name, name_span, params, Box::new(expr));
@@ -401,7 +404,7 @@ impl Checker {
             body: body.map(Box::new),
         };
 
-        Ok(TypedExpr::new(kind, span, ty))
+        Ok((TypedExpr::new(kind, span, ty), set))
     }
 
     fn check_constructor(&mut self, constructor: &Constructor, quant: Rc<[u64]>, mut ret: Ty) {
@@ -531,7 +534,7 @@ impl Checker {
             return Err(InferError::new(InferErrorKind::Kind(ty), span).into());
         }
 
-        let subs = self.unify(c).map_err(|err| {
+        let (subs, _) = self.unify(c).map_err(|err| {
             IsaError::from(err).with_label(DiagnosticLabel::new(
                 format!("constructor is of type `{}`", ctor.ty()),
                 ctor.span(),
@@ -553,7 +556,7 @@ impl Checker {
 
     fn check_class(
         &mut self,
-        set: ConstraintSet,
+        set: Set,
         name: Symbol,
         instance: Symbol,
         signatures: Box<[ValDeclaration]>,
@@ -586,10 +589,10 @@ impl Checker {
     fn check_instance_impls<F>(
         &mut self,
         class: Symbol,
-        mut set: ConstraintSet,
+        mut set: Set,
         impls: impl IntoIterator<Item = UntypedLetBind>,
         mut subs: F,
-    ) -> IsaResult<(Vec<TypedLetBind>, ConstraintSet)>
+    ) -> IsaResult<(Vec<TypedLetBind>, Set)>
     where
         F: FnMut(&Ty) -> Option<Ty>,
     {
@@ -597,7 +600,6 @@ impl Checker {
             .into_iter()
             .map(|bind| {
                 let class_data = self.type_ctx.get_class(class).unwrap();
-
                 let (mut ty, ty_span) = class_data
                     .signatures()
                     .get(&bind.name)
@@ -614,7 +616,7 @@ impl Checker {
                 ty.substitute(&mut subs);
                 let name = bind.name;
                 let name_span = bind.name_span;
-                let (_, expr, params) = self.check_let_bind_with_val(bind, &ty, ty_span)?;
+                let (_, expr, params, set) = self.check_let_bind_with_val(bind, &ty, ty_span)?;
                 Ok(TypedLetBind::new(name, name_span, params, Box::new(expr)))
             })
             .collect::<IsaResult<_>>()?;
@@ -625,12 +627,12 @@ impl Checker {
     fn check_instance(
         &mut self,
         params: Box<[Ty]>,
-        set: ConstraintSet,
+        set: Set,
         class: Symbol,
         instance: Ty,
         impls: Box<[UntypedLetBind]>,
         span: Span,
-    ) -> IsaResult<TypedExpr> {
+    ) -> IsaResult<(TypedExpr, Set)> {
         let class_data = self
             .type_ctx
             .get_class(class)
@@ -638,7 +640,11 @@ impl Checker {
 
         let scheme = self.env.generalize(instance.clone());
         for constr in class_data.constraints().iter() {
-            if self.type_ctx.implements(&scheme, constr.class()).is_none() {
+            if self
+                .type_ctx
+                .implementation(&scheme, constr.class())
+                .is_none()
+            {
                 let fst = DiagnosticLabel::new(
                     format!("type `{scheme}` doesn't implement `{}`", constr.class()),
                     span,
@@ -665,6 +671,8 @@ impl Checker {
 
         let instance_var = class_data.instance_var();
         let mut arity_error = false;
+
+        self.type_ctx.set_constraints(class, &scheme, set.clone());
 
         let (impls, set) = if let Ty::Named {
             name: instance_name,
@@ -706,13 +714,13 @@ impl Checker {
 
         let kind = TypedExprKind::Instance {
             params,
-            set,
+            set: set.clone(),
             class,
             instance,
             impls: impls.into(),
         };
 
-        Ok(TypedExpr::new(kind, span, Ty::Unit))
+        Ok((TypedExpr::new(kind, span, Ty::Unit), set))
     }
 
     fn check_pat(&mut self, UntypedPat { kind, span, .. }: UntypedPat) -> IsaResult<TypedPat> {
@@ -732,7 +740,7 @@ impl Checker {
                     patterns.push(pat);
                 }
 
-                let subs = self.unify(c).map_err(|err| {
+                let (subs, _) = self.unify(c).map_err(|err| {
                     IsaError::from(err).with_note("or sub-patterns should have same type")
                 })?;
 
@@ -797,14 +805,14 @@ impl Checker {
         &mut self,
         pat: UntypedPat,
         expr: UntypedExpr,
-    ) -> IsaResult<(TypedPat, TypedExpr)> {
+    ) -> IsaResult<(TypedPat, TypedExpr, Set)> {
         self.env.push_scope();
 
         let mut pat = self.check_pat(pat)?;
 
         let scope = self.env.current_scope().unwrap().clone();
 
-        let expr = self.check(expr)?;
+        let (expr, set) = self.check(expr)?;
 
         let new_scope = self.env.pop_scope().unwrap();
 
@@ -816,7 +824,7 @@ impl Checker {
             pat.substitute_eq(&Subs::new(old, new));
         }
 
-        Ok((pat, expr))
+        Ok((pat, expr, set))
     }
 
     fn check_match(
@@ -824,8 +832,8 @@ impl Checker {
         expr: UntypedExpr,
         arms: Box<[UntypedMatchArm]>,
         span: Span,
-    ) -> IsaResult<TypedExpr> {
-        let mut expr = self.check(expr)?;
+    ) -> IsaResult<(TypedExpr, Set)> {
+        let (mut expr, set) = self.check(expr)?;
 
         let mut var = self.gen_type_var();
         let mut typed_arms = Vec::new();
@@ -833,13 +841,13 @@ impl Checker {
         let mut c = EqConstraintSet::new();
 
         for arm in arms {
-            let (pat, aexpr) = self.check_match_arm(arm.pat, arm.expr)?;
+            let (pat, aexpr, set) = self.check_match_arm(arm.pat, arm.expr)?;
             c.push(EqConstraint::new(var.clone(), aexpr.ty.clone(), aexpr.span));
             c.push(EqConstraint::new(expr.ty.clone(), pat.ty.clone(), pat.span));
             typed_arms.push(TypedMatchArm::new(pat, aexpr));
         }
 
-        let subs = self.unify(c).map_err(|err| {
+        let (subs, _) = self.unify(c).map_err(|err| {
             let is_pat = typed_arms
                 .iter()
                 .find_map(|arm| {
@@ -879,7 +887,7 @@ impl Checker {
             arms: typed_arms.into_boxed_slice(),
         };
 
-        Ok(TypedExpr::new(kind, span, var))
+        Ok((TypedExpr::new(kind, span, var), set))
     }
 
     fn check_bin(
@@ -888,20 +896,20 @@ impl Checker {
         lhs: UntypedExpr,
         rhs: UntypedExpr,
         span: Span,
-    ) -> IsaResult<TypedExpr> {
+    ) -> IsaResult<(TypedExpr, Set)> {
         if op.is_pipe() {
             return self.check_call(rhs, lhs, span);
         }
 
-        let mut lhs = self.check(lhs)?;
-        let mut rhs = self.check(rhs)?;
+        let (mut lhs, set) = self.check(lhs)?;
+        let (mut rhs, set) = self.check(rhs)?;
 
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
                 let c1 = EqConstraint::new(Ty::Int, lhs.ty.clone(), lhs.span);
                 let c2 = EqConstraint::new(Ty::Int, rhs.ty.clone(), rhs.span);
 
-                let subs = self.unify([c1, c2]).map_err(|err| {
+                let (subs, set) = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
                         "operator `{op}` expects operands of type `{}`",
                         err.constr().lhs()
@@ -918,13 +926,13 @@ impl Checker {
                     rhs: Box::new(rhs),
                 };
 
-                Ok(TypedExpr::new(kind, span, Ty::Int))
+                Ok((TypedExpr::new(kind, span, Ty::Int), set))
             }
             BinOp::Gt | BinOp::Ge | BinOp::Lt | BinOp::Le => {
                 let c1 = EqConstraint::new(Ty::Int, lhs.ty.clone(), lhs.span);
                 let c2 = EqConstraint::new(Ty::Int, rhs.ty.clone(), rhs.span);
 
-                let subs = self.unify([c1, c2]).map_err(|err| {
+                let (subs, set) = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
                         "operator `{op}` expects operands of type `{}`",
                         err.constr().lhs()
@@ -941,12 +949,12 @@ impl Checker {
                     rhs: Box::new(rhs),
                 };
 
-                Ok(TypedExpr::new(kind, span, Ty::Bool))
+                Ok((TypedExpr::new(kind, span, Ty::Bool), set))
             }
             BinOp::Eq | BinOp::Ne => {
                 let c1 = EqConstraint::new(lhs.ty.clone(), rhs.ty.clone(), rhs.span);
 
-                let subs = self.unify(c1).map_err(|err| {
+                let (subs, set) = self.unify(c1).map_err(|err| {
                     let note = format!(
                         "operator `{op}` expects operands of same type ({})",
                         err.constr().lhs()
@@ -963,13 +971,13 @@ impl Checker {
                     rhs: Box::new(rhs),
                 };
 
-                Ok(TypedExpr::new(kind, span, Ty::Bool))
+                Ok((TypedExpr::new(kind, span, Ty::Bool), set))
             }
             BinOp::And | BinOp::Or => {
                 let c1 = EqConstraint::new(Ty::Bool, lhs.ty.clone(), lhs.span);
                 let c2 = EqConstraint::new(Ty::Bool, rhs.ty.clone(), rhs.span);
 
-                let subs = self.unify([c1, c2]).map_err(|err| {
+                let (subs, set) = self.unify([c1, c2]).map_err(|err| {
                     let note = format!(
                         "operator `{op}` expects operands of type `{}`",
                         err.constr().lhs()
@@ -986,15 +994,15 @@ impl Checker {
                     rhs: Box::new(rhs),
                 };
 
-                Ok(TypedExpr::new(kind, span, Ty::Bool))
+                Ok((TypedExpr::new(kind, span, Ty::Bool), set))
             }
 
             BinOp::Pipe => unreachable!(),
         }
     }
 
-    fn check_un(&mut self, op: UnOp, expr: UntypedExpr, span: Span) -> IsaResult<TypedExpr> {
-        let mut expr = self.check(expr)?;
+    fn check_un(&mut self, op: UnOp, expr: UntypedExpr, span: Span) -> IsaResult<(TypedExpr, Set)> {
+        let (mut expr, set) = self.check(expr)?;
 
         let ty = match op {
             UnOp::Not => Ty::Bool,
@@ -1002,7 +1010,7 @@ impl Checker {
         };
         let constr = EqConstraint::new(ty.clone(), expr.ty.clone(), expr.span);
 
-        let subs = self.unify(constr).map_err(|err| {
+        let (subs, _) = self.unify(constr).map_err(|err| {
             let note = format!("`{op}` operates on `{ty}`");
             IsaError::from(err).with_note(note)
         })?;
@@ -1014,23 +1022,28 @@ impl Checker {
             expr: Box::new(expr),
         };
 
-        Ok(TypedExpr::new(kind, span, ty))
+        Ok((TypedExpr::new(kind, span, ty), set))
     }
 
-    fn check_tuple(&mut self, exprs: Box<[UntypedExpr]>, span: Span) -> IsaResult<TypedExpr> {
+    fn check_tuple(
+        &mut self,
+        exprs: Box<[UntypedExpr]>,
+        span: Span,
+    ) -> IsaResult<(TypedExpr, Set)> {
         if exprs.is_empty() {
-            return Ok(TypedExpr::new(
-                TypedExprKind::Tuple(Box::new([])),
-                span,
-                Ty::Unit,
+            return Ok((
+                TypedExpr::new(TypedExprKind::Tuple(Box::new([])), span, Ty::Unit),
+                Set::new(),
             ));
         }
 
         let mut typed_exprs = Vec::new();
         let mut types = Vec::new();
 
+        let set = Set::new();
+
         for expr in exprs {
-            let expr = self.check(expr)?;
+            let (expr, set) = self.check(expr)?;
             types.push(expr.ty.clone());
             typed_exprs.push(expr);
         }
@@ -1038,7 +1051,7 @@ impl Checker {
         let kind = TypedExprKind::Tuple(typed_exprs.into_boxed_slice());
         let ty = Ty::Tuple(types.into());
 
-        Ok(TypedExpr::new(kind, span, ty))
+        Ok((TypedExpr::new(kind, span, ty), set))
     }
 
     fn instantiate(&mut self, ty: Ty) -> Ty {
@@ -1073,8 +1086,6 @@ impl Checker {
         if declared.is_empty() {
             return Ok(Vec::new());
         }
-
-        self.type_ctx.update_instances()?;
 
         Ok(module
             .exprs
@@ -1165,16 +1176,19 @@ impl Checker {
                 instance.substitute_param(&subs);
 
                 let instance = self.env.generalize(instance.clone());
-                if let Some(previous) = self.type_ctx.implements(&instance, *class) {
+
+                if let Some(previous) = self.type_ctx.implementation(&instance, *class) {
                     let fst = DiagnosticLabel::new(
                         format!("multiple instantiations of `{class}` for {instance}"),
                         expr.span,
                     );
-                    let snd = DiagnosticLabel::new("previously instantiated here", previous);
+                    let snd = DiagnosticLabel::new("previously instantiated here", previous.span());
                     return Err(IsaError::new("multiple instantiations", fst, vec![snd]));
                 }
 
-                self.type_ctx.insert_instance(instance, *class, expr.span);
+                let data = InstanceData::new(expr.span);
+
+                self.type_ctx.insert_instance(instance, *class, data);
 
                 None
             }
@@ -1242,7 +1256,7 @@ impl Checker {
             let exprs = module
                 .exprs
                 .extract_if(.., |e| e.kind.is_type_or_val_or_class())
-                .map(|e| self.check(e).unwrap())
+                .map(|e| self.check(e).unwrap().0)
                 .collect::<Vec<_>>();
 
             decl.push(exprs);
@@ -1264,30 +1278,38 @@ impl Checker {
         let exprs = module
             .exprs
             .into_iter()
-            .map(|expr| self.check(expr))
+            .map(|expr| self.check(expr).map(|(expr, _)| expr))
             .collect::<IsaResult<_>>()?;
         let typed = TypedModule::new(module.name, exprs, module.span);
 
         Ok(typed)
     }
 
-    fn check(&mut self, expr: UntypedExpr) -> IsaResult<TypedExpr> {
+    fn check(&mut self, expr: UntypedExpr) -> IsaResult<(TypedExpr, Set)> {
         let span = expr.span;
         match expr.kind {
-            UntypedExprKind::Int(i) => Ok(TypedExpr::new(TypedExprKind::Int(i), span, Ty::Int)),
+            UntypedExprKind::Int(i) => Ok((
+                TypedExpr::new(TypedExprKind::Int(i), span, Ty::Int),
+                Set::new(),
+            )),
 
-            UntypedExprKind::Bool(b) => Ok(TypedExpr::new(TypedExprKind::Bool(b), span, Ty::Bool)),
+            UntypedExprKind::Bool(b) => Ok((
+                TypedExpr::new(TypedExprKind::Bool(b), span, Ty::Bool),
+                Set::new(),
+            )),
 
-            UntypedExprKind::Char(c) => Ok(TypedExpr::new(TypedExprKind::Char(c), span, Ty::Char)),
+            UntypedExprKind::Char(c) => Ok((
+                TypedExpr::new(TypedExprKind::Char(c), span, Ty::Char),
+                Set::new(),
+            )),
 
             UntypedExprKind::Ident(id) => {
                 let t = self
                     .get_variable(id)
                     .ok_or_else(|| InferError::new(InferErrorKind::Unbound(id), span))?;
-                Ok(TypedExpr::new(
-                    TypedExprKind::Ident(id),
-                    span,
-                    self.instantiate(t),
+                Ok((
+                    TypedExpr::new(TypedExprKind::Ident(id), span, self.instantiate(t)),
+                    Set::new(),
                 ))
             }
 
@@ -1312,32 +1334,38 @@ impl Checker {
             }
 
             UntypedExprKind::Semi(expr) => {
-                let mut expr = self.check(*expr)?;
+                let (mut expr, constr) = self.check(*expr)?;
                 expr.ty = Ty::Unit;
-                Ok(expr)
+                Ok((expr, constr))
             }
 
             UntypedExprKind::Type {
                 name,
                 parameters,
                 constructors,
-            } => Ok(self.check_type_definition(name, parameters, constructors, span)),
+            } => Ok((
+                self.check_type_definition(name, parameters, constructors, span),
+                Set::new(),
+            )),
 
             UntypedExprKind::Alias {
                 name,
                 parameters,
                 ty,
-            } => Ok(TypedExpr::new(
-                TypedExprKind::Alias {
-                    name,
-                    parameters,
-                    ty,
-                },
-                span,
-                Ty::Unit,
+            } => Ok((
+                TypedExpr::new(
+                    TypedExprKind::Alias {
+                        name,
+                        parameters,
+                        ty,
+                    },
+                    span,
+                    Ty::Unit,
+                ),
+                Set::new(),
             )),
 
-            UntypedExprKind::Val(val) => Ok(self.check_val_expr(val, span)),
+            UntypedExprKind::Val(val) => Ok((self.check_val_expr(val, span), Set::new())),
 
             UntypedExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
 
@@ -1346,7 +1374,10 @@ impl Checker {
                 name,
                 instance,
                 signatures,
-            } => Ok(self.check_class(set, name, instance, signatures, span)),
+            } => Ok((
+                self.check_class(set, name, instance, signatures, span),
+                Set::new(),
+            )),
 
             UntypedExprKind::Instance {
                 params,

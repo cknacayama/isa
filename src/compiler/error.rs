@@ -60,11 +60,7 @@ impl Display for ParseError {
             Self::UnexpectedEof => write!(f, "unexpected end-of-file"),
             Self::ExpectedToken { expected, got } => {
                 write!(f, "expected `{expected}`")?;
-                if let Some(got) = got {
-                    write!(f, ", got `{got}`")
-                } else {
-                    Ok(())
-                }
+                got.map_or(Ok(()), |got| write!(f, ", got `{got}`"))
             }
             Self::ExpectedExpr(got) => write!(f, "expected expression, got `{got}`"),
             Self::ExpectedId(got) => write!(f, "expected identifier, got `{got}`"),

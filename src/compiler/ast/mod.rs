@@ -3,7 +3,7 @@ pub mod untyped;
 
 use std::fmt::{Debug, Display, Write};
 
-use super::infer::Substitute;
+use super::infer::{ClassConstraintSet, Substitute};
 use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;
@@ -400,64 +400,9 @@ impl<T: Display> LetBind<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ClassConstraint {
-    class:       Symbol,
-    constrained: Ty,
-}
-
-impl ClassConstraint {
-    pub const fn new(class: Symbol, constrained: Ty) -> Self {
-        Self { class, constrained }
-    }
-
-    pub const fn class(&self) -> Symbol {
-        self.class
-    }
-
-    pub const fn constrained(&self) -> &Ty {
-        &self.constrained
-    }
-}
-
-impl Display for ClassConstraint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.class, self.constrained)
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ConstraintSet {
-    pub constrs: Box<[ClassConstraint]>,
-}
-
-impl ConstraintSet {
-    pub fn iter(
-        &self,
-    ) -> impl ExactSizeIterator<Item = &ClassConstraint> + DoubleEndedIterator {
-        self.constrs.iter()
-    }
-}
-
-impl Display for ConstraintSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{")?;
-        let mut first = true;
-        for ty in &self.constrs {
-            if first {
-                first = false;
-            } else {
-                write!(f, ", ")?;
-            }
-            write!(f, "{ty}")?;
-        }
-        write!(f, "}} =>")
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct ValDeclaration {
     pub params:  Box<[Ty]>,
-    pub set:     ConstraintSet,
+    pub set:     ClassConstraintSet,
     pub name:    Symbol,
     pub ty:      Ty,
     pub ty_span: Span,
@@ -507,7 +452,7 @@ pub enum ExprKind<T> {
     Val(ValDeclaration),
 
     Class {
-        set:        ConstraintSet,
+        set:        ClassConstraintSet,
         name:       Symbol,
         instance:   Symbol,
         signatures: Box<[ValDeclaration]>,
@@ -515,7 +460,7 @@ pub enum ExprKind<T> {
 
     Instance {
         params:   Box<[Ty]>,
-        set:      ConstraintSet,
+        set:      ClassConstraintSet,
         class:    Symbol,
         instance: Ty,
         impls:    Box<[LetBind<T>]>,
@@ -802,26 +747,6 @@ impl Substitute for LetBind<Ty> {
             p.substitute(subs);
         }
         self.expr.substitute(subs);
-    }
-}
-
-impl Substitute for ClassConstraint {
-    fn substitute<S>(&mut self, subs: &mut S)
-    where
-        S: FnMut(&Ty) -> Option<Ty>,
-    {
-        self.constrained.substitute(subs);
-    }
-}
-
-impl Substitute for ConstraintSet {
-    fn substitute<S>(&mut self, subs: &mut S)
-    where
-        S: FnMut(&Ty) -> Option<Ty>,
-    {
-        for ty in &mut self.constrs {
-            ty.substitute(subs);
-        }
     }
 }
 
