@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::iter::Peekable;
 use std::rc::Rc;
 
@@ -295,7 +294,7 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
         while !self.check(TokenKind::Eq) {
             let Spanned { data: name, .. } = self.expect_id()?;
-            params.push(Ty::Poly {
+            params.push(Ty::Named {
                 name,
                 args: Rc::from([]),
             });
@@ -339,7 +338,7 @@ impl<'a> Parser<'a> {
                     self.next();
                     constrs.push(ClassConstraint::new(
                         data,
-                        Ty::Poly {
+                        Ty::Named {
                             name,
                             args: Rc::from([]),
                         },
@@ -347,7 +346,7 @@ impl<'a> Parser<'a> {
                     ));
                 }
                 _ => {
-                    params.push(Ty::Poly {
+                    params.push(Ty::Named {
                         name: data,
                         args: Rc::from([]),
                     });
@@ -662,7 +661,7 @@ impl<'a> Parser<'a> {
             TokenKind::KwBool => Ok(Spanned::new(Ty::Bool, span)),
             TokenKind::KwChar => Ok(Spanned::new(Ty::Char, span)),
             TokenKind::Ident(name) => Ok(Spanned::new(
-                Ty::Poly {
+                Ty::Named {
                     name,
                     args: Rc::from([]),
                 },
@@ -676,7 +675,7 @@ impl<'a> Parser<'a> {
     fn parse_polymorphic_type(&mut self) -> ParseResult<Spanned<Ty>> {
         let simple = self.parse_simple_type()?;
 
-        if let Ty::Poly { name, .. } = simple.data {
+        if let Ty::Named { name, .. } = simple.data {
             let mut span = simple.span;
             let mut params = Vec::new();
 
@@ -687,7 +686,7 @@ impl<'a> Parser<'a> {
             }
 
             let args = params.into();
-            Ok(Spanned::new(Ty::Poly { name, args }, span))
+            Ok(Spanned::new(Ty::Named { name, args }, span))
         } else {
             Ok(simple)
         }
@@ -741,7 +740,7 @@ impl<'a> Parser<'a> {
 
         while !self.check(TokenKind::Eq) {
             let Spanned { data: name, .. } = self.expect_id()?;
-            params.push(Ty::Poly {
+            params.push(Ty::Named {
                 name,
                 args: Rc::from([]),
             });

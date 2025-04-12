@@ -38,6 +38,21 @@ pub trait Substitute {
     {
         self.substitute(&mut |t| match t {
             Ty::Var(id) if *id == subs.old => Some(subs.new.clone()),
+            Ty::Generic { var, args } if *var == subs.old => match subs.new.clone() {
+                Ty::Var(new) => Some(Ty::Generic {
+                    var:  new,
+                    args: args.clone(),
+                }),
+                Ty::Named { name, args: named } => {
+                    let mut named = named.to_vec();
+                    named.extend_from_slice(&args);
+                    Some(Ty::Named {
+                        name,
+                        args: named.into(),
+                    })
+                }
+                _ => None,
+            },
             _ => None,
         });
     }
@@ -277,10 +292,7 @@ fn unify_eq(
             rhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
         ) if lhs == rhs => {}
         (new, Ty::Var(old)) | (Ty::Var(old), new) if !new.occurs(*old) => {
-            let s = Subs {
-                old: *old,
-                new: new.clone(),
-            };
+            let s = Subs::new(*old, new.clone());
 
             cset.substitute_eq(&s);
 
@@ -295,11 +307,56 @@ fn unify_eq(
             cset.push(c2.with_parent(parent));
         }
         (
-            Ty::Poly {
+            Ty::Generic {
+                var: v1,
+                args: args1,
+            },
+            Ty::Generic {
+                var: v2,
+                args: args2,
+            },
+        ) => {
+            let args1 = args1.clone();
+            let args2 = args2.clone();
+            let s = Subs::new(*v1, Ty::Var(*v2));
+            let parent = Rc::new(c);
+            for (a1, a2) in args1.iter().zip(args2.iter()) {
+                cset.push(
+                    EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
+                );
+            }
+            cset.substitute_eq(&s);
+
+            subs.push(s);
+        }
+        (Ty::Generic { var, args: vars }, Ty::Named { name, args: named })
+        | (Ty::Named { name, args: named }, Ty::Generic { var, args: vars })
+            if vars.len() <= named.len() =>
+        {
+            let var = *var;
+            let name = *name;
+            let vars = vars.clone();
+            let named = named.clone();
+            let parent = Rc::new(c);
+            let mut named_iter = named.iter().rev();
+            for arg in vars.iter().rev() {
+                let named = named_iter.next().unwrap();
+                cset.push(
+                    EqConstraint::new(arg.clone(), named.clone(), span).with_parent(parent.clone()),
+                );
+            }
+            let args = named_iter.cloned().rev().collect();
+            let s = Subs::new(var, Ty::Named { name, args });
+            cset.substitute_eq(&s);
+
+            subs.push(s);
+        }
+        (
+            Ty::Named {
                 name: n1,
                 args: args1,
             },
-            Ty::Poly {
+            Ty::Named {
                 name: n2,
                 args: args2,
             },

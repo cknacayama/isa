@@ -29,12 +29,12 @@ impl<'a> Ctx<'a> {
             Ty::Bool => Some(CtorSet::Bool),
             Ty::Char => Some(CtorSet::Integers(IntRange::character())),
             Ty::Scheme { ty, .. } => self.ctors_for_ty(ty),
-            Ty::Poly { name, .. } => {
+            Ty::Named { name, .. } => {
                 let variants = self.ctx.get_constructors(*name).len();
                 let variants = NonZeroUsize::new(variants)?;
                 Some(CtorSet::Type { variants })
             }
-            Ty::Var(_) => Some(CtorSet::Unlistable),
+            Ty::Var(_) | Ty::Generic { .. } => Some(CtorSet::Unlistable),
             Ty::Fn { .. } => None,
         }
     }
@@ -121,7 +121,7 @@ impl Pat {
                     .map(|pat| Self::from_ast_pat(pat, ctx))
                     .enumerate()
                     .collect();
-                let Ty::Poly { name: ty_name, .. } = pat.ty else {
+                let Ty::Named { name: ty_name, .. } = pat.ty else {
                     unreachable!()
                 };
                 let idx = ctx

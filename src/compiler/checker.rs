@@ -446,7 +446,7 @@ impl Checker {
 
         let quant = Rc::<[u64]>::from(quant);
 
-        let ty = Ty::Poly {
+        let ty = Ty::Named {
             name,
             args: parameters.clone().into(),
         };
@@ -683,7 +683,7 @@ impl Checker {
 
         self.type_ctx.set_constraints(class, &scheme, set.clone());
 
-        let (impls, set) = if let Ty::Poly {
+        let (impls, set) = if let Ty::Named {
             name: instance_name,
             ref args,
         } = instance
@@ -691,22 +691,17 @@ impl Checker {
             let arity = self.type_ctx.get_type_arity(instance_name).unwrap();
             let var_args_len = arity - args.len();
             self.check_instance_impls(class, set, impls, |ty| match ty {
-                Ty::Poly {
-                    name: named,
+                Ty::Generic {
+                    var,
                     args: var_args,
-                } if *named == instance_var => {
+                } if *var == instance_var => {
                     if var_args.len() != var_args_len {
                         arity_error = true;
                         None
-                    } else if var_args.is_empty() {
-                        Some(Ty::Poly {
-                            name: instance_name,
-                            args: args.clone(),
-                        })
                     } else {
                         let mut args = args.to_vec();
                         args.extend_from_slice(var_args);
-                        Some(Ty::Poly {
+                        Some(Ty::Named {
                             name: instance_name,
                             args: args.into(),
                         })
@@ -716,7 +711,7 @@ impl Checker {
             })
         } else {
             self.check_instance_impls(class, set, impls, |ty| match ty {
-                Ty::Poly { name: named, .. } if *named == instance_var => Some(instance.clone()),
+                Ty::Var(var) if *var == instance_var => Some(instance.clone()),
                 _ => None,
             })
         }?;
@@ -1169,9 +1164,28 @@ impl Checker {
                 set,
                 name,
                 instance,
-                ..
+                signatures,
             } => {
-                let class = ClassData::new(set.clone(), *instance, expr.span);
+                let var = self.gen_id();
+                let mut subs = |ty: &Ty| match ty {
+                    Ty::Named { name, args } if name == instance => {
+                        if args.is_empty() {
+                            Some(Ty::Var(var))
+                        } else {
+                            Some(Ty::Generic {
+                                var,
+                                args: args.clone(),
+                            })
+                        }
+                    }
+                    _ => None,
+                };
+                set.substitute(&mut subs);
+                for sig in signatures {
+                    sig.substitute(&mut subs);
+                }
+
+                let class = ClassData::new(set.clone(), var, expr.span);
                 self.type_ctx.insert_class(*name, class);
 
                 Some((*name, expr.span))
@@ -1268,26 +1282,20 @@ impl Checker {
             .cloned()
             .ok_or_else(|| InferError::new(InferErrorKind::Unbound(member), span))?;
         let mut sig = self.instantiate(sig);
-        let var = self.type_ctx.gen_named_var();
+        let new_var = self.gen_id();
         let mut subs = |ty: &Ty| match ty {
-            Ty::Poly { name, args } if *name == instance_var => Some(Ty::Poly {
-                name: var,
+            Ty::Generic { var, args } if *var == instance_var => Some(Ty::Generic {
+                var:  new_var,
                 args: args.clone(),
             }),
+            Ty::Var(var) if *var == instance_var => Some(Ty::Var(new_var)),
             _ => None,
         };
         constraints.substitute(&mut subs);
         sig.substitute(&mut subs);
 
         let kind = TypedExprKind::ClassMember { class, member };
-        constraints.push(ClassConstraint::new(
-            class,
-            Ty::Poly {
-                name: var,
-                args: Rc::from([]),
-            },
-            span,
-        ));
+        constraints.push(ClassConstraint::new(class, Ty::Var(new_var), span));
 
         Ok((TypedExpr::new(kind, span, sig), constraints))
     }
@@ -1311,7 +1319,7 @@ impl Checker {
         for module in &mut modules {
             if !aliases.is_empty() {
                 module.substitute(&mut |ty| {
-                    let Ty::Poly { name, args } = ty else {
+                    let Ty::Named { name, args } = ty else {
                         return None;
                     };
 
@@ -1332,7 +1340,7 @@ impl Checker {
             decl.push(exprs);
         }
 
-        modules
+        let res = modules
             .into_iter()
             .zip(decl)
             .map(|(module, mut decl)| {
@@ -1342,7 +1350,13 @@ impl Checker {
                 set.append(&mut module_set);
                 Ok(module)
             })
-            .collect()
+            .collect();
+
+        // for c in set.iter() {
+        //     println!("{} {:?}", c.class(), c.constrained());
+        // }
+
+        res
     }
 
     fn check_module(&mut self, module: UntypedModule) -> IsaResult<(TypedModule, Set)> {

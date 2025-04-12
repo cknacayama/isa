@@ -102,13 +102,13 @@ impl InstanceData {
 #[derive(Debug, Clone, Default)]
 pub struct ClassData {
     constraints:  ClassConstraintSet,
-    instance_var: Symbol,
+    instance_var: u64,
     signatures:   FxHashMap<Symbol, (Ty, Span)>,
     span:         Span,
 }
 
 impl ClassData {
-    pub fn new(constraints: ClassConstraintSet, instance_var: Symbol, span: Span) -> Self {
+    pub fn new(constraints: ClassConstraintSet, instance_var: u64, span: Span) -> Self {
         Self {
             constraints,
             instance_var,
@@ -121,7 +121,7 @@ impl ClassData {
         self.signatures.extend(iter);
     }
 
-    pub const fn instance_var(&self) -> Symbol {
+    pub const fn instance_var(&self) -> u64 {
         self.instance_var
     }
 
@@ -149,22 +149,19 @@ pub struct TypeCtx {
 fn default_classes() -> FxHashMap<Symbol, ClassData> {
     use global::intern_symbol as intern;
 
-    let instance_ty = Ty::Poly {
-        name: intern("'a"),
-        args: Rc::default(),
-    };
+    let instance_ty = Ty::Var(0);
 
     macro_rules! class {
         ($classes:ident, {$($constr:ident)+} => $name:ident, $($member:ident: [$($t:expr,)+], $ret:expr;)+) => {{
             let set = ClassConstraintSet::from([$(ClassConstraint::new(intern(stringify!($constr)), instance_ty.clone(), Span::default()),)+]);
-            let mut data = ClassData::new(set, intern("'a"), Span::default());
+            let mut data = ClassData::new(set, 0, Span::default());
             data.extend_signature([
                 $(signature!($member: [$($t,)+], $ret)),+
             ]);
             $classes.insert(intern(stringify!($name)), data);
         }};
         ($classes:ident, $name:ident, $($member:ident: [$($t:expr,)+], $ret:expr;)+) => {{
-            let mut data = ClassData::new(ClassConstraintSet::new(), intern("'a"), Span::default());
+            let mut data = ClassData::new(ClassConstraintSet::new(), 0, Span::default());
             data.extend_signature([
                 $(signature!($member: [$($t,)+], $ret)),+
             ]);
@@ -241,7 +238,7 @@ impl Default for TypeCtx {
             constructors: FxHashMap::default(),
             classes,
             instances,
-            id_generator: 0,
+            id_generator: 1,
         }
     }
 }
@@ -296,7 +293,7 @@ impl TypeCtx {
             return types.to_vec().into_boxed_slice();
         }
 
-        let Ty::Poly { name, args } = ty else {
+        let Ty::Named { name, args } = ty else {
             return Box::default();
         };
 
@@ -330,19 +327,13 @@ impl TypeCtx {
         Ty::Var(id)
     }
 
-    pub fn gen_named_var(&mut self) -> Symbol {
-        let id = self.gen_id();
-        let name = format!("'{id}");
-        global::intern_symbol(&name)
-    }
-
     pub fn write_variant_name(
         &self,
         f: &mut impl std::fmt::Write,
         ty: &Ty,
         idx: usize,
     ) -> std::fmt::Result {
-        let Ty::Poly { name, .. } = ty else {
+        let Ty::Named { name, .. } = ty else {
             return Ok(());
         };
         let ctor = self.get_constructors(*name)[idx].name;
