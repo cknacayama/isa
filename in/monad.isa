@@ -1,0 +1,37 @@
+module Monad
+
+type Option a = None | Some a;
+
+class Functor f =
+    val {a,b} => fmap: (a -> b) -> f a -> f b
+;
+
+class {Functor f} => Applicative f =
+    val {a} => pure: a -> f a,
+    val {a,b} => apply: f (a -> b) -> f a -> f b,
+;
+
+class {Applicative f} => Monad f =
+    val {a} => return: a -> f a,
+    val {a,b} => bind: f a -> (a -> f b) -> f b,
+;
+
+instance Functor Option =
+    let fmap f opt = match opt with
+        Some a -> Some (f a),
+        None -> None,
+;
+
+instance Applicative Option =
+    let pure = Some,
+    let apply f x = match (f,x) with
+        (Some f, Some x) -> Some (f x),
+        _ -> None,
+;
+
+instance Monad Option =
+    let return = Applicative::pure,
+    let bind opt f = match opt with
+        Some a -> f a,
+        None -> None,
+;

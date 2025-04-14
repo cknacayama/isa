@@ -208,12 +208,9 @@ impl<'a> Parser<'a> {
         let signatures = if self.next_if_match(TokenKind::Eq).is_some() {
             let mut signatures = Vec::new();
             while self.check(TokenKind::KwVal) {
-                let Spanned {
-                    data: val,
-                    span: val_span,
-                } = self.parse_val()?;
+                let val = self.parse_val()?;
+                span = span.union(val.span);
                 signatures.push(val);
-                span = span.union(val_span);
                 if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
                     span = span.union(c_span);
                 }
@@ -363,7 +360,7 @@ impl<'a> Parser<'a> {
         Ok((ClassConstraintSet { constrs }, params.into_boxed_slice()))
     }
 
-    fn parse_val(&mut self) -> ParseResult<Spanned<ValDeclaration>> {
+    fn parse_val(&mut self) -> ParseResult<ValDeclaration> {
         let span = self.expect(TokenKind::KwVal)?;
         let (set, params) = self.parse_constraint_set()?;
         let Spanned { data: name, .. } = self.expect_id_or_doted()?;
@@ -374,20 +371,18 @@ impl<'a> Parser<'a> {
         } = self.parse_type()?;
         let span = span.union(ty_span);
 
-        Ok(Spanned::new(
-            ValDeclaration {
-                params,
-                set,
-                name,
-                ty,
-                ty_span,
-            },
+        Ok(ValDeclaration {
+            params,
+            set,
+            name,
+            ty,
             span,
-        ))
+        })
     }
 
     fn parse_val_expr(&mut self) -> ParseResult<UntypedExpr> {
-        let Spanned { data: val, span } = self.parse_val()?;
+        let val = self.parse_val()?;
+        let span = val.span;
         Ok(UntypedExpr::untyped(UntypedExprKind::Val(val), span))
     }
 

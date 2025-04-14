@@ -10,19 +10,23 @@ use crate::span::Span;
 
 #[derive(Debug, Clone)]
 pub struct Subs {
-    old: u64,
-    new: Ty,
+    old:  u64,
+    subs: Ty,
 }
 
 impl Subs {
     #[must_use]
     pub const fn new(old: u64, new: Ty) -> Self {
-        Self { old, new }
+        Self { old, subs: new }
     }
 
     #[must_use]
     pub const fn old(&self) -> u64 {
         self.old
+    }
+
+    pub const fn subs(&self) -> &Ty {
+        &self.subs
     }
 }
 
@@ -37,8 +41,8 @@ pub trait Substitute {
         Self: Sized,
     {
         self.substitute(&mut |t| match t {
-            Ty::Var(id) if *id == subs.old => Some(subs.new.clone()),
-            Ty::Generic { var, args } if *var == subs.old => match subs.new.clone() {
+            Ty::Var(id) if *id == subs.old => Some(subs.subs.clone()),
+            Ty::Generic { var, args } if *var == subs.old => match subs.subs.clone() {
                 Ty::Var(new) => Some(Ty::Generic {
                     var:  new,
                     args: args.clone(),
@@ -71,11 +75,21 @@ pub trait Substitute {
     where
         Self: Sized,
     {
-        self.substitute(&mut |ty| {
-            ty.get_name().and_then(|name| {
-                subs.iter()
-                    .find_map(|(s, v)| if *s == name { Some(Ty::Var(*v)) } else { None })
-            })
+        self.substitute(&mut |ty| match ty {
+            Ty::Named { name, args } if args.is_empty() => subs
+                .iter()
+                .find_map(|(s, v)| if s == name { Some(Ty::Var(*v)) } else { None }),
+            Ty::Named { name, args } => subs.iter().find_map(|(s, v)| {
+                if s == name {
+                    Some(Ty::Generic {
+                        var:  *v,
+                        args: args.clone(),
+                    })
+                } else {
+                    None
+                }
+            }),
+            _ => None,
         });
     }
 }
@@ -173,11 +187,17 @@ impl From<EqConstraint> for EqConstraintSet {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 pub struct ClassConstraint {
     class:       Symbol,
     constrained: Ty,
     span:        Span,
+}
+
+impl PartialEq for ClassConstraint {
+    fn eq(&self, other: &Self) -> bool {
+        self.class == other.class && self.constrained == other.constrained
+    }
 }
 
 impl ClassConstraint {
@@ -199,6 +219,10 @@ impl ClassConstraint {
 
     pub const fn span(&self) -> Span {
         self.span
+    }
+
+    pub const fn span_mut(&mut self) -> &mut Span {
+        &mut self.span
     }
 }
 
@@ -225,15 +249,13 @@ impl Constraint {
         }
     }
 
-    pub const fn rhs(&self) -> &Ty {
-        match self {
-            Self::Eq(eq_constraint) => eq_constraint.rhs(),
-            Self::Class(class_constraint) => class_constraint.constrained(),
-        }
+    #[must_use]
+    pub const fn is_class(&self) -> bool {
+        matches!(self, Self::Class(..))
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ClassConstraintSet {
     pub constrs: Vec<ClassConstraint>,
 }
@@ -241,6 +263,10 @@ pub struct ClassConstraintSet {
 impl ClassConstraintSet {
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &ClassConstraint> + DoubleEndedIterator {
         self.constrs.iter()
+    }
+
+    pub fn contains(&self, constr: &ClassConstraint) -> bool {
+        self.constrs.contains(constr)
     }
 
     pub fn push(&mut self, class: ClassConstraint) {
@@ -318,16 +344,19 @@ fn unify_eq(
         ) if args1.len() == args2.len() => {
             let args1 = args1.clone();
             let args2 = args2.clone();
-            let s = Subs::new(*v1, Ty::Var(*v2));
+            let v1 = *v1;
+            let v2 = *v2;
             let parent = Rc::new(c);
             for (a1, a2) in args1.iter().zip(args2.iter()) {
                 cset.push(
                     EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
                 );
             }
-            cset.substitute_eq(&s);
-
-            subs.push(s);
+            if v1 != v2 {
+                let s = Subs::new(v2, Ty::Var(v1));
+                cset.substitute_eq(&s);
+                subs.push(s);
+            }
         }
         (Ty::Generic { var, args: vars }, Ty::Named { name, args: named })
         | (Ty::Named { name, args: named }, Ty::Generic { var, args: vars })
@@ -482,7 +511,7 @@ impl Display for ClassConstraintSet {
 
 impl Display for Subs {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "'{} |-> ({})", self.old, self.new)
+        write!(f, "'{} |-> ({})", self.old, self.subs)
     }
 }
 

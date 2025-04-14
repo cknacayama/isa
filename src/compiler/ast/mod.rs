@@ -32,6 +32,21 @@ impl BinOp {
     pub const fn is_pipe(self) -> bool {
         matches!(self, Self::Pipe)
     }
+
+    pub const fn class(self) -> &'static str {
+        match self {
+            BinOp::Add => "Add",
+            BinOp::Sub => "Sub",
+            BinOp::Mul => "Mul",
+            BinOp::Rem | BinOp::Div => "Div",
+
+            BinOp::Eq | BinOp::Ne => "Eq",
+            BinOp::Gt | BinOp::Ge | BinOp::Lt | BinOp::Le => "Cmp",
+            BinOp::And => "And",
+            BinOp::Or => "Or",
+            BinOp::Pipe => "Pipe",
+        }
+    }
 }
 
 impl Display for BinOp {
@@ -401,11 +416,11 @@ impl<T: Display> LetBind<T> {
 
 #[derive(Debug, Clone)]
 pub struct ValDeclaration {
-    pub params:  Box<[Ty]>,
-    pub set:     ClassConstraintSet,
-    pub name:    Symbol,
-    pub ty:      Ty,
-    pub ty_span: Span,
+    pub params: Box<[Ty]>,
+    pub set:    ClassConstraintSet,
+    pub name:   Symbol,
+    pub ty:     Ty,
+    pub span:   Span,
 }
 
 impl Display for ValDeclaration {
@@ -456,6 +471,7 @@ pub enum ExprKind<T> {
         name:       Symbol,
         instance:   Symbol,
         signatures: Box<[ValDeclaration]>,
+        // defaults:   Box<[LetBind<T>]>,
     },
 
     Instance {

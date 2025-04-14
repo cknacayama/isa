@@ -100,7 +100,7 @@ impl Config {
 
         let mut checker = Checker::new();
 
-        let modules = match checker.check_many_modules(modules) {
+        let (modules, set) = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
             Err(err) => return self.report(&err, checker.type_ctx()),
         };
@@ -121,6 +121,11 @@ impl Config {
             for class in classes {
                 println!("{class} {ty}");
             }
+        }
+
+        println!("where");
+        for c in set.iter() {
+            println!("  {} {},", c.class(), c.constrained())
         }
 
         println!("ran in {duration:?}");

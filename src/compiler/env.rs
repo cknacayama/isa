@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use super::infer::Substitute;
+use super::infer::{ClassConstraintSet, Substitute};
 use super::types::Ty;
 use crate::global::Symbol;
 use crate::span::Span;
@@ -28,15 +28,21 @@ impl VarKind {
 
 #[derive(Debug, Clone)]
 pub struct VarData {
-    kind: VarKind,
-    ty:   Ty,
-    span: Span,
+    kind:        VarKind,
+    pub ty:      Ty,
+    pub constrs: ClassConstraintSet,
+    pub span:    Span,
 }
 
 impl VarData {
     #[must_use]
-    const fn new(kind: VarKind, ty: Ty, span: Span) -> Self {
-        Self { kind, ty, span }
+    const fn new(kind: VarKind, ty: Ty, constrs: ClassConstraintSet, span: Span) -> Self {
+        Self {
+            kind,
+            ty,
+            constrs,
+            span,
+        }
     }
 
     #[must_use]
@@ -102,22 +108,43 @@ impl Env {
             })
     }
 
-    pub fn insert(&mut self, id: Symbol, ty: Ty, span: Span) -> Option<VarData> {
+    pub fn insert(
+        &mut self,
+        id: Symbol,
+        ty: Ty,
+        constrs: ClassConstraintSet,
+        span: Span,
+    ) -> Option<VarData> {
         self.env
             .last_mut()
-            .and_then(|env| env.insert(id, VarData::new(VarKind::LetDefinition, ty, span)))
+            .and_then(|env| env.insert(id, VarData::new(VarKind::LetDefinition, ty, constrs, span)))
     }
 
-    pub fn insert_constructor(&mut self, id: Symbol, ty: Ty, span: Span) -> Option<VarData> {
+    pub fn insert_constructor(
+        &mut self,
+        id: Symbol,
+        ty: Ty,
+        constrs: ClassConstraintSet,
+        span: Span,
+    ) -> Option<VarData> {
         self.env
             .last_mut()
-            .and_then(|env| env.insert(id, VarData::new(VarKind::Constructor, ty, span)))
+            .and_then(|env| env.insert(id, VarData::new(VarKind::Constructor, ty, constrs, span)))
     }
 
-    pub fn insert_val(&mut self, id: Symbol, ty: Ty, span: Span) -> Option<VarData> {
-        self.env
-            .last_mut()
-            .and_then(|env| env.insert(id, VarData::new(VarKind::ValueDeclaration, ty, span)))
+    pub fn insert_val(
+        &mut self,
+        id: Symbol,
+        ty: Ty,
+        constrs: ClassConstraintSet,
+        span: Span,
+    ) -> Option<VarData> {
+        self.env.last_mut().and_then(|env| {
+            env.insert(
+                id,
+                VarData::new(VarKind::ValueDeclaration, ty, constrs, span),
+            )
+        })
     }
 
     pub fn push_scope(&mut self) {
@@ -194,6 +221,16 @@ impl Substitute for Env {
         self.env
             .iter_mut()
             .flat_map(FxHashMap::values_mut)
-            .for_each(|t| t.ty.substitute(subs));
+            .for_each(|t| t.substitute(subs));
+    }
+}
+
+impl Substitute for VarData {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.ty.substitute(subs);
+        self.constrs.substitute(subs);
     }
 }

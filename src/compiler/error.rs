@@ -223,7 +223,7 @@ impl From<Uninferable> for IsaError {
                     ),
                     class.span(),
                 );
-                Self::new("type mismatch", fst, Vec::new())
+                Self::new("class mismatch", fst, Vec::new())
             }
         }
     }
