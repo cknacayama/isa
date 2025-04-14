@@ -675,20 +675,19 @@ impl<'a> Parser<'a> {
     fn parse_polymorphic_type(&mut self) -> ParseResult<Spanned<Ty>> {
         let simple = self.parse_simple_type()?;
 
-        if let Ty::Named { name, .. } = simple.data {
-            let mut span = simple.span;
-            let mut params = Vec::new();
-
-            while self.peek_and(TokenKind::can_start_type)? {
-                let ty = self.parse_simple_type()?;
-                span = span.union(ty.span);
-                params.push(ty.data);
+        match simple.data {
+            Ty::Named { name, args } if args.is_empty() => {
+                let mut span = simple.span;
+                let mut params = Vec::new();
+                while self.peek_and(TokenKind::can_start_type)? {
+                    let ty = self.parse_simple_type()?;
+                    span = span.union(ty.span);
+                    params.push(ty.data);
+                }
+                let args = params.into();
+                Ok(Spanned::new(Ty::Named { name, args }, span))
             }
-
-            let args = params.into();
-            Ok(Spanned::new(Ty::Named { name, args }, span))
-        } else {
-            Ok(simple)
+            _ => Ok(simple),
         }
     }
 

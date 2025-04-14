@@ -3,7 +3,7 @@ use std::fmt::Display;
 use codespan_reporting::diagnostic::Label;
 
 use super::exhaust::pat::WitnessPat;
-use super::infer::{Constraint, EqConstraint, Subs};
+use super::infer::{Constraint, Subs};
 use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;

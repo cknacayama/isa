@@ -519,7 +519,6 @@ impl<T> Expr<T> {
 }
 
 impl<T: Display> Expr<T> {
-    #[allow(clippy::too_many_lines)]
     fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
         let tab = String::from_utf8(vec![b' '; indentation * 2]).unwrap();
         match &self.kind {

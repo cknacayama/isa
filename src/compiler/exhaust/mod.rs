@@ -22,20 +22,19 @@ impl<'a> Ctx<'a> {
         Self { ctx }
     }
 
-    fn ctors_for_ty(&self, ty: &Ty) -> Option<CtorSet> {
+    fn ctors_for_ty(&self, ty: &Ty) -> CtorSet {
         match ty {
-            Ty::Tuple(_) | Ty::Unit => Some(CtorSet::Single),
-            Ty::Int => Some(CtorSet::Integers(IntRange::infinite())),
-            Ty::Bool => Some(CtorSet::Bool),
-            Ty::Char => Some(CtorSet::Integers(IntRange::character())),
+            Ty::Tuple(_) | Ty::Unit => CtorSet::Single,
+            Ty::Int => CtorSet::Integers(IntRange::infinite()),
+            Ty::Bool => CtorSet::Bool,
+            Ty::Char => CtorSet::Integers(IntRange::character()),
             Ty::Scheme { ty, .. } => self.ctors_for_ty(ty),
             Ty::Named { name, .. } => {
                 let variants = self.ctx.get_constructors(*name).len();
-                let variants = NonZeroUsize::new(variants)?;
-                Some(CtorSet::Type { variants })
+                let variants = NonZeroUsize::new(variants).unwrap();
+                CtorSet::Type { variants }
             }
-            Ty::Var(_) | Ty::Generic { .. } => Some(CtorSet::Unlistable),
-            Ty::Fn { .. } => None,
+            Ty::Fn { .. } | Ty::Var(_) | Ty::Generic { .. } => CtorSet::Unlistable,
         }
     }
 
@@ -60,7 +59,7 @@ impl<'a> Ctx<'a> {
             return (vec![Ctor::Or], vec![]);
         }
 
-        let ctors_for_ty = self.ctors_for_ty(ty).unwrap();
+        let ctors_for_ty = self.ctors_for_ty(ty);
 
         let (present, missing) = ctors_for_ty.split(ctors);
 

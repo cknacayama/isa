@@ -45,7 +45,7 @@ pub trait Substitute {
                 }),
                 Ty::Named { name, args: named } => {
                     let mut named = named.to_vec();
-                    named.extend_from_slice(&args);
+                    named.extend_from_slice(args);
                     Some(Ty::Named {
                         name,
                         args: named.into(),
@@ -315,7 +315,7 @@ fn unify_eq(
                 var: v2,
                 args: args2,
             },
-        ) => {
+        ) if args1.len() == args2.len() => {
             let args1 = args1.clone();
             let args2 = args2.clone();
             let s = Subs::new(*v1, Ty::Var(*v2));

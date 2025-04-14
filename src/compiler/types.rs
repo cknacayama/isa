@@ -43,12 +43,12 @@ impl Ty {
         }
     }
 
-    pub fn function_type<I>(params: I, ret: Ty) -> Ty
+    pub fn function_type<I>(params: I, ret: Self) -> Self
     where
-        I: IntoIterator<Item = Ty>,
+        I: IntoIterator<Item = Self>,
         I::IntoIter: DoubleEndedIterator,
     {
-        params.into_iter().rev().fold(ret, |ret, param| Ty::Fn {
+        params.into_iter().rev().fold(ret, |ret, param| Self::Fn {
             param: Rc::new(param),
             ret:   Rc::new(ret),
         })

@@ -105,17 +105,11 @@ impl Checker {
         let (mut then, then_set) = self.check(then)?;
         let (mut otherwise, else_set) = self.check(otherwise)?;
 
-        let mut var = self.gen_type_var();
-
         let c_cond = EqConstraint::new(Ty::Bool, cond.ty.clone(), cond.span);
-        let c_then = EqConstraint::new(var.clone(), then.ty.clone(), then.span);
-        let c_otherwise = EqConstraint::new(var.clone(), otherwise.ty.clone(), otherwise.span);
+        let c_body = EqConstraint::new(then.ty.clone(), otherwise.ty.clone(), otherwise.span);
 
         let (subs, set) = self
-            .unify(
-                [c_cond, c_then, c_otherwise],
-                set.concat(then_set).concat(else_set),
-            )
+            .unify([c_cond, c_body], set.concat(then_set).concat(else_set))
             .map_err(|err| {
                 let err_span = err.constr().span();
 
@@ -152,10 +146,11 @@ impl Checker {
                 IsaError::new("type mismatch", fst_label, labels)
             })?;
 
-        var.substitute_many(&subs);
         cond.substitute_many(&subs);
         then.substitute_many(&subs);
         otherwise.substitute_many(&subs);
+
+        let ty = then.ty.clone();
 
         let kind = TypedExprKind::If {
             cond:      Box::new(cond),
@@ -163,7 +158,7 @@ impl Checker {
             otherwise: Box::new(otherwise),
         };
 
-        Ok((TypedExpr::new(kind, span, var), set))
+        Ok((TypedExpr::new(kind, span, ty), set))
     }
 
     fn check_fn(
@@ -695,16 +690,16 @@ impl Checker {
                     var,
                     args: var_args,
                 } if *var == instance_var => {
-                    if var_args.len() != var_args_len {
-                        arity_error = true;
-                        None
-                    } else {
+                    if var_args.len() == var_args_len {
                         let mut args = args.to_vec();
                         args.extend_from_slice(var_args);
                         Some(Ty::Named {
                             name: instance_name,
                             args: args.into(),
                         })
+                    } else {
+                        arity_error = true;
+                        None
                     }
                 }
                 _ => None,
@@ -913,16 +908,14 @@ impl Checker {
 
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
-                let var = self.gen_type_var();
-                let c1 = EqConstraint::new(var.clone(), lhs.ty.clone(), lhs.span);
-                let c2 = EqConstraint::new(var.clone(), rhs.ty.clone(), rhs.span);
+                let c = EqConstraint::new(lhs.ty.clone(), rhs.ty.clone(), rhs.span);
 
                 set.push(ClassConstraint::new(
                     global::intern_symbol("Number"),
-                    var.clone(),
+                    lhs.ty.clone(),
                     span,
                 ));
-                let (subs, set) = self.unify([c1, c2], set).map_err(|err| {
+                let (subs, set) = self.unify(c, set).map_err(|err| {
                     let note = format!("operator `{op}` expects operands of type `Number a`");
                     IsaError::from(err).with_note(note)
                 })?;
@@ -930,25 +923,25 @@ impl Checker {
                 lhs.substitute_many(&subs);
                 rhs.substitute_many(&subs);
 
+                let ty = lhs.ty.clone();
+
                 let kind = TypedExprKind::Bin {
                     op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 };
 
-                Ok((TypedExpr::new(kind, span, var), set))
+                Ok((TypedExpr::new(kind, span, ty), set))
             }
             BinOp::Gt | BinOp::Ge | BinOp::Lt | BinOp::Le => {
-                let var = self.gen_type_var();
-                let c1 = EqConstraint::new(var.clone(), lhs.ty.clone(), lhs.span);
-                let c2 = EqConstraint::new(var.clone(), rhs.ty.clone(), rhs.span);
+                let c = EqConstraint::new(lhs.ty.clone(), rhs.ty.clone(), rhs.span);
 
                 set.push(ClassConstraint::new(
                     global::intern_symbol("Cmp"),
-                    var.clone(),
+                    lhs.ty.clone(),
                     span,
                 ));
-                let (subs, set) = self.unify([c1, c2], set).map_err(|err| {
+                let (subs, set) = self.unify(c, set).map_err(|err| {
                     let note = format!("operator `{op}` expects operands of type `Cmp a`");
                     IsaError::from(err).with_note(note)
                 })?;
@@ -965,16 +958,14 @@ impl Checker {
                 Ok((TypedExpr::new(kind, span, Ty::Bool), set))
             }
             BinOp::Eq | BinOp::Ne => {
-                let var = self.gen_type_var();
-                let c1 = EqConstraint::new(var.clone(), lhs.ty.clone(), rhs.span);
-                let c2 = EqConstraint::new(var.clone(), rhs.ty.clone(), rhs.span);
+                let c = EqConstraint::new(lhs.ty.clone(), rhs.ty.clone(), rhs.span);
 
                 set.push(ClassConstraint::new(
                     global::intern_symbol("Eq"),
-                    var.clone(),
+                    lhs.ty.clone(),
                     span,
                 ));
-                let (subs, set) = self.unify([c1, c2], set).map_err(|err| {
+                let (subs, set) = self.unify(c, set).map_err(|err| {
                     let note = format!("operator `{op}` expects operands of type `Eq a`");
                     IsaError::from(err).with_note(note)
                 })?;
@@ -1340,7 +1331,13 @@ impl Checker {
             decl.push(exprs);
         }
 
-        let res = modules
+        
+
+        // for c in set.iter() {
+        //     println!("{} {:?}", c.class(), c.constrained());
+        // }
+
+        modules
             .into_iter()
             .zip(decl)
             .map(|(module, mut decl)| {
@@ -1350,13 +1347,7 @@ impl Checker {
                 set.append(&mut module_set);
                 Ok(module)
             })
-            .collect();
-
-        // for c in set.iter() {
-        //     println!("{} {:?}", c.class(), c.constrained());
-        // }
-
-        res
+            .collect()
     }
 
     fn check_module(&mut self, module: UntypedModule) -> IsaResult<(TypedModule, Set)> {

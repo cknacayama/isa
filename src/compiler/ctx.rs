@@ -198,7 +198,7 @@ fn default_classes() -> FxHashMap<Symbol, ClassData> {
         sub: [instance_ty.clone(), instance_ty.clone(),], instance_ty.clone();
         mult: [instance_ty.clone(), instance_ty.clone(),], instance_ty.clone();
         div: [instance_ty.clone(), instance_ty.clone(),], instance_ty.clone();
-        rem: [instance_ty.clone(), instance_ty.clone(),], instance_ty.clone();
+        rem: [instance_ty.clone(), instance_ty.clone(),], instance_ty;
     );
 
     classes
