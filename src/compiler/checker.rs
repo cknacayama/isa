@@ -175,7 +175,7 @@ impl Checker {
 
                         (fst, vec![snd, trd])
                     }
-                    _ => unreachable!(),
+                    Constraint::Class(_) => unreachable!(),
                 };
 
                 IsaError::new("type mismatch", fst_label, labels)
@@ -283,7 +283,7 @@ impl Checker {
     fn check_let_bind_with_val(
         &mut self,
         bind: UntypedLetBind,
-        val_decl: Ty,
+        val_decl: &Ty,
         val_set: Set,
         ty_span: Span,
     ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>, Set)> {
@@ -396,7 +396,7 @@ impl Checker {
                 let VarData {
                     ty, constrs, span, ..
                 } = val.clone();
-                return self.check_let_bind_with_val(bind, ty, constrs, span);
+                return self.check_let_bind_with_val(bind, &ty, constrs, span);
             }
             _ => (),
         }
@@ -713,7 +713,7 @@ impl Checker {
                 let name = bind.name;
                 let name_span = bind.name_span;
                 let (_, expr, params, mut bind_set) =
-                    self.check_let_bind_with_val(bind, ty, member_set, ty_span)?;
+                    self.check_let_bind_with_val(bind, &ty, member_set, ty_span)?;
                 set.append(&mut bind_set);
                 Ok(TypedLetBind::new(name, name_span, params, Box::new(expr)))
             })
@@ -1231,7 +1231,7 @@ impl Checker {
                 self.type_ctx.insert_class(*name, class);
                 self.type_ctx
                     .insert_instance(Ty::Var(var), *name, InstanceData::new(expr.span));
-                self.type_ctx.assume_constraints(&set);
+                self.type_ctx.assume_constraints(set);
                 self.type_ctx.instances();
 
                 Some((*name, expr.span))

@@ -35,16 +35,16 @@ impl BinOp {
 
     pub const fn class(self) -> &'static str {
         match self {
-            BinOp::Add => "Add",
-            BinOp::Sub => "Sub",
-            BinOp::Mul => "Mul",
-            BinOp::Rem | BinOp::Div => "Div",
+            Self::Add => "Add",
+            Self::Sub => "Sub",
+            Self::Mul => "Mul",
+            Self::Rem | Self::Div => "Div",
 
-            BinOp::Eq | BinOp::Ne => "Eq",
-            BinOp::Gt | BinOp::Ge | BinOp::Lt | BinOp::Le => "Cmp",
-            BinOp::And => "And",
-            BinOp::Or => "Or",
-            BinOp::Pipe => "Pipe",
+            Self::Eq | Self::Ne => "Eq",
+            Self::Gt | Self::Ge | Self::Lt | Self::Le => "Cmp",
+            Self::And => "And",
+            Self::Or => "Or",
+            Self::Pipe => "Pipe",
         }
     }
 }

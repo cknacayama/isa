@@ -44,8 +44,9 @@ impl MatchNonExhaustive {
             } else {
                 let _ = write!(out, ",");
             }
-            let _ = write!(out, " ");
+            let _ = write!(out, " `");
             let _ = w.ctx_fmt(&mut out, ctx);
+            let _ = write!(out, "`");
         }
         let _ = write!(out, " not covered");
         out

@@ -231,7 +231,7 @@ fn default_classes() -> FxHashMap<Symbol, ClassData> {
         le: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
     );
     class!(classes, {Add Sub Mul Div Neg Cmp} => Number,
-        from_int: (Ty::Int,) -> instance_ty.clone();
+        from_int: (Ty::Int,) -> instance_ty;
     );
 
     classes
