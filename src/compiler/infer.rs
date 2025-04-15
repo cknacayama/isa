@@ -2,10 +2,11 @@ use std::collections::VecDeque;
 use std::fmt::Display;
 use std::rc::Rc;
 
-use super::ctx::TypeCtx;
+use super::ast::Path;
+use super::ctx::Ctx;
 use super::error::Uninferable;
+use super::token::Ident;
 use super::types::Ty;
-use crate::global::Symbol;
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
@@ -67,16 +68,23 @@ pub trait Substitute {
         }
     }
 
-    fn substitute_param(&mut self, subs: &[(Symbol, u64)])
+    fn substitute_param(&mut self, subs: &[(Ident, u64)])
     where
         Self: Sized,
     {
+        if subs.is_empty() {
+            return;
+        }
         self.substitute(&mut |ty| match ty {
-            Ty::Named { name, args } if args.is_empty() => subs
-                .iter()
-                .find_map(|(s, v)| if s == name { Some(Ty::Var(*v)) } else { None }),
+            Ty::Named { name, args } if args.is_empty() => subs.iter().find_map(|(s, v)| {
+                if name.is_ident(*s) {
+                    Some(Ty::Var(*v))
+                } else {
+                    None
+                }
+            }),
             Ty::Named { name, args } => subs.iter().find_map(|(s, v)| {
-                if s == name {
+                if name.is_ident(*s) {
                     Some(Ty::Generic {
                         var:  *v,
                         args: args.clone(),
@@ -185,7 +193,7 @@ impl From<EqConstraint> for EqConstraintSet {
 
 #[derive(Debug, Clone, Eq)]
 pub struct ClassConstraint {
-    class:       Symbol,
+    class:       Path,
     constrained: Ty,
     span:        Span,
 }
@@ -197,7 +205,7 @@ impl PartialEq for ClassConstraint {
 }
 
 impl ClassConstraint {
-    pub const fn new(class: Symbol, constrained: Ty, span: Span) -> Self {
+    pub const fn new(class: Path, constrained: Ty, span: Span) -> Self {
         Self {
             class,
             constrained,
@@ -205,8 +213,8 @@ impl ClassConstraint {
         }
     }
 
-    pub const fn class(&self) -> Symbol {
-        self.class
+    pub const fn class(&self) -> &Path {
+        &self.class
     }
 
     pub const fn constrained(&self) -> &Ty {
@@ -233,12 +241,12 @@ impl Substitute for ClassConstraint {
 
 #[derive(Debug, Clone)]
 pub enum Constraint {
-    Eq(EqConstraint),
-    Class(ClassConstraint),
+    Eq(Box<EqConstraint>),
+    Class(Box<ClassConstraint>),
 }
 
 impl Constraint {
-    pub const fn span(&self) -> Span {
+    pub fn span(&self) -> Span {
         match self {
             Self::Eq(eq_constraint) => eq_constraint.span(),
             Self::Class(class_constraint) => class_constraint.span(),
@@ -306,6 +314,7 @@ fn unify_eq(
     c: EqConstraint,
     cset: &mut EqConstraintSet,
     subs: &mut Vec<Subs>,
+    module: Ident,
 ) -> Result<(), Uninferable> {
     let span = c.span;
     match (&c.lhs, &c.rhs) {
@@ -359,7 +368,7 @@ fn unify_eq(
             if vars.len() <= named.len() =>
         {
             let var = *var;
-            let name = *name;
+            let name = name.clone();
             let vars = vars.clone();
             let named = named.clone();
             let parent = Rc::new(c);
@@ -385,7 +394,7 @@ fn unify_eq(
                 name: n2,
                 args: args2,
             },
-        ) if n1 == n2 && args1.len() == args2.len() => {
+        ) if n1.eq_in_module(n2, module) && args1.len() == args2.len() => {
             let args1 = args1.clone();
             let args2 = args2.clone();
             let parent = Rc::new(c);
@@ -421,7 +430,10 @@ fn unify_eq(
             } else {
                 c
             };
-            return Err(Uninferable::new(Constraint::Eq(c), std::mem::take(subs)));
+            return Err(Uninferable::new(
+                Constraint::Eq(Box::new(c)),
+                std::mem::take(subs),
+            ));
         }
     }
 
@@ -430,7 +442,7 @@ fn unify_eq(
 
 fn unify_class(
     classes: ClassConstraintSet,
-    ctx: &TypeCtx,
+    ctx: &Ctx,
 ) -> Result<ClassConstraintSet, ClassConstraint> {
     let mut constrs = Vec::new();
 
@@ -456,7 +468,7 @@ fn unify_class(
 pub fn unify<EqSet, ClassSet>(
     cset: EqSet,
     classes: ClassSet,
-    ctx: &TypeCtx,
+    ctx: &Ctx,
 ) -> Result<(Vec<Subs>, ClassConstraintSet), Uninferable>
 where
     EqConstraintSet: From<EqSet>,
@@ -467,13 +479,13 @@ where
     let mut subs = Vec::new();
 
     while let Some(c) = cset.constrs.pop_front() {
-        unify_eq(c, &mut cset, &mut subs)?;
+        unify_eq(c, &mut cset, &mut subs, ctx.current_module())?;
     }
 
     classes.substitute_many(&subs);
 
     let constrs = unify_class(classes, ctx)
-        .map_err(|c| Uninferable::new(Constraint::Class(c), subs.clone()))?;
+        .map_err(|c| Uninferable::new(Constraint::Class(Box::new(c)), subs.clone()))?;
 
     Ok((subs, constrs))
 }
@@ -491,6 +503,9 @@ impl EqConstraintSet {
 
 impl Display for ClassConstraintSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.constrs.is_empty() {
+            return Ok(());
+        }
         write!(f, "{{")?;
         let mut first = true;
         for ty in &self.constrs {
@@ -501,7 +516,7 @@ impl Display for ClassConstraintSet {
             }
             write!(f, "{ty}")?;
         }
-        write!(f, "}} =>")
+        write!(f, "}} => ")
     }
 }
 

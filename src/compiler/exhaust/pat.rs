@@ -1,6 +1,6 @@
 use super::Ctx;
 use super::ctor::Ctor;
-use crate::compiler::ctx::{CtxFmt, TypeCtx};
+use crate::compiler::ctx::{Ctx as TypeCtx, CtxFmt};
 use crate::compiler::types::Ty;
 
 #[derive(Debug, Clone)]

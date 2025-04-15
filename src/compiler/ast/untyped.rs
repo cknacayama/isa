@@ -1,5 +1,5 @@
-use super::{Expr, ExprKind, LetBind, MatchArm, Module, Param, Pat, PatKind};
-use crate::global::Symbol;
+use super::{Constructor, Expr, ExprKind, LetBind, MatchArm, Module, Param, Pat, PatKind};
+use crate::compiler::token::Ident;
 use crate::span::Span;
 
 pub type UntypedModule = Module<()>;
@@ -10,6 +10,7 @@ pub type UntypedPat = Pat<()>;
 pub type UntypedExprKind = ExprKind<()>;
 pub type UntypedMatchArm = MatchArm<()>;
 pub type UntypedParam = Param<()>;
+pub type UntypedConstructor = Constructor<()>;
 
 impl UntypedExpr {
     #[must_use]
@@ -27,7 +28,7 @@ impl UntypedPat {
 
 impl UntypedParam {
     #[must_use]
-    pub const fn untyped(name: Symbol, span: Span) -> Self {
-        Self::new(name, (), span)
+    pub const fn untyped(name: Ident) -> Self {
+        Self::new(name, ())
     }
 }

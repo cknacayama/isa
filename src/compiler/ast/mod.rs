@@ -3,11 +3,55 @@ pub mod untyped;
 
 use std::fmt::{Debug, Display, Write};
 
+use smallvec::{SmallVec, smallvec};
+
 use super::infer::{ClassConstraintSet, Substitute};
-use super::token::TokenKind;
+use super::token::{Ident, TokenKind};
 use super::types::Ty;
-use crate::global::Symbol;
 use crate::span::Span;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Path {
+    pub segments: SmallVec<[Ident; 3]>,
+}
+
+impl Path {
+    pub fn from_ident(ident: Ident) -> Self {
+        Self {
+            segments: smallvec![ident],
+        }
+    }
+
+    pub fn eq_in_module(&self, other: &Self, module: Ident) -> bool {
+        match (self.segments.as_slice(), other.segments.as_slice()) {
+            ([id], [path, other_id]) | ([path, other_id], [id]) => {
+                *path == module && other_id == id
+            }
+            _ => self == other,
+        }
+    }
+
+    pub fn base_name(&self) -> Ident {
+        match self.segments.as_slice() {
+            [] => unreachable!(),
+            [.., segment] => *segment,
+        }
+    }
+
+    pub fn is_ident(&self, name: Ident) -> bool {
+        match self.segments.as_slice() {
+            [segment] => *segment == name,
+            _ => false,
+        }
+    }
+
+    pub fn as_ident(&self) -> Option<Ident> {
+        match self.segments.as_slice() {
+            [segment] => Some(*segment),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum BinOp {
@@ -142,13 +186,14 @@ impl TokenKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct Constructor {
-    pub name:   Symbol,
+pub struct Constructor<T> {
+    pub name:   Ident,
     pub params: Box<[Ty]>,
     pub span:   Span,
+    pub ty:     T,
 }
 
-impl Display for Constructor {
+impl<T> Display for Constructor<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
         self.params.iter().try_for_each(|p| write!(f, " {p}"))
@@ -157,14 +202,14 @@ impl Display for Constructor {
 
 #[derive(Clone)]
 pub struct Module<T> {
-    pub name:  Symbol,
+    pub name:  Ident,
     pub exprs: Vec<Expr<T>>,
     pub span:  Span,
 }
 
 impl<T> Module<T> {
     #[must_use]
-    pub const fn new(name: Symbol, exprs: Vec<Expr<T>>, span: Span) -> Self {
+    pub const fn new(name: Ident, exprs: Vec<Expr<T>>, span: Span) -> Self {
         Self { name, exprs, span }
     }
 }
@@ -218,7 +263,7 @@ impl<T: Debug> Display for RangePat<T> {
 pub enum PatKind<T> {
     Wild,
 
-    Ident(Symbol),
+    Ident(Ident),
 
     Or(Box<[Pat<T>]>),
 
@@ -234,7 +279,7 @@ pub enum PatKind<T> {
 
     Bool(bool),
 
-    Constructor { name: Symbol, args: Box<[Pat<T>]> },
+    Constructor { name: Path, args: Box<[Pat<T>]> },
 }
 
 #[derive(Clone)]
@@ -355,15 +400,14 @@ impl<T: Display> MatchArm<T> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Param<T> {
-    pub name: Symbol,
+    pub name: Ident,
     pub ty:   T,
-    pub span: Span,
 }
 
 impl<T> Param<T> {
     #[must_use]
-    pub const fn new(name: Symbol, ty: T, span: Span) -> Self {
-        Self { name, ty, span }
+    pub const fn new(name: Ident, ty: T) -> Self {
+        Self { name, ty }
     }
 
     #[must_use]
@@ -380,25 +424,14 @@ impl<T: Display> Display for Param<T> {
 
 #[derive(Debug, Clone)]
 pub struct LetBind<T> {
-    pub name:      Symbol,
-    pub name_span: Span,
-    pub params:    Box<[Param<T>]>,
-    pub expr:      Box<Expr<T>>,
+    pub name:   Ident,
+    pub params: Box<[Param<T>]>,
+    pub expr:   Box<Expr<T>>,
 }
 
 impl<T> LetBind<T> {
-    pub const fn new(
-        name: Symbol,
-        name_span: Span,
-        params: Box<[Param<T>]>,
-        expr: Box<Expr<T>>,
-    ) -> Self {
-        Self {
-            name,
-            name_span,
-            params,
-            expr,
-        }
+    pub const fn new(name: Ident, params: Box<[Param<T>]>, expr: Box<Expr<T>>) -> Self {
+        Self { name, params, expr }
     }
 }
 
@@ -417,7 +450,7 @@ impl<T: Display> LetBind<T> {
 pub struct ValDeclaration {
     pub params: Box<[Ty]>,
     pub set:    ClassConstraintSet,
-    pub name:   Symbol,
+    pub name:   Ident,
     pub ty:     Ty,
     pub span:   Span,
 }
@@ -436,14 +469,9 @@ pub enum ExprKind<T> {
 
     Char(u8),
 
-    Ident(Symbol),
+    Path(Path),
 
     Tuple(Box<[Expr<T>]>),
-
-    ClassMember {
-        class:  Symbol,
-        member: Symbol,
-    },
 
     Bin {
         op:  BinOp,
@@ -467,8 +495,8 @@ pub enum ExprKind<T> {
 
     Class {
         set:        ClassConstraintSet,
-        name:       Symbol,
-        instance:   Symbol,
+        name:       Ident,
+        instance:   Ident,
         signatures: Box<[ValDeclaration]>,
         defaults:   Box<[LetBind<T>]>,
     },
@@ -476,19 +504,19 @@ pub enum ExprKind<T> {
     Instance {
         params:   Box<[Ty]>,
         set:      ClassConstraintSet,
-        class:    Symbol,
+        class:    Path,
         instance: Ty,
         impls:    Box<[LetBind<T>]>,
     },
 
     Type {
-        name:         Symbol,
+        name:         Ident,
         parameters:   Box<[Ty]>,
-        constructors: Box<[Constructor]>,
+        constructors: Box<[Constructor<T>]>,
     },
 
     Alias {
-        name:       Symbol,
+        name:       Ident,
         parameters: Box<[Ty]>,
         ty:         Ty,
     },
@@ -533,152 +561,6 @@ impl<T> Expr<T> {
     }
 }
 
-impl<T: Display> Expr<T> {
-    fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
-        let tab = String::from_utf8(vec![b' '; indentation * 2]).unwrap();
-        match &self.kind {
-            ExprKind::Semi(expr) => {
-                expr.format_helper(f, indentation)?;
-                write!(f, ";")
-            }
-            ExprKind::Int(i) => write!(f, "{i}"),
-            ExprKind::Bool(b) => write!(f, "{b}"),
-            ExprKind::Char(c) => write!(f, "{:?}", *c as char),
-            ExprKind::Ident(id) => write!(f, "{id}"),
-            ExprKind::Tuple(exprs) => {
-                write!(f, "(")?;
-                let mut first = true;
-                for e in exprs {
-                    if first {
-                        first = false;
-                    } else {
-                        write!(f, ", ")?;
-                    }
-                    e.format_helper(f, indentation + 1)?;
-                }
-                write!(f, ")")
-            }
-            ExprKind::Bin { op, lhs, rhs } => {
-                write!(f, "(")?;
-                lhs.format_helper(f, indentation + 1)?;
-                write!(f, "{op}")?;
-                rhs.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-            ExprKind::Un { op, expr } => {
-                write!(f, "({op} ")?;
-                expr.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-            ExprKind::Let { bind, body } => {
-                write!(f, "(")?;
-                bind.format_helper(f, indentation)?;
-                if let Some(body) = body {
-                    writeln!(f, " in")?;
-                    write!(f, "{tab}")?;
-                    body.format_helper(f, indentation + 1)?;
-                }
-                write!(f, ")")
-            }
-            ExprKind::ClassMember { class, member } => {
-                write!(f, "{class}::{member}")
-            }
-            ExprKind::Val(val) => write!(f, "({val})"),
-            ExprKind::Alias {
-                name,
-                parameters,
-                ty,
-            } => {
-                write!(f, "(alias {name}")?;
-                for t in parameters {
-                    write!(f, " {t}")?;
-                }
-                write!(f, "= {ty})")
-            }
-            ExprKind::Type {
-                name: id,
-                parameters: params,
-                constructors,
-            } => {
-                write!(f, "(type {id}")?;
-                for p in params {
-                    write!(f, " {p}")?;
-                }
-                writeln!(f, " =")?;
-                for c in constructors {
-                    writeln!(f, "{tab}| {c}")?;
-                }
-                write!(f, ")")
-            }
-            ExprKind::Fn { param, expr } => {
-                write!(f, "(fn {param} -> ")?;
-                expr.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-            ExprKind::If {
-                cond,
-                then,
-                otherwise,
-            } => {
-                write!(f, "(if ")?;
-                cond.format_helper(f, indentation + 1)?;
-                writeln!(f, " then")?;
-                write!(f, "{tab}")?;
-                then.format_helper(f, indentation + 1)?;
-                writeln!(f, " else")?;
-                write!(f, "{tab}")?;
-                otherwise.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-            ExprKind::Match { expr, arms } => {
-                write!(f, "(match ")?;
-                expr.format_helper(f, indentation + 1)?;
-                writeln!(f, " in")?;
-                for arm in arms {
-                    write!(f, "{tab}")?;
-                    arm.format_helper(f, indentation)?;
-                }
-                write!(f, ")")
-            }
-            ExprKind::Call { callee, arg } => {
-                write!(f, "(")?;
-                callee.format_helper(f, indentation + 1)?;
-                write!(f, " ")?;
-                arg.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-            ExprKind::Class {
-                set,
-                name,
-                instance,
-                signatures,
-                ..
-            } => {
-                writeln!(f, "(class {set} {name} {instance} =")?;
-                for val in signatures {
-                    writeln!(f, "{tab}{val}")?;
-                }
-                write!(f, ")")
-            }
-            ExprKind::Instance {
-                set,
-                class: name,
-                instance,
-                impls,
-                ..
-            } => {
-                writeln!(f, "(instance {set} {name} {instance} =")?;
-                for i in impls {
-                    write!(f, "{tab}")?;
-                    i.format_helper(f, indentation + 1)?;
-                }
-                write!(f, ")")
-            }
-        }
-        .and_then(|()| write!(f, ": {}", self.ty))
-    }
-}
-
 impl<T: Display> Display for Expr<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.format_helper(f, 0)
@@ -694,11 +576,23 @@ impl Substitute for Param<Ty> {
     }
 }
 
-impl Substitute for Constructor {
+impl Substitute for Constructor<()> {
     fn substitute<S>(&mut self, subs: &mut S)
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
+        for param in &mut self.params {
+            param.substitute(subs);
+        }
+    }
+}
+
+impl Substitute for Constructor<Ty> {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.ty.substitute(subs);
         for param in &mut self.params {
             param.substitute(subs);
         }
@@ -861,11 +755,7 @@ impl Substitute for Expr<Ty> {
                 }
             }
 
-            ExprKind::Int(_)
-            | ExprKind::Bool(_)
-            | ExprKind::Char(_)
-            | ExprKind::Ident(_)
-            | ExprKind::ClassMember { .. } => (),
+            ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Char(_) | ExprKind::Path(_) => (),
         }
 
         self.ty.substitute(subs);
@@ -907,5 +797,169 @@ impl Substitute for Pat<Ty> {
             | PatKind::CharRange(_) => (),
         }
         self.ty.substitute(subs);
+    }
+}
+
+impl Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.ident, f)
+    }
+}
+
+impl Display for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for segment in &self.segments {
+            if first {
+                first = false;
+            } else {
+                write!(f, "::")?;
+            }
+            write!(f, "{segment}")?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Display> Expr<T> {
+    fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
+        let tab = String::from_utf8(vec![b' '; indentation * 2]).unwrap();
+        match &self.kind {
+            ExprKind::Semi(expr) => {
+                expr.format_helper(f, indentation)?;
+                write!(f, ";")
+            }
+            ExprKind::Int(i) => write!(f, "{i}"),
+            ExprKind::Bool(b) => write!(f, "{b}"),
+            ExprKind::Char(c) => write!(f, "{:?}", *c as char),
+            ExprKind::Path(id) => write!(f, "{id}"),
+            ExprKind::Tuple(exprs) => {
+                write!(f, "(")?;
+                let mut first = true;
+                for e in exprs {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    e.format_helper(f, indentation + 1)?;
+                }
+                write!(f, ")")
+            }
+            ExprKind::Bin { op, lhs, rhs } => {
+                write!(f, "(")?;
+                lhs.format_helper(f, indentation + 1)?;
+                write!(f, "{op}")?;
+                rhs.format_helper(f, indentation + 1)?;
+                write!(f, ")")
+            }
+            ExprKind::Un { op, expr } => {
+                write!(f, "({op} ")?;
+                expr.format_helper(f, indentation + 1)?;
+                write!(f, ")")
+            }
+            ExprKind::Let { bind, body } => {
+                write!(f, "(")?;
+                bind.format_helper(f, indentation)?;
+                if let Some(body) = body {
+                    writeln!(f, " in")?;
+                    write!(f, "{tab}")?;
+                    body.format_helper(f, indentation + 1)?;
+                }
+                write!(f, ")")
+            }
+            ExprKind::Val(val) => write!(f, "({val})"),
+            ExprKind::Alias {
+                name,
+                parameters,
+                ty,
+            } => {
+                write!(f, "(alias {name}")?;
+                for t in parameters {
+                    write!(f, " {t}")?;
+                }
+                write!(f, "= {ty})")
+            }
+            ExprKind::Type {
+                name: id,
+                parameters: params,
+                constructors,
+            } => {
+                write!(f, "(type {id}")?;
+                for p in params {
+                    write!(f, " {p}")?;
+                }
+                writeln!(f, " =")?;
+                for c in constructors {
+                    writeln!(f, "{tab}| {c}")?;
+                }
+                write!(f, ")")
+            }
+            ExprKind::Fn { param, expr } => {
+                write!(f, "(fn {param} -> ")?;
+                expr.format_helper(f, indentation + 1)?;
+                write!(f, ")")
+            }
+            ExprKind::If {
+                cond,
+                then,
+                otherwise,
+            } => {
+                write!(f, "(if ")?;
+                cond.format_helper(f, indentation + 1)?;
+                writeln!(f, " then")?;
+                write!(f, "{tab}")?;
+                then.format_helper(f, indentation + 1)?;
+                writeln!(f, " else")?;
+                write!(f, "{tab}")?;
+                otherwise.format_helper(f, indentation + 1)?;
+                write!(f, ")")
+            }
+            ExprKind::Match { expr, arms } => {
+                write!(f, "(match ")?;
+                expr.format_helper(f, indentation + 1)?;
+                writeln!(f, " in")?;
+                for arm in arms {
+                    write!(f, "{tab}")?;
+                    arm.format_helper(f, indentation)?;
+                }
+                write!(f, ")")
+            }
+            ExprKind::Call { callee, arg } => {
+                write!(f, "(")?;
+                callee.format_helper(f, indentation + 1)?;
+                write!(f, " ")?;
+                arg.format_helper(f, indentation + 1)?;
+                write!(f, ")")
+            }
+            ExprKind::Class {
+                set,
+                name,
+                instance,
+                signatures,
+                ..
+            } => {
+                writeln!(f, "(class {set} {name} {instance} =")?;
+                for val in signatures {
+                    writeln!(f, "{tab}{val}")?;
+                }
+                write!(f, ")")
+            }
+            ExprKind::Instance {
+                set,
+                class: name,
+                instance,
+                impls,
+                ..
+            } => {
+                writeln!(f, "(instance {set} {name} {instance} =")?;
+                for i in impls {
+                    write!(f, "{tab}")?;
+                    i.format_helper(f, indentation + 1)?;
+                }
+                write!(f, ")")
+            }
+        }
+        .and_then(|()| write!(f, ": {}", self.ty))
     }
 }

@@ -24,6 +24,7 @@ class Or a = val or: a -> a -> bool;
 class Eq a =
     val eq: a -> a -> bool,
     val ne: a -> a -> bool,
+
     let ne a b = ! Eq::eq a b,
 ;
 
@@ -35,25 +36,33 @@ class {Eq a} => Cmp a =
     val le:  a -> a -> bool,
 
     let gt a b = match Cmp::cmp a b with
-        Greater -> true,
+        Ordering::Greater -> true,
         _ -> false,
     ,
 
     let lt a b = match Cmp::cmp a b with
-        Less -> true,
+        Ordering::Less -> true,
         _ -> false,
     ,
 
     let le a b = match Cmp::cmp a b with
-        Less | Equal -> true,
+        Ordering::Less | Ordering::Equal -> true,
         _ -> false,
     ,
 
     let ge a b = match Cmp::cmp a b with
-        Greater | Equal -> true,
+        Ordering::Greater | Ordering::Equal -> true,
         _ -> false,
     ,
 ;
 
 class {Cmp a, Add a, Sub a, Mul a, Div a, Neg a} => 
     Number a = val from_int: int -> a;
+
+module Main
+
+type Foo = Foo;
+
+instance Prelude::Eq Foo = 
+    let eq a b = true,
+;

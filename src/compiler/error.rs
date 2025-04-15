@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use codespan_reporting::diagnostic::Label;
 
+use super::ast::Path;
 use super::exhaust::pat::WitnessPat;
 use super::infer::{Constraint, Subs};
 use super::token::TokenKind;
@@ -78,12 +79,15 @@ pub struct Uninferable {
     constr: Constraint,
 
     /// Substitutions applied up until the error
-    subs: Vec<Subs>,
+    subs: Box<[Subs]>,
 }
 
 impl Uninferable {
-    pub const fn new(constr: Constraint, subs: Vec<Subs>) -> Self {
-        Self { constr, subs }
+    pub fn new(constr: Constraint, subs: Vec<Subs>) -> Self {
+        Self {
+            constr,
+            subs: subs.into_boxed_slice(),
+        }
     }
 
     pub const fn constr(&self) -> &Constraint {
@@ -98,6 +102,8 @@ impl Uninferable {
 #[derive(Debug, Clone)]
 pub enum InferErrorKind {
     Unbound(Symbol),
+    UnboundPath(Path),
+    NotModule(Symbol),
     NotConstructor(Ty),
     Kind(Ty),
 }
@@ -106,7 +112,9 @@ impl Display for InferErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unbound(id) => write!(f, "unbound identifier: {id}"),
+            Self::UnboundPath(id) => write!(f, "unbound path: {id}"),
             Self::NotConstructor(name) => write!(f, "`{name}` is not a constructor"),
+            Self::NotModule(name) => write!(f, "`{name}` is not a module"),
             Self::Kind(ty) => write!(f, "{ty} is not of kind *"),
         }
     }
@@ -189,9 +197,19 @@ impl From<InferError> for IsaError {
                 let label = DiagnosticLabel::new("not defined", value.span());
                 Self::new(message, label, Vec::new())
             }
+            InferErrorKind::UnboundPath(symbol) => {
+                let message = format!("undefined path `{symbol}`");
+                let label = DiagnosticLabel::new("not defined", value.span());
+                Self::new(message, label, Vec::new())
+            }
             InferErrorKind::NotConstructor(ty) => {
                 let message = format!("`{ty}` is not a constructor");
                 let label = DiagnosticLabel::new("expected a value constructor", value.span());
+                Self::new(message, label, Vec::new())
+            }
+            InferErrorKind::NotModule(ty) => {
+                let message = format!("`{ty}` is not a module");
+                let label = DiagnosticLabel::new("expected a module", value.span());
                 Self::new(message, label, Vec::new())
             }
             InferErrorKind::Kind(ty) => {

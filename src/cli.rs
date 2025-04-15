@@ -8,7 +8,7 @@ use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
 use crate::compiler::checker::Checker;
-use crate::compiler::ctx::TypeCtx;
+use crate::compiler::ctx::Ctx;
 use crate::compiler::exhaust::check_matches;
 use crate::compiler::parser::Parser;
 use crate::report::Report;
@@ -74,7 +74,7 @@ impl Config {
         }
     }
 
-    fn report<E>(&self, err: &E, ctx: &TypeCtx)
+    fn report<E>(&self, err: &E, ctx: &Ctx)
     where
         E: Report,
     {
@@ -94,7 +94,7 @@ impl Config {
 
         let modules = match parser.parse_all() {
             Ok(expr) if !expr.is_empty() => expr,
-            Err(err) => return self.report(&err, &TypeCtx::default()),
+            Err(err) => return self.report(&err, &Ctx::default()),
             _ => return,
         };
 
@@ -102,27 +102,18 @@ impl Config {
 
         let (modules, set) = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
-            Err(err) => return self.report(&err, checker.type_ctx()),
+            Err(err) => return self.report(&err, checker.ctx()),
         };
 
         for module in modules {
-            if let Err(err) = check_matches(&module.exprs, checker.type_ctx()) {
-                return self.report(&err, checker.type_ctx());
+            if let Err(err) = check_matches(&module.exprs, checker.ctx()) {
+                return self.report(&err, checker.ctx());
             }
         }
 
         let duration = start.elapsed();
 
-        for (id, ty) in checker.declared() {
-            println!("val {id}: {};", ty.ty());
-        }
-
-        for (ty, classes) in checker.instances() {
-            for class in classes {
-                println!("{class} {ty}");
-            }
-        }
-
+        println!("{}", checker.ctx());
         println!("where");
         for c in set.iter() {
             println!("  {} {},", c.class(), c.constrained());

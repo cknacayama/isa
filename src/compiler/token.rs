@@ -1,7 +1,25 @@
 use std::fmt::Display;
 
 use crate::global::Symbol;
-use crate::span::Spanned;
+use crate::span::{Span, Spanned};
+
+#[derive(Clone, Copy, Debug, Eq, Default)]
+pub struct Ident {
+    pub ident: Symbol,
+    pub span:  Span,
+}
+
+impl PartialEq for Ident {
+    fn eq(&self, other: &Self) -> bool {
+        self.ident == other.ident
+    }
+}
+
+impl std::hash::Hash for Ident {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.ident.hash(state);
+    }
+}
 
 pub type Token = Spanned<TokenKind>;
 

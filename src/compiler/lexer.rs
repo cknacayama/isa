@@ -58,13 +58,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn check<P>(&self, pred: P) -> bool
-    where
-        P: FnOnce(char) -> bool,
-    {
-        self.peek().is_some_and(pred)
-    }
-
     fn check_next<P>(&self, pred: P) -> bool
     where
         P: FnOnce(char) -> bool,

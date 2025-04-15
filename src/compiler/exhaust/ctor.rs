@@ -1,7 +1,7 @@
 use std::fmt;
 use std::num::NonZeroUsize;
 
-use crate::compiler::ctx::{CtxFmt, TypeCtx};
+use crate::compiler::ctx::{Ctx as TypeCtx, CtxFmt};
 use crate::compiler::types::Ty;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1,8 +1,10 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
-use super::infer::Substitute;
-use crate::global::Symbol;
+use super::ast::Path;
+use super::ctx::Generator;
+use super::infer::{Subs, Substitute};
+use super::token::Ident;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
@@ -14,7 +16,7 @@ pub enum Ty {
     Tuple(Rc<[Ty]>),
     Fn { param: Rc<Ty>, ret: Rc<Ty> },
     Scheme { quant: Rc<[u64]>, ty: Rc<Ty> },
-    Named { name: Symbol, args: Rc<[Ty]> },
+    Named { name: Path, args: Rc<[Ty]> },
     Generic { var: u64, args: Rc<[Ty]> },
 }
 
@@ -41,6 +43,22 @@ impl Ty {
 
             _ => false,
         }
+    }
+
+    pub fn instantiate(self, generator: &mut impl Generator) -> (Self, Vec<Subs>) {
+        let Self::Scheme { quant, ty } = self else {
+            return (self, Vec::new());
+        };
+
+        let subs: Vec<_> = quant
+            .iter()
+            .map(|q| Subs::new(*q, generator.gen_type_var()))
+            .collect();
+        let mut ty = ty.as_ref().clone();
+
+        ty.substitute_many(&subs);
+
+        (ty, subs)
     }
 
     pub fn function_type<I>(params: I, ret: Self) -> Self
@@ -131,9 +149,9 @@ impl Ty {
         }
     }
 
-    pub const fn get_name(&self) -> Option<Symbol> {
+    pub fn get_ident(&self) -> Option<Ident> {
         if let Self::Named { name, .. } = self {
-            Some(*name)
+            name.as_ident()
         } else {
             None
         }
@@ -275,7 +293,10 @@ impl Substitute for Rc<Ty> {
                     arg.substitute(subs);
                 }
                 let args = Rc::from(new_args);
-                Ty::Named { name: *name, args }
+                Ty::Named {
+                    name: name.clone(),
+                    args,
+                }
             }
             Ty::Generic { var, args } => {
                 let mut new_args = args.to_vec();

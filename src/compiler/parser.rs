@@ -1,17 +1,18 @@
 use std::iter::Peekable;
 use std::rc::Rc;
 
+use smallvec::smallvec;
+
 use super::ast::untyped::{
-    UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
-    UntypedPat, UntypedPatKind,
+    UntypedConstructor, UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm,
+    UntypedModule, UntypedParam, UntypedPat, UntypedPatKind,
 };
-use super::ast::{BinOp, Constructor, RangePat, UnOp, ValDeclaration};
+use super::ast::{BinOp, Constructor, Path, RangePat, UnOp, ValDeclaration};
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};
 use super::lexer::Lexer;
-use super::token::{Token, TokenKind};
+use super::token::{Ident, Token, TokenKind};
 use super::types::Ty;
-use crate::global::Symbol;
 use crate::span::{Span, Spanned};
 
 pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
@@ -111,9 +112,12 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn expect_id(&mut self) -> ParseResult<Spanned<Symbol>> {
+    fn expect_id(&mut self) -> ParseResult<Ident> {
         self.next_or_eof().and_then(|t| match t.data {
-            TokenKind::Ident(id) => Ok(t.map(|_| id)),
+            TokenKind::Ident(ident) => Ok(Ident {
+                ident,
+                span: t.span,
+            }),
             _ => Err(t.map(ParseError::ExpectedId)),
         })
     }
@@ -149,10 +153,7 @@ impl<'a> Parser<'a> {
             span = span.union(expr.span);
         }
 
-        Ok({
-            let name = name.data;
-            UntypedModule::new(name, exprs, span)
-        })
+        Ok(UntypedModule::new(name, exprs, span))
     }
 
     pub fn parse_all(&mut self) -> ParseResult<Vec<UntypedModule>> {
@@ -196,8 +197,8 @@ impl<'a> Parser<'a> {
     fn parse_class(&mut self) -> ParseResult<UntypedExpr> {
         let mut span = self.expect(TokenKind::KwClass)?;
         let (set, _) = self.parse_constraint_set()?;
-        let Spanned { data: name, .. } = self.expect_id()?;
-        let Spanned { data: instance, .. } = self.expect_id()?;
+        let name = self.expect_id()?;
+        let instance = self.expect_id()?;
         let (signatures, defaults) = if self.next_if_match(TokenKind::Eq).is_some() {
             let mut signatures = Vec::new();
             let mut defaults = Vec::new();
@@ -248,7 +249,7 @@ impl<'a> Parser<'a> {
     fn parse_instance(&mut self) -> ParseResult<UntypedExpr> {
         let mut span = self.expect(TokenKind::KwInstance)?;
         let (set, params) = self.parse_constraint_set()?;
-        let Spanned { data: name, .. } = self.expect_id()?;
+        let (name, _) = self.parse_path()?;
         let Spanned { data: instance, .. } = self.parse_type()?;
 
         let impls = if self.next_if_match(TokenKind::Eq).is_some() {
@@ -292,12 +293,12 @@ impl<'a> Parser<'a> {
 
     fn parse_alias(&mut self) -> ParseResult<UntypedExpr> {
         let span = self.expect(TokenKind::KwAlias)?;
-        let Spanned { data: name, .. } = self.expect_id()?;
+        let name = self.expect_id()?;
         let mut params = Vec::new();
         while !self.check(TokenKind::Eq) {
-            let Spanned { data: name, .. } = self.expect_id()?;
+            let ident = self.expect_id()?;
             params.push(Ty::Named {
-                name,
+                name: Path::from_ident(ident),
                 args: Rc::from([]),
             });
         }
@@ -328,31 +329,30 @@ impl<'a> Parser<'a> {
         let mut params = Vec::new();
 
         while !self.check(TokenKind::RBrace) {
-            let Spanned {
-                data,
-                span: id_span,
-            } = self.expect_id()?;
-            match self.peek().transpose()?.copied() {
-                Some(Token {
-                    data: TokenKind::Ident(name),
-                    span,
-                }) => {
-                    self.next();
-                    constrs.push(ClassConstraint::new(
-                        data,
-                        Ty::Named {
-                            name,
-                            args: Rc::from([]),
-                        },
-                        id_span.union(span),
-                    ));
-                }
-                _ => {
-                    params.push(Ty::Named {
-                        name: data,
+            let (id, span) = self.parse_path()?;
+            if let Some(Token {
+                    data: TokenKind::Ident(ident),
+                    span: ident_span,
+                }) = self.peek().transpose()?.copied() {
+                self.next();
+                let name = Path::from_ident(Ident { ident, span });
+                let span = span.union(ident_span);
+                constrs.push(ClassConstraint::new(
+                    id,
+                    Ty::Named {
+                        name,
                         args: Rc::from([]),
-                    });
+                    },
+                    span,
+                ));
+            } else {
+                if id.as_ident().is_none() {
+                    return Err(Spanned::new(ParseError::UnexpectedEof, span));
                 }
+                params.push(Ty::Named {
+                    name: id,
+                    args: Rc::from([]),
+                });
             }
             if self.next_if_match(TokenKind::Comma).is_none() {
                 break;
@@ -368,7 +368,7 @@ impl<'a> Parser<'a> {
     fn parse_val(&mut self) -> ParseResult<ValDeclaration> {
         let span = self.expect(TokenKind::KwVal)?;
         let (set, params) = self.parse_constraint_set()?;
-        let Spanned { data: name, .. } = self.expect_id()?;
+        let name = self.expect_id()?;
         self.expect(TokenKind::Colon)?;
         let Spanned {
             data: ty,
@@ -603,19 +603,9 @@ impl<'a> Parser<'a> {
                 self.next();
                 Ok(UntypedExpr::untyped(UntypedExprKind::Char(lit), span))
             }
-            TokenKind::Ident(id) => {
-                self.next();
-                if self.next_if_match(TokenKind::ColonColon).is_some() {
-                    let member = self.expect_id()?;
-                    let span = span.union(member.span);
-                    let kind = UntypedExprKind::ClassMember {
-                        class:  id,
-                        member: member.data,
-                    };
-                    Ok(UntypedExpr::untyped(kind, span))
-                } else {
-                    Ok(UntypedExpr::untyped(UntypedExprKind::Ident(id), span))
-                }
+            TokenKind::Ident(_) => {
+                let (path, span) = self.parse_path()?;
+                Ok(UntypedExpr::untyped(UntypedExprKind::Path(path), span))
             }
             TokenKind::KwTrue => {
                 self.next();
@@ -627,6 +617,20 @@ impl<'a> Parser<'a> {
             }
             kind => Err(Spanned::new(ParseError::ExpectedExpr(kind), span)),
         }
+    }
+
+    fn parse_path(&mut self) -> ParseResult<(Path, Span)> {
+        let first = self.expect_id()?;
+        let mut span = first.span;
+        let mut segments = smallvec![first];
+
+        while self.next_if_match(TokenKind::ColonColon).is_some() {
+            let id = self.expect_id()?;
+            span = span.union(id.span);
+            segments.push(id);
+        }
+
+        Ok((Path { segments }, span))
     }
 
     fn parse_simple_type(&mut self) -> ParseResult<Spanned<Ty>> {
@@ -656,14 +660,24 @@ impl<'a> Parser<'a> {
             TokenKind::KwInt => Ok(Spanned::new(Ty::Int, span)),
             TokenKind::KwBool => Ok(Spanned::new(Ty::Bool, span)),
             TokenKind::KwChar => Ok(Spanned::new(Ty::Char, span)),
-            TokenKind::Ident(name) => Ok(Spanned::new(
-                Ty::Named {
-                    name,
-                    args: Rc::from([]),
-                },
-                span,
-            )),
+            TokenKind::Ident(ident) => {
+                let mut span = span;
+                let mut segments = smallvec![Ident { ident, span }];
 
+                while self.next_if_match(TokenKind::ColonColon).is_some() {
+                    let id = self.expect_id()?;
+                    span = span.union(id.span);
+                    segments.push(id);
+                }
+
+                Ok(Spanned::new(
+                    Ty::Named {
+                        name: Path { segments },
+                        args: Rc::from([]),
+                    },
+                    span,
+                ))
+            }
             _ => Err(Spanned::new(ParseError::ExpectedType(data), span)),
         }
     }
@@ -706,11 +720,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_constructor(&mut self) -> ParseResult<Constructor> {
-        let Spanned {
-            data: name,
-            mut span,
-        } = self.expect_id()?;
+    fn parse_constructor(&mut self) -> ParseResult<UntypedConstructor> {
+        let name = self.expect_id()?;
+        let mut span = name.span;
 
         let mut params = Vec::new();
 
@@ -724,19 +736,24 @@ impl<'a> Parser<'a> {
             name,
             params: params.into_boxed_slice(),
             span,
+            ty: (),
         })
     }
 
     fn parse_type_definition(&mut self) -> ParseResult<UntypedExpr> {
         let span = self.expect(TokenKind::KwType)?;
-        let Spanned { data: name, .. } = self.expect_id()?;
+        let name = self.expect_id()?;
 
         let mut params = Vec::new();
 
         while !self.check(TokenKind::Eq) {
-            let Spanned { data: name, .. } = self.expect_id()?;
+            let name = self.expect_id()?;
+            let span = name.span;
             params.push(Ty::Named {
-                name,
+                name: Path::from_ident(Ident {
+                    ident: name.ident,
+                    span,
+                }),
                 args: Rc::from([]),
             });
         }
@@ -990,12 +1007,23 @@ impl<'a> Parser<'a> {
                     ))
                 }
             }
-            TokenKind::Ident(name) => {
-                let kind = UntypedPatKind::Constructor {
-                    name,
-                    args: Box::from([]),
-                };
-                Ok(UntypedPat::untyped(kind, span))
+            TokenKind::Ident(ident) => {
+                let mut span = span;
+                let mut segments = smallvec![Ident { ident, span }];
+
+                while self.next_if_match(TokenKind::ColonColon).is_some() {
+                    let id = self.expect_id()?;
+                    span = span.union(id.span);
+                    segments.push(id);
+                }
+
+                Ok(UntypedPat::untyped(
+                    UntypedPatKind::Constructor {
+                        name: Path { segments },
+                        args: Box::from([]),
+                    },
+                    span,
+                ))
             }
             TokenKind::Underscore => Ok(UntypedPat::untyped(UntypedPatKind::Wild, span)),
             _ => Err(Spanned::new(ParseError::ExpectedPattern(data), span)),
@@ -1048,15 +1076,12 @@ impl<'a> Parser<'a> {
 
     fn parse_let_bind(&mut self) -> ParseResult<Spanned<UntypedLetBind>> {
         let mut span = self.expect(TokenKind::KwLet)?;
-        let Spanned {
-            data: name,
-            span: name_span,
-        } = self.expect_id()?;
+        let name = self.expect_id()?;
 
         let mut parametes = Vec::new();
         while !self.check(TokenKind::Eq) {
-            let Spanned { data, span } = self.expect_id()?;
-            let param = UntypedParam::untyped(data, span);
+            let param = self.expect_id()?;
+            let param = UntypedParam::untyped(param);
             parametes.push(param);
         }
         self.expect(TokenKind::Eq)?;
@@ -1064,12 +1089,7 @@ impl<'a> Parser<'a> {
         span = span.union(expr.span);
 
         Ok(Spanned::new(
-            UntypedLetBind::new(
-                name,
-                name_span,
-                parametes.into_boxed_slice(),
-                Box::new(expr),
-            ),
+            UntypedLetBind::new(name, parametes.into_boxed_slice(), Box::new(expr)),
             span,
         ))
     }
@@ -1098,10 +1118,7 @@ impl<'a> Parser<'a> {
 
     fn parse_fn(&mut self) -> ParseResult<UntypedExpr> {
         let span = self.expect(TokenKind::KwFn)?;
-        let Spanned {
-            data: name,
-            span: name_span,
-        } = self.expect_id()?;
+        let name = self.expect_id()?;
 
         self.expect(TokenKind::Arrow)?;
 
@@ -1109,7 +1126,7 @@ impl<'a> Parser<'a> {
 
         let span = span.union(expr.span);
 
-        let param = UntypedParam::untyped(name, name_span);
+        let param = UntypedParam::untyped(name);
 
         Ok(UntypedExpr::untyped(
             UntypedExprKind::Fn {
