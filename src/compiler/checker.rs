@@ -527,7 +527,7 @@ impl Checker {
         TypedExpr::new(kind, span, Ty::Unit)
     }
 
-    fn check_val(&mut self, mut val: ValDeclaration) -> ValDeclaration {
+    fn check_val(&mut self, val: &mut ValDeclaration) {
         let mut subs = Vec::new();
         let mut quant = Vec::new();
 
@@ -545,15 +545,13 @@ impl Checker {
             val.set.substitute_param(&subs);
             val.ty = Ty::Scheme {
                 quant: quant.into(),
-                ty:    Rc::new(val.ty),
+                ty:    Rc::new(val.ty.clone()),
             };
         }
-
-        val
     }
 
-    fn check_val_expr(&mut self, val: ValDeclaration, span: Span) -> TypedExpr {
-        let val = self.check_val(val);
+    fn check_val_expr(&mut self, mut val: ValDeclaration, span: Span) -> TypedExpr {
+        self.check_val(&mut val);
 
         self.insert_val(val.name, val.ty.clone(), val.set.clone(), val.span);
 
@@ -623,26 +621,24 @@ impl Checker {
         Ok(TypedPat::new(kind, span, ty))
     }
 
-    fn check_class(
+    fn check_class_signatures(
         &mut self,
-        set: Set,
         name: Symbol,
-        instance: Symbol,
-        signatures: Box<[ValDeclaration]>,
-        span: Span,
-    ) -> TypedExpr {
-        let signatures: Box<_> = signatures
-            .into_iter()
-            .map(|val| self.check_val(val))
-            .collect();
+        signatures: &mut [ValDeclaration],
+        defaults: &[UntypedLetBind],
+    ) {
+        for val in signatures.iter_mut() {
+            self.check_val(val);
+        }
 
         let val_signatures = signatures.iter().map(|val| {
             (
                 val.name,
                 MemberData {
-                    set:  val.set.clone(),
-                    ty:   val.ty.clone(),
-                    span: val.span,
+                    has_default: defaults.iter().any(|bind| bind.name == val.name),
+                    set:         val.set.clone(),
+                    ty:          val.ty.clone(),
+                    span:        val.span,
                 },
             )
         });
@@ -651,15 +647,33 @@ impl Checker {
             .get_class_mut(name)
             .unwrap()
             .extend_signature(val_signatures);
+    }
+
+    fn check_class(
+        &mut self,
+        set: Set,
+        name: Symbol,
+        instance: Symbol,
+        signatures: Box<[ValDeclaration]>,
+        defaults: Box<[UntypedLetBind]>,
+        span: Span,
+    ) -> IsaResult<(TypedExpr, Set)> {
+        let data = self.type_ctx.get_class(name).unwrap().instance_var();
+
+        self.type_ctx.assume_constraint_tree(&Ty::Var(data), &set);
+
+        let (defaults, def_set) =
+            self.check_instance_impls(name, Set::new(), defaults, |_| None)?;
 
         let kind = TypedExprKind::Class {
             set,
             name,
             instance,
             signatures,
+            defaults: defaults.into_boxed_slice(),
         };
 
-        TypedExpr::new(kind, span, Ty::Unit)
+        Ok((TypedExpr::new(kind, span, Ty::Unit), def_set))
     }
 
     fn check_instance_impls<F>(
@@ -681,6 +695,7 @@ impl Checker {
                     mut ty,
                     set: member_set,
                     span: ty_span,
+                    ..
                 } = class_data
                     .signatures()
                     .get(&bind.name)
@@ -745,7 +760,7 @@ impl Checker {
         )) = class_data
             .signatures()
             .iter()
-            .find(|(name, _)| !impls.iter().any(|bind| bind.name.eq(name)))
+            .find(|(name, data)| !data.has_default && !impls.iter().any(|bind| bind.name.eq(name)))
         {
             let fst = DiagnosticLabel::new(
                 format!("member `{not_implemented}` of `{class}` not implemented"),
@@ -1191,6 +1206,7 @@ impl Checker {
                 name,
                 instance,
                 signatures,
+                ..
             } => {
                 let var = self.gen_id();
                 let mut subs = |ty: &Ty| match ty {
@@ -1213,6 +1229,10 @@ impl Checker {
 
                 let class = ClassData::new(set.clone(), var, expr.span);
                 self.type_ctx.insert_class(*name, class);
+                self.type_ctx
+                    .insert_instance(Ty::Var(var), *name, InstanceData::new(expr.span));
+                self.type_ctx.assume_constraints(&set);
+                self.type_ctx.instances();
 
                 Some((*name, expr.span))
             }
@@ -1339,6 +1359,21 @@ impl Checker {
         Ok((TypedExpr::new(kind, span, sig), constraints))
     }
 
+    fn check_expr_for_class_signatures(&mut self, kind: &mut UntypedExprKind) {
+        match kind {
+            UntypedExprKind::Class {
+                name,
+                signatures,
+                defaults,
+                ..
+            } => {
+                self.check_class_signatures(*name, signatures, defaults);
+            }
+            UntypedExprKind::Semi(expr) => self.check_expr_for_class_signatures(&mut expr.kind),
+            _ => (),
+        }
+    }
+
     pub fn check_many_modules(
         &mut self,
         mut modules: Vec<UntypedModule>,
@@ -1366,10 +1401,15 @@ impl Checker {
                 });
             }
 
+            for expr in &mut module.exprs {
+                self.check_expr_for_class_signatures(&mut expr.kind);
+            }
+
             let mut exprs = Vec::new();
+
             for (expr, mut expr_set) in module
                 .exprs
-                .extract_if(.., |e| e.kind.is_type_or_val_or_class())
+                .extract_if(.., |e| e.kind.is_type_or_val())
                 .map(|e| self.check(e).unwrap())
             {
                 exprs.push(expr);
@@ -1503,10 +1543,8 @@ impl Checker {
                 name,
                 instance,
                 signatures,
-            } => Ok((
-                self.check_class(set, name, instance, signatures, span),
-                Set::new(),
-            )),
+                defaults,
+            } => self.check_class(set, name, instance, signatures, defaults, span),
 
             UntypedExprKind::Instance {
                 params,

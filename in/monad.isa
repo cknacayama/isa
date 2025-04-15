@@ -14,6 +14,8 @@ class {Functor f} => Applicative f =
 class {Applicative f} => Monad f =
     val {a} => return: a -> f a,
     val {a,b} => bind: f a -> (a -> f b) -> f b,
+
+    let return = Applicative::pure,
 ;
 
 instance Functor Option =
@@ -30,7 +32,6 @@ instance Applicative Option =
 ;
 
 instance Monad Option =
-    let return = Applicative::pure,
     let bind opt f = match opt with
         Some a -> f a,
         None -> None,

@@ -101,9 +101,10 @@ impl InstanceData {
 
 #[derive(Debug, Clone)]
 pub struct MemberData {
-    pub set:  ClassConstraintSet,
-    pub ty:   Ty,
-    pub span: Span,
+    pub has_default: bool,
+    pub set:         ClassConstraintSet,
+    pub ty:          Ty,
+    pub span:        Span,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -181,6 +182,7 @@ fn default_classes() -> FxHashMap<Symbol, ClassData> {
             (
                 intern(stringify!($name)),
                 MemberData {
+                    has_default: false,
                     ty: Ty::function_type([$($t),+], $ret),
                     set: ClassConstraintSet::new(),
                     span: Span::default(),
@@ -213,7 +215,7 @@ fn default_classes() -> FxHashMap<Symbol, ClassData> {
         abs: (instance_ty.clone(),) -> instance_ty.clone();
     );
     class!(classes, Not,
-        not: (instance_ty.clone(),) -> Ty::Bool;
+        not: (instance_ty.clone(),) -> instance_ty.clone();
     );
     class!(classes, And,
         and: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
@@ -222,6 +224,7 @@ fn default_classes() -> FxHashMap<Symbol, ClassData> {
         or: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
     );
     class!(classes, {Eq} => Cmp,
+        cmp: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Named { name: global::intern_symbol("Ordering"), args: Rc::from([]) };
         lt: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
         gt: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
         ge: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
@@ -261,14 +264,11 @@ fn default_instances() -> FxHashMap<Ty, FxHashMap<Symbol, InstanceData>> {
 
 impl Default for TypeCtx {
     fn default() -> Self {
-        let classes = default_classes();
-        let instances = default_instances();
-
         Self {
             constructors: FxHashMap::default(),
-            classes,
-            instances,
-            id_generator: 1,
+            classes:      FxHashMap::default(),
+            instances:    default_instances(),
+            id_generator: 0,
         }
     }
 }
@@ -314,6 +314,22 @@ impl TypeCtx {
                 c.class(),
                 InstanceData::new(c.span()),
             );
+        }
+    }
+
+    pub fn assume_constraint_tree(&mut self, ty: &Ty, set: &ClassConstraintSet) {
+        for c in set.iter() {
+            let Some(constrs) = self
+                .classes
+                .get(&c.class())
+                .map(|data| data.constraints.clone())
+            else {
+                continue;
+            };
+            self.assume_constraint_tree(ty, &constrs);
+            for c in set.iter() {
+                self.insert_instance(ty.clone(), c.class(), InstanceData::new(c.span()));
+            }
         }
     }
 

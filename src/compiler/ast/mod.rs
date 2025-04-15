@@ -80,7 +80,7 @@ impl UnOp {
     #[must_use]
     pub const fn from_token(tk: TokenKind) -> Option<Self> {
         match tk {
-            TokenKind::KwNot => Some(Self::Not),
+            TokenKind::Bang => Some(Self::Not),
             TokenKind::Minus => Some(Self::Neg),
             _ => None,
         }
@@ -90,7 +90,7 @@ impl UnOp {
 impl Display for UnOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Not => write!(f, "not"),
+            Self::Not => write!(f, "!"),
             Self::Neg => write!(f, "-"),
         }
     }
@@ -102,6 +102,7 @@ impl TokenKind {
         matches!(
             self,
             Self::LParen
+                | Self::Bang
                 | Self::Integer(_)
                 | Self::Ident(_)
                 | Self::Char(_)
@@ -109,7 +110,6 @@ impl TokenKind {
                 | Self::KwFalse
                 | Self::KwLet
                 | Self::KwFn
-                | Self::KwNot
                 | Self::KwMatch
                 | Self::KwIf
         )
@@ -136,7 +136,6 @@ impl TokenKind {
                 | Self::Char(_)
                 | Self::KwTrue
                 | Self::KwFalse
-                | Self::KwNot
                 | Self::Minus
         )
     }
@@ -471,7 +470,7 @@ pub enum ExprKind<T> {
         name:       Symbol,
         instance:   Symbol,
         signatures: Box<[ValDeclaration]>,
-        // defaults:   Box<[LetBind<T>]>,
+        defaults:   Box<[LetBind<T>]>,
     },
 
     Instance {
@@ -518,10 +517,10 @@ pub enum ExprKind<T> {
 
 impl<T> ExprKind<T> {
     #[must_use]
-    pub const fn is_type_or_val_or_class(&self) -> bool {
+    pub const fn is_type_or_val(&self) -> bool {
         match self {
-            Self::Type { .. } | Self::Val { .. } | Self::Class { .. } => true,
-            Self::Semi(e) => e.kind.is_type_or_val_or_class(),
+            Self::Type { .. } | Self::Val { .. } => true,
+            Self::Semi(e) => e.kind.is_type_or_val(),
             _ => false,
         }
     }
@@ -653,6 +652,7 @@ impl<T: Display> Expr<T> {
                 name,
                 instance,
                 signatures,
+                ..
             } => {
                 writeln!(f, "(class {set} {name} {instance} =")?;
                 for val in signatures {
@@ -831,11 +831,17 @@ impl Substitute for Expr<Ty> {
             }
 
             ExprKind::Class {
-                set, signatures, ..
+                set,
+                signatures,
+                defaults,
+                ..
             } => {
                 set.substitute(subs);
                 for sig in signatures {
                     sig.substitute(subs);
+                }
+                for bind in defaults {
+                    bind.substitute(subs);
                 }
             }
             ExprKind::Instance {

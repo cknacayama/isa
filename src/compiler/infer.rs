@@ -24,10 +24,6 @@ impl Subs {
     pub const fn old(&self) -> u64 {
         self.old
     }
-
-    pub const fn subs(&self) -> &Ty {
-        &self.subs
-    }
 }
 
 pub trait Substitute {

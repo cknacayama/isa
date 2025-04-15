@@ -65,8 +65,6 @@ pub enum TokenKind {
     KwBool,
     KwChar,
 
-    KwNot,
-
     KwMatch,
     KwWith,
     KwIf,
@@ -87,7 +85,6 @@ impl TokenKind {
             "class" => Some(Self::KwClass),
             "instance" => Some(Self::KwInstance),
             "fn" => Some(Self::KwFn),
-            "not" => Some(Self::KwNot),
             "match" => Some(Self::KwMatch),
             "if" => Some(Self::KwIf),
             "then" => Some(Self::KwThen),
@@ -155,7 +152,6 @@ impl Display for TokenKind {
             Self::KwInt => write!(f, "int"),
             Self::KwBool => write!(f, "bool"),
             Self::KwChar => write!(f, "char"),
-            Self::KwNot => write!(f, "not"),
             Self::KwMatch => write!(f, "match"),
             Self::KwWith => write!(f, "with"),
             Self::KwIf => write!(f, "if"),

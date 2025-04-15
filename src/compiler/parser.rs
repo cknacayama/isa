@@ -205,12 +205,23 @@ impl<'a> Parser<'a> {
         let (set, _) = self.parse_constraint_set()?;
         let Spanned { data: name, .. } = self.expect_id()?;
         let Spanned { data: instance, .. } = self.expect_id()?;
-        let signatures = if self.next_if_match(TokenKind::Eq).is_some() {
+        let (signatures, defaults) = if self.next_if_match(TokenKind::Eq).is_some() {
             let mut signatures = Vec::new();
-            while self.check(TokenKind::KwVal) {
-                let val = self.parse_val()?;
-                span = span.union(val.span);
-                signatures.push(val);
+            let mut defaults = Vec::new();
+            loop {
+                match self.peek().transpose()?.map(Token::data) {
+                    Some(TokenKind::KwVal) => {
+                        let val = self.parse_val()?;
+                        span = span.union(val.span);
+                        signatures.push(val);
+                    }
+                    Some(TokenKind::KwLet) => {
+                        let val = self.parse_let_bind()?;
+                        span = span.union(val.span);
+                        defaults.push(val.data);
+                    }
+                    _ => break,
+                }
                 if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
                     span = span.union(c_span);
                 }
@@ -224,9 +235,9 @@ impl<'a> Parser<'a> {
                     span,
                 ));
             }
-            signatures.into_boxed_slice()
+            (signatures.into_boxed_slice(), defaults.into_boxed_slice())
         } else {
-            Box::default()
+            Default::default()
         };
 
         Ok(UntypedExpr::untyped(
@@ -235,6 +246,7 @@ impl<'a> Parser<'a> {
                 name,
                 instance,
                 signatures,
+                defaults,
             },
             span,
         ))

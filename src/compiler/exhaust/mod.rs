@@ -247,7 +247,10 @@ impl TypeCtx {
                 self.check_single_match(callee)?;
                 self.check_single_match(arg)?;
             }
-            ExprKind::Instance { impls, .. } => {
+            ExprKind::Instance { impls, .. }
+            | ExprKind::Class {
+                defaults: impls, ..
+            } => {
                 for bind in impls {
                     self.check_single_match(&bind.expr)?;
                 }
@@ -259,7 +262,6 @@ impl TypeCtx {
             | ExprKind::Ident(_)
             | ExprKind::Tuple(_)
             | ExprKind::Val(_)
-            | ExprKind::Class { .. }
             | ExprKind::Alias { .. }
             | ExprKind::Type { .. }
             | ExprKind::ClassMember { .. } => (),
