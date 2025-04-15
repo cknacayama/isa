@@ -45,7 +45,6 @@ pub enum TokenKind {
 
     Integer(i64),
     Ident(Symbol),
-    DotedIdent(Symbol),
     Char(u8),
 
     KwTrue,
@@ -136,7 +135,7 @@ impl Display for TokenKind {
             Self::Arrow => write!(f, "->"),
             Self::Rocket => write!(f, "=>"),
             Self::Integer(v) => write!(f, "{v}"),
-            Self::Ident(v) | Self::DotedIdent(v) => write!(f, "{v}"),
+            Self::Ident(v) => write!(f, "{v}"),
             Self::Char(v) => write!(f, "{:?}", *v as char),
             Self::KwTrue => write!(f, "true"),
             Self::KwFalse => write!(f, "false"),

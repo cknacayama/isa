@@ -118,13 +118,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn expect_id_or_doted(&mut self) -> ParseResult<Spanned<Symbol>> {
-        self.next_or_eof().and_then(|t| match t.data {
-            TokenKind::Ident(id) | TokenKind::DotedIdent(id) => Ok(t.map(|_| id)),
-            _ => Err(t.map(ParseError::ExpectedId)),
-        })
-    }
-
     fn expect_integer(&mut self) -> ParseResult<Spanned<i64>> {
         self.next_or_eof().and_then(|t| match t.data {
             TokenKind::Integer(int) => Ok(t.map(|_| int)),
@@ -375,7 +368,7 @@ impl<'a> Parser<'a> {
     fn parse_val(&mut self) -> ParseResult<ValDeclaration> {
         let span = self.expect(TokenKind::KwVal)?;
         let (set, params) = self.parse_constraint_set()?;
-        let Spanned { data: name, .. } = self.expect_id_or_doted()?;
+        let Spanned { data: name, .. } = self.expect_id()?;
         self.expect(TokenKind::Colon)?;
         let Spanned {
             data: ty,
@@ -623,10 +616,6 @@ impl<'a> Parser<'a> {
                 } else {
                     Ok(UntypedExpr::untyped(UntypedExprKind::Ident(id), span))
                 }
-            }
-            TokenKind::DotedIdent(id) => {
-                self.next();
-                Ok(UntypedExpr::untyped(UntypedExprKind::Ident(id), span))
             }
             TokenKind::KwTrue => {
                 self.next();
@@ -1062,7 +1051,7 @@ impl<'a> Parser<'a> {
         let Spanned {
             data: name,
             span: name_span,
-        } = self.expect_id_or_doted()?;
+        } = self.expect_id()?;
 
         let mut parametes = Vec::new();
         while !self.check(TokenKind::Eq) {

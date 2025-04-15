@@ -143,21 +143,11 @@ impl<'a> Lexer<'a> {
         }
 
         self.eat_while(is_identifier_char);
-        let mut doted = false;
-        while self.check(|c| c == '.') && self.check_next(is_identifier_char) {
-            doted = true;
-            self.bump();
-            self.eat_while(is_identifier_char);
-        }
         let s = &self.input[self.start..self.cur];
-        if doted {
-            self.make_token(TokenKind::DotedIdent(global::intern_symbol(s)))
-        } else {
-            TokenKind::keyword(s).map_or_else(
-                || self.make_token(TokenKind::Ident(global::intern_symbol(s))),
-                |kw| self.make_token(kw),
-            )
-        }
+        TokenKind::keyword(s).map_or_else(
+            || self.make_token(TokenKind::Ident(global::intern_symbol(s))),
+            |kw| self.make_token(kw),
+        )
     }
 
     pub fn next_token(&mut self) -> Option<LexResult<Token>> {
