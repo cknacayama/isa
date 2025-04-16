@@ -11,6 +11,7 @@ use super::ast::typed::TypedConstructor;
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::token::Ident;
 use super::types::Ty;
+use crate::compiler::ast::Constructor;
 use crate::global::{self};
 use crate::span::Span;
 
@@ -61,8 +62,14 @@ pub trait Generator {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct IdGenerator(u64);
+
+impl Default for IdGenerator {
+    fn default() -> Self {
+        Self(1)
+    }
+}
 
 impl Generator for IdGenerator {
     fn gen_id(&mut self) -> u64 {
@@ -353,6 +360,17 @@ impl Ctx {
             .and_then(|env| env.insert(name, CtxData::Class(data)))
     }
 
+    pub fn insert_instance_at_env(
+        &mut self,
+        ty: Ty,
+        class: Ident,
+        data: InstanceData,
+    ) -> Option<InstanceData> {
+        self.get_mut(class)
+            .and_then(CtxData::as_class_mut)
+            .and_then(|class| class.instances.insert(ty, data))
+    }
+
     pub fn insert_instance(
         &mut self,
         ty: Ty,
@@ -505,11 +523,11 @@ impl Ctx {
             return Ok(());
         }
 
-        let class = self
+        let data = self
             .get_class(class)
             .ok_or_else(|| vec![ClassConstraint::new(class.clone(), ty.clone(), span)])?;
 
-        for (instance, data) in &class.instances {
+        for (instance, data) in &data.instances {
             if let Ty::Scheme {
                 ty: instance_ty, ..
             } = instance
@@ -543,7 +561,7 @@ impl Ctx {
             }
         }
 
-        Ok(())
+        Err(vec![ClassConstraint::new(class.clone(), ty.clone(), span)])
     }
 
     pub fn set_constraints(&mut self, class: &Path, ty: &Ty, constr: ClassConstraintSet) {
@@ -668,7 +686,7 @@ pub struct InstanceData {
 }
 
 impl InstanceData {
-    pub fn new(constraints: ClassConstraintSet, span: Span) -> Self {
+    pub const fn new(constraints: ClassConstraintSet, span: Span) -> Self {
         Self { constraints, span }
     }
 
@@ -753,6 +771,7 @@ pub enum CtxData {
     Let(VarData),
     Val(VarData),
     Constructor(VarData),
+    Imported(Ident),
 }
 
 impl Display for Ctx {
@@ -787,13 +806,20 @@ impl Display for CtxData {
             Self::Class(data) => {
                 writeln!(f, "class {}'{} =", data.constraints(), data.instance_var())?;
                 for (id, member) in data.signatures() {
-                    writeln!(f, "    {}{id}: {},", member.set, member.ty)?;
+                    writeln!(f, "    {}{id}: {}", member.set, member.ty)?;
+                }
+                for (ty, data) in &data.instances {
+                    writeln!(f, "    instance {}{ty}", data.constraints())?;
                 }
                 Ok(())
             }
 
             Self::Let(var_data) | Self::Val(var_data) | Self::Constructor(var_data) => {
                 write!(f, "{} {}", var_data.constrs, var_data.ty)
+            }
+
+            Self::Imported(module) => {
+                write!(f, "imported {module}")
             }
         }
     }
@@ -886,25 +912,27 @@ fn default_classes() -> FxHashMap<Ident, CtxData> {
     let span = Span::default();
 
     macro_rules! class {
-        ($classes:ident, $instances:expr, {$($constr:ident)+} => $name:ident, $($member:ident: ($($t:expr,)+) -> $ret:expr;)+) => {{
-            let set = ClassConstraintSet::from([$(ClassConstraint::new(Path::from_ident(Ident { ident: intern(stringify!($constr)), span }), instance_ty.clone(), span),)+]);
+        ($classes:ident, $instances:expr, {$($constr:ident)+} => $name:ident, $($member:expr;)+) => {{
+            let set = ClassConstraintSet::from([
+                $(ClassConstraint::new(Path::from_ident(Ident { ident: intern(stringify!($constr)), span }), instance_ty.clone(), span),)+
+            ]);
             let mut data = ClassData::with_instances(set, 0, $instances, span);
             data.extend_signature([
-                $(signature!($member: [$($t,)+], $ret)),+
+                $($member),+
             ]);
             $classes.insert(Ident { ident: intern(stringify!($name)), span }, CtxData::Class(data));
         }};
-        ($classes:ident, $instances:expr, $name:ident, $($member:ident: ($($t:expr,)+) -> $ret:expr;)+) => {{
+        ($classes:ident, $instances:expr, $name:ident, $($member:expr;)+) => {{
             let mut data = ClassData::with_instances(ClassConstraintSet::new(), 0, $instances, span);
             data.extend_signature([
-                $(signature!($member: [$($t,)+], $ret)),+
+                $($member),+
             ]);
             $classes.insert(Ident { ident: intern(stringify!($name)), span }, CtxData::Class(data));
         }};
     }
 
     macro_rules! signature {
-        ($name:ident: [$($t:expr,)+], $ret:expr) => {
+        ($name:ident: ($($t:expr,)+) -> $ret:expr) => {
             (
                 Ident { ident: intern(stringify!($name)), span: Span::default() },
                 MemberData {
@@ -915,7 +943,7 @@ fn default_classes() -> FxHashMap<Ident, CtxData> {
                 }
             )
         };
-        (default $name:ident: [$($t:expr,)+], $ret:expr) => {
+        (default $name:ident: ($($t:expr,)+) -> $ret:expr) => {
             (
                 Ident { ident: intern(stringify!($name)), span: Span::default() },
                 MemberData {
@@ -926,6 +954,44 @@ fn default_classes() -> FxHashMap<Ident, CtxData> {
                 }
             )
         };
+    }
+
+    macro_rules! type_decl {
+        ($classes:ident, $name:ident = $($constructor:expr,)+) => {{
+            $classes.insert(
+                Ident {
+                    ident: intern(stringify!($name)),
+                    span,
+                },
+                CtxData::Ty(TyData::new(
+                        Rc::from([]),
+                        vec![$($constructor),+],
+                )),
+            );
+        }};
+        ($classes:ident, $name:ident $($param:literal)+ = $($constructor:expr,)+) => {{
+            $classes.insert(
+                Ident {
+                    ident: intern(stringify!($name)),
+                    span,
+                },
+                CtxData::Ty(TyData::new(
+                        Rc::from([$($param),+]),
+                        vec![$($constructor),+],
+                )),
+            );
+        }};
+    }
+
+    macro_rules! constructor {
+        ($name:ident $($param:literal )* -> $ret:expr) => {{
+            Constructor {
+                name: Ident { ident: intern(stringify!($name)), span },
+                params: Box::from([$(Ty::Var($param)),*]),
+                span,
+                ty: Ty::function_type([$(Ty::Var($param)),*], $ret),
+            }
+        }};
     }
 
     macro_rules! instances {
@@ -943,51 +1009,71 @@ fn default_classes() -> FxHashMap<Ident, CtxData> {
 
     let mut classes = FxHashMap::default();
 
+    let ordering_type = Ty::Named {
+        name: Path::from_ident(Ident {
+            ident: global::intern_symbol("Ordering"),
+            span,
+        }),
+        args: Rc::from([]),
+    };
+
     let eq_instances = instances!(Ty::Unit, Ty::Int, Ty::Bool, Ty::Char,);
     let num_instances = instances!(Ty::Int,);
     let bool_instances = instances!(Ty::Bool,);
 
     class!(classes, eq_instances, Eq,
-        eq: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
-        ne: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
+        signature!(eq: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
+        signature!(default ne: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
     );
     class!(classes, num_instances.clone(), Add,
-        add: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone();
+        signature!(add: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone());
     );
     class!(classes, num_instances.clone(),Sub,
-        sub: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone();
+        signature!(sub: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone());
     );
     class!(classes, num_instances.clone(),Mul,
-        mul: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone();
+        signature!(mul: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone());
     );
     class!(classes,num_instances.clone(), Div,
-        div: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone();
-        rem: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone();
+        signature!(div: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone());
+        signature!(rem: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone());
     );
     class!(classes, num_instances.clone(),Neg,
-        neg: (instance_ty.clone(),) -> instance_ty.clone();
-        abs: (instance_ty.clone(),) -> instance_ty.clone();
+        signature!(neg: (instance_ty.clone(),) -> instance_ty.clone());
+        signature!(abs: (instance_ty.clone(),) -> instance_ty.clone());
     );
     class!(classes,bool_instances.clone(), Not,
-        not: (instance_ty.clone(),) -> instance_ty.clone();
+        signature!(not: (instance_ty.clone(),) -> instance_ty.clone());
     );
     class!(classes,bool_instances.clone(), And,
-        and: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
+        signature!(and: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
     );
     class!(classes,bool_instances, Or,
-        or: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
+        signature!(or: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
     );
     class!(classes, num_instances.clone(), {Eq} => Cmp,
-        cmp: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Named { name:
-            Path::from_ident(Ident { ident: global::intern_symbol("Ordering"), span }), args: Rc::from([]) };
-        lt: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
-        gt: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
-        ge: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
-        le: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool;
+        signature!(cmp: (instance_ty.clone(), instance_ty.clone(),) -> ordering_type.clone());
+        signature!(default lt: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
+        signature!(default gt: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
+        signature!(default ge: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
+        signature!(default le: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
     );
     class!(classes, num_instances, {Add Sub Mul Div Neg Cmp} => Number,
-        from_int: (Ty::Int,) -> instance_ty;
+        signature!(from_int: (Ty::Int,) -> instance_ty);
     );
+
+    type_decl!(
+        classes,
+        Ordering = constructor!(Less -> ordering_type.clone()),
+        constructor!(Equal -> ordering_type.clone()),
+        constructor!(Greater -> ordering_type.clone()),
+    );
+
+    // type_decl!(
+    //     classes,
+    //     Option 1 = constructor!(None -> option_type.clone()),
+    //     constructor!(Some 1 -> option_type.clone()),
+    // );
 
     classes
 }

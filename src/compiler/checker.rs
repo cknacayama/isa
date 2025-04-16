@@ -450,7 +450,6 @@ impl Checker {
     }
 
     fn check_constructor(
-        &mut self,
         constructor: UntypedConstructor,
         quant: Rc<[u64]>,
         mut ret: Ty,
@@ -498,7 +497,7 @@ impl Checker {
 
         let mut typed_constructors = Vec::new();
         for c in constructors {
-            let ctor = self.check_constructor(c, quant.clone(), ty.clone());
+            let ctor = Self::check_constructor(c, quant.clone(), ty.clone());
             self.ctx.insert_constructor_for_ty(name, &quant, &ctor);
             typed_constructors.push(ctor);
         }
@@ -565,7 +564,7 @@ impl Checker {
             }
         };
 
-        let (mut ty, _) = self.instantiate(ctor.clone());
+        let (mut ty, _) = self.instantiate(ctor);
 
         let mut c = EqConstraintSet::new();
         let mut typed_args = Vec::new();
@@ -1039,6 +1038,8 @@ impl Checker {
                             span,
                         )))
                     }
+
+                    CtxData::Imported(_) => todo!(),
                 }
             }
             [first, rest @ ..] => {
@@ -1316,9 +1317,9 @@ impl Checker {
 
                 let class = ClassData::new(set.clone(), var, expr.span);
                 self.ctx.insert_class(*name, class);
-                self.ctx.insert_instance(
+                self.ctx.insert_instance_at_env(
                     Ty::Var(var),
-                    &Path::from_ident(*name),
+                    *name,
                     InstanceData::new(Set::new(), expr.span),
                 );
                 self.ctx.assume_constraints(set);
@@ -1457,7 +1458,8 @@ impl Checker {
                 ..
             } => {
                 let data = InstanceData::new(set.clone(), expr.span);
-                self.ctx.insert_instance(instance.clone(), class, data);
+                let instance = self.ctx.generalize(instance.clone());
+                self.ctx.insert_instance(instance, class, data);
             }
             UntypedExprKind::Semi(expr) => self.check_expr_for_class_signatures(expr),
             _ => (),
@@ -1495,8 +1497,8 @@ impl Checker {
 
             self.ctx.push_scope();
 
-            for mut expr in &mut module.exprs {
-                self.check_expr_for_class_signatures(&mut expr);
+            for expr in &mut module.exprs {
+                self.check_expr_for_class_signatures(expr);
             }
 
             let mut exprs = Vec::new();
