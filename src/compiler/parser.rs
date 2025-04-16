@@ -1,13 +1,15 @@
 use std::iter::Peekable;
 use std::rc::Rc;
 
-use smallvec::smallvec;
+use smallvec::{SmallVec, smallvec};
 
 use super::ast::untyped::{
     UntypedConstructor, UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm,
     UntypedModule, UntypedParam, UntypedPat, UntypedPatKind,
 };
-use super::ast::{BinOp, Constructor, Path, RangePat, UnOp, ValDeclaration};
+use super::ast::{
+    BinOp, Constructor, Import, ImportClause, ImportWildcard, Path, RangePat, UnOp, ValDeclaration,
+};
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};
 use super::lexer::Lexer;
@@ -137,10 +139,61 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_import_clause(&mut self) -> ParseResult<ImportClause> {
+        self.expect(TokenKind::LBrace)?;
+
+        let mut imports = Vec::new();
+
+        while !self.check(TokenKind::RBrace) {
+            let id = self.expect_id()?;
+            let mut segments = smallvec![id];
+            let mut wildcard = ImportWildcard::Nil;
+            while self.next_if_match(TokenKind::ColonColon).is_some() {
+                let Some(tk) = self.peek().transpose()? else {
+                    return Err(Spanned::new(ParseError::UnexpectedEof, self.last_span));
+                };
+                match tk.data {
+                    TokenKind::Ident(ident) => {
+                        segments.push(Ident {
+                            ident,
+                            span: tk.span,
+                        });
+                    }
+                    TokenKind::Star => {
+                        self.next();
+                        wildcard = ImportWildcard::Wildcard;
+                        break;
+                    }
+                    TokenKind::LBrace => {
+                        let clause = self.parse_import_clause()?;
+                        wildcard = ImportWildcard::Clause(clause);
+                        break;
+                    }
+                    kind => return Err(Spanned::new(ParseError::ExpectedId(kind), tk.span)),
+                }
+            }
+            let path = Path { segments };
+            imports.push(Import { path, wildcard });
+            if self.next_if_match(TokenKind::Comma).is_none() {
+                break;
+            }
+        }
+
+        self.expect(TokenKind::RBrace)?;
+
+        Ok(ImportClause(imports.into_boxed_slice()))
+    }
+
     /// parses one module
     fn parse_module(&mut self) -> ParseResult<UntypedModule> {
         let mut span = self.expect(TokenKind::KwModule)?;
         let name = self.expect_id()?;
+
+        let imports = if self.next_if_match(TokenKind::KwWith).is_some() {
+            self.parse_import_clause()?
+        } else {
+            ImportClause::default()
+        };
 
         let mut exprs = vec![self.parse_semi_expr()?];
 
@@ -153,7 +206,7 @@ impl<'a> Parser<'a> {
             span = span.union(expr.span);
         }
 
-        Ok(UntypedModule::new(name, exprs, span))
+        Ok(UntypedModule::new(name, imports, exprs, span))
     }
 
     pub fn parse_all(&mut self) -> ParseResult<Vec<UntypedModule>> {
@@ -331,9 +384,10 @@ impl<'a> Parser<'a> {
         while !self.check(TokenKind::RBrace) {
             let (id, span) = self.parse_path()?;
             if let Some(Token {
-                    data: TokenKind::Ident(ident),
-                    span: ident_span,
-                }) = self.peek().transpose()?.copied() {
+                data: TokenKind::Ident(ident),
+                span: ident_span,
+            }) = self.peek().transpose()?.copied()
+            {
                 self.next();
                 let name = Path::from_ident(Ident { ident, span });
                 let span = span.union(ident_span);

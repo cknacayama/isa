@@ -12,7 +12,7 @@ use crate::span::Span;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Path {
-    pub segments: SmallVec<[Ident; 3]>,
+    pub segments: SmallVec<[Ident; 2]>,
 }
 
 impl Path {
@@ -208,17 +208,39 @@ impl<T> Display for Constructor<T> {
     }
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct ImportClause(pub Box<[Import]>);
+
+#[derive(Debug, Clone)]
+pub enum ImportWildcard {
+    Nil,
+    Wildcard,
+    Clause(ImportClause),
+}
+
+#[derive(Debug, Clone)]
+pub struct Import {
+    pub path:     Path,
+    pub wildcard: ImportWildcard,
+}
+
 #[derive(Clone)]
 pub struct Module<T> {
-    pub name:  Ident,
-    pub exprs: Vec<Expr<T>>,
-    pub span:  Span,
+    pub name:    Ident,
+    pub imports: ImportClause,
+    pub exprs:   Vec<Expr<T>>,
+    pub span:    Span,
 }
 
 impl<T> Module<T> {
     #[must_use]
-    pub const fn new(name: Ident, exprs: Vec<Expr<T>>, span: Span) -> Self {
-        Self { name, exprs, span }
+    pub const fn new(name: Ident, imports: ImportClause, exprs: Vec<Expr<T>>, span: Span) -> Self {
+        Self {
+            name,
+            imports,
+            exprs,
+            span,
+        }
     }
 }
 

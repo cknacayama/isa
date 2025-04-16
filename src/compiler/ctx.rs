@@ -37,16 +37,35 @@ impl VarData {
 
 #[derive(Debug, Clone)]
 pub struct ModuleData {
-    ctx: Ctx,
+    ctx: FxHashMap<Ident, CtxData>,
 }
 
 impl ModuleData {
-    pub const fn new(ctx: Ctx) -> Self {
+    pub fn new(ctx: FxHashMap<Ident, CtxData>) -> Self {
         Self { ctx }
     }
 
-    pub const fn ctx(&self) -> &Ctx {
+    pub fn ctx(&self) -> &FxHashMap<Ident, CtxData> {
         &self.ctx
+    }
+
+    pub fn get(&self, id: Ident) -> CheckResult<&CtxData> {
+        self.ctx
+            .get(&id)
+            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+    }
+
+    pub fn get_mut(&mut self, id: Ident) -> CheckResult<&mut CtxData> {
+        self.ctx
+            .get_mut(&id)
+            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+    }
+
+    #[must_use]
+    pub fn get_var(&self, id: Ident) -> CheckResult<&VarData> {
+        self.get(id)?
+            .as_var()
+            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
     }
 }
 
@@ -555,10 +574,10 @@ impl Default for Ctx {
         };
         ctx.extend_module(
             Ident {
-                ident: global::intern_symbol("Prelude"),
+                ident: global::intern_symbol("prelude"),
                 span:  Span::default(),
             },
-            ModuleData::new(Ctx::from_single(env)),
+            ModuleData::new(env),
         );
         ctx
     }
@@ -595,18 +614,11 @@ impl Ctx {
 
     #[must_use]
     pub fn get(&self, id: Ident) -> CheckResult<&CtxData> {
-        let data = self
-            .env
+        self.env
             .iter()
             .rev()
             .find_map(|e| e.get(&id))
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))?;
-
-        if let CtxData::Import(module) = data {
-            self.get_from_module(*module, id)
-        } else {
-            Ok(data)
-        }
+            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
     }
 
     #[must_use]
@@ -618,19 +630,11 @@ impl Ctx {
 
     #[must_use]
     pub fn get_mut(&mut self, id: Ident) -> CheckResult<&mut CtxData> {
-        let (pos, data) = self
-            .env
-            .iter()
-            .enumerate()
+        self.env
+            .iter_mut()
             .rev()
-            .find_map(|(i, e)| e.get(&id).map(|data| (i, data)))
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))?;
-
-        if let Some(module) = data.as_import() {
-            self.get_from_module_mut(module, id)
-        } else {
-            Ok(self.env[pos].get_mut(&id).unwrap())
-        }
+            .find_map(|e| e.get_mut(&id))
+            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
     }
 
     #[must_use]
@@ -666,26 +670,42 @@ impl Ctx {
     pub fn resolve(&self, id: Ident) -> CheckResult<&CtxData> {
         self.get(id).or_else(|_| {
             let module = self.current_module;
-            self.get_module(module)
-                .and_then(|module| module.ctx.get(id))
+            self.get_from_module(module, id)
         })
     }
 
     fn get_from_module(&self, module: Ident, member: Ident) -> CheckResult<&CtxData> {
-        self.get_module(module)
-            .and_then(|module| module.ctx.get(member))
+        let module = self.get_module(module)?;
+        let data = module.get(member)?;
+
+        if let Some(module) = data.as_import() {
+            self.get_from_module(module, member)
+        } else {
+            Ok(data)
+        }
+    }
+
+    fn get_from_module_mut(&mut self, module: Ident, member: Ident) -> CheckResult<&mut CtxData> {
+        let module_data = self.get_module(module)?;
+        let data = module_data.get(member)?;
+
+        if let Some(module) = data.as_import() {
+            self.get_from_module_mut(module, member)
+        } else {
+            Ok(self
+                .get_module_mut(module)
+                .unwrap()
+                .get_mut(member)
+                .unwrap())
+        }
     }
 
     pub fn get_from_current(&self, id: Ident) -> CheckResult<&CtxData> {
-        let module = self.current_module;
-        let module = self.get_module(module)?;
-        module.ctx.get(id)
+        self.get_from_module(self.current_module, id)
     }
 
     pub fn get_from_current_mut(&mut self, id: Ident) -> CheckResult<&mut CtxData> {
-        let module = self.current_module;
-        let module = self.get_module_mut(module)?;
-        module.ctx.get_mut(id)
+        self.get_from_module_mut(self.current_module, id)
     }
 
     #[must_use]
@@ -727,7 +747,7 @@ impl Ctx {
         match self.global_scope_mut().entry(name) {
             Entry::Occupied(mut occupied_entry) => {
                 if let Some(module) = occupied_entry.get_mut().as_module_mut() {
-                    module.ctx.extend_global(data.ctx);
+                    module.ctx.extend(data.ctx);
                 }
             }
             Entry::Vacant(vacant_entry) => {
@@ -846,9 +866,9 @@ impl Ctx {
         ctor: &TypedConstructor,
     ) -> CheckResult<()> {
         let module = self.get_module_mut(self.current_module)?;
-        let env = module.ctx.env.first_mut().unwrap();
 
-        let data = env
+        let data = module
+            .ctx
             .entry(name)
             .or_insert_with(|| CtxData::Ty(TyData::new(params.clone(), Vec::default())))
             .as_ty_mut()
@@ -868,7 +888,7 @@ impl Ctx {
     pub fn get_ty(&self, id: &Path) -> CheckResult<&TyData> {
         match id.segments.as_slice() {
             &[id] => self
-                .resolve(id)?
+                .get_from_current(id)?
                 .as_ty()
                 .ok_or_else(|| CheckError::new(CheckErrorKind::NotType(id.ident), id.span)),
             &[module, id] => self
@@ -933,21 +953,24 @@ impl Ctx {
 
     fn import_prelude(&mut self) -> CheckResult<()> {
         let prelude_name = Ident {
-            ident: global::intern_symbol("Prelude"),
+            ident: global::intern_symbol("prelude"),
             span:  Span::default(),
         };
         let prelude = self.get_module(prelude_name)?;
 
         prelude
             .ctx
-            .global_scope()
             .keys()
             .map(|&id| Path {
                 segments: smallvec![prelude_name, id],
             })
             .collect::<Vec<_>>()
             .into_iter()
-            .try_for_each(|path| self.import_single_current(&path))
+            .for_each(|path| {
+                let _ = self.import_single_current(&path);
+            });
+
+        Ok(())
     }
 
     fn import_single_current(&mut self, what: &Path) -> CheckResult<()> {
@@ -1056,11 +1079,6 @@ impl Ctx {
                 name.span(),
             )),
         }
-    }
-
-    fn get_from_module_mut(&mut self, module: Ident, member: Ident) -> CheckResult<&mut CtxData> {
-        let module = self.get_module_mut(module)?;
-        module.ctx.get_mut(member)
     }
 
     #[must_use]
@@ -1254,7 +1272,10 @@ impl Display for CtxData {
         match self {
             Self::Module(module_data) => {
                 writeln!(f)?;
-                Display::fmt(&module_data.ctx, f)
+                for (id, data) in module_data.ctx() {
+                    writeln!(f, "  {id}: {data}")?;
+                }
+                Ok(())
             }
 
             Self::Ty(data) => {

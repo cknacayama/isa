@@ -969,8 +969,9 @@ impl Checker {
         Ok((TypedExpr::new(kind, span, var), set))
     }
 
-    fn check_path(
-        ctx: &Ctx,
+    fn check_path_simple(
+        module_name: Ident,
+        ctx: &ModuleData,
         path: &[Ident],
         generator: &mut impl Generator,
         span: Span,
@@ -987,6 +988,75 @@ impl Checker {
                 Ok((Path::from_ident(id), ty, constrs))
             }
             &[first, id] => {
+                let data = ctx.get(first)?;
+
+                let path = Path {
+                    segments: smallvec![first, id],
+                };
+
+                match data {
+                    CtxData::Ty(ty_data) => {
+                        let constructor = ty_data
+                            .constructors()
+                            .iter()
+                            .find(|c| c.name == id)
+                            .ok_or_else(|| {
+                                CheckError::new(CheckErrorKind::Unbound(id.ident), span)
+                            })?;
+                        let (ty, _) = constructor.ty.clone().instantiate(generator);
+                        Ok((path, ty, Set::new()))
+                    }
+                    CtxData::Class(class_data) => {
+                        let (sig, set) = Self::check_class_member(
+                            Path {
+                                segments: smallvec![module_name, id],
+                            },
+                            class_data,
+                            id,
+                            generator,
+                            span,
+                        )?;
+                        Ok((path, sig, set))
+                    }
+
+                    CtxData::Let(_) | CtxData::Val(_) | CtxData::Constructor(_) => Err(
+                        IsaError::from(CheckError::new(CheckErrorKind::NotType(first.ident), span)),
+                    ),
+
+                    CtxData::Module(_) => unreachable!(),
+
+                    CtxData::Import(_) => todo!(),
+                }
+            }
+            _ => Err(IsaError::from(CheckError::new(
+                CheckErrorKind::InvalidPath(Path {
+                    segments: path.into(),
+                }),
+                span,
+            ))),
+        }
+    }
+
+    fn check_path(
+        ctx: &Ctx,
+        path: &[Ident],
+        generator: &mut impl Generator,
+        span: Span,
+    ) -> IsaResult<(Path, Ty, Set)> {
+        match path {
+            [] => unreachable!(),
+
+            &[id] => {
+                let VarData {
+                    ty, mut constrs, ..
+                } = ctx.get_var(id)?.clone();
+                let (ty, subs) = ty.instantiate(generator);
+                constrs.substitute_many(&subs);
+
+                Ok((Path::from_ident(id), ty, constrs))
+            }
+
+            &[first, id] => {
                 let data = ctx.resolve(first)?;
 
                 let path = Path {
@@ -996,7 +1066,7 @@ impl Checker {
                 match data {
                     CtxData::Module(module_data) => {
                         let (_, ty, set) =
-                            Self::check_path(module_data.ctx(), &[id], generator, span)?;
+                            Self::check_path_simple(first, module_data, &[id], generator, span)?;
 
                         Ok((path, ty, set))
                     }
@@ -1032,14 +1102,19 @@ impl Checker {
                     CtxData::Import(_) => todo!(),
                 }
             }
-            [first, rest @ ..] => {
-                let data = ctx.get(*first)?;
-                let mut path = Path::from_ident(*first);
+
+            &[first, ref rest @ ..] => {
+                let data = ctx.resolve(first)?;
+
+                let mut segments = smallvec![first];
+                segments.extend_from_slice(rest);
+                let path = Path { segments };
+
                 match data {
                     CtxData::Module(module_data) => {
-                        let (mut rest, ty, set) =
-                            Self::check_path(module_data.ctx(), rest, generator, span)?;
-                        path.segments.append(&mut rest.segments);
+                        let (_, ty, set) =
+                            Self::check_path_simple(first, module_data, rest, generator, span)?;
+
                         Ok((path, ty, set))
                     }
                     _ => Err(IsaError::from(CheckError::new(
@@ -1218,7 +1293,7 @@ impl Checker {
         }
 
         let scope = self.ctx.pop_scope().unwrap();
-        let data = ModuleData::new(Ctx::from_single(scope));
+        let data = ModuleData::new(scope);
         self.ctx.extend_module(module.name, data);
 
         Ok(module
@@ -1492,7 +1567,7 @@ impl Checker {
             }
 
             let scope = self.ctx.pop_scope().unwrap();
-            let data = ModuleData::new(Ctx::from_single(scope));
+            let data = ModuleData::new(scope);
             self.ctx.extend_module(module.name, data);
 
             decl.push(exprs);
@@ -1531,9 +1606,9 @@ impl Checker {
             set.append(&mut expr_set);
         }
         let scope = self.ctx.pop_scope().unwrap();
-        let data = ModuleData::new(Ctx::from_single(scope));
+        let data = ModuleData::new(scope);
         self.ctx.extend_module(module.name, data);
-        let typed = TypedModule::new(module.name, exprs, module.span);
+        let typed = TypedModule::new(module.name, module.imports, exprs, module.span);
 
         Ok((typed, set))
     }
