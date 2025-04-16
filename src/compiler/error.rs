@@ -5,7 +5,7 @@ use codespan_reporting::diagnostic::Label;
 use super::ast::Path;
 use super::exhaust::pat::WitnessPat;
 use super::infer::{Constraint, Subs};
-use super::token::TokenKind;
+use super::token::{Ident, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
 use crate::span::Span;
@@ -100,46 +100,38 @@ impl Uninferable {
 }
 
 #[derive(Debug, Clone)]
-pub enum InferErrorKind {
+pub enum CheckErrorKind {
+    InvalidPath(Path),
+    InvalidImport(Path),
     Unbound(Symbol),
-    UnboundPath(Path),
     NotModule(Symbol),
+    SameNameConstructor(Symbol, Span),
     NotConstructor(Ty),
+    NotConstructorName(Symbol),
+    NotVal(Symbol),
+    NotType(Symbol),
+    NotClass(Symbol),
+    NotInstance(Ty, Path),
+    MultipleInstances(Path, Ty, Span),
     Kind(Ty),
 }
 
-impl Display for InferErrorKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unbound(id) => write!(f, "unbound identifier: {id}"),
-            Self::UnboundPath(id) => write!(f, "unbound path: {id}"),
-            Self::NotConstructor(name) => write!(f, "`{name}` is not a constructor"),
-            Self::NotModule(name) => write!(f, "`{name}` is not a module"),
-            Self::Kind(ty) => write!(f, "{ty} is not of kind *"),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
-pub struct InferError {
-    kind: InferErrorKind,
+pub struct CheckError {
+    kind: CheckErrorKind,
     span: Span,
 }
 
-impl Display for InferError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.kind())
-    }
-}
+pub type CheckResult<T> = Result<T, CheckError>;
 
-impl InferError {
+impl CheckError {
     #[must_use]
-    pub const fn new(kind: InferErrorKind, span: Span) -> Self {
+    pub const fn new(kind: CheckErrorKind, span: Span) -> Self {
         Self { kind, span }
     }
 
     #[must_use]
-    pub const fn kind(&self) -> &InferErrorKind {
+    pub const fn kind(&self) -> &CheckErrorKind {
         &self.kind
     }
 
@@ -189,34 +181,82 @@ pub struct IsaError {
     note:          Option<String>,
 }
 
-impl From<InferError> for IsaError {
-    fn from(value: InferError) -> Self {
+impl From<CheckError> for IsaError {
+    fn from(value: CheckError) -> Self {
         match value.kind() {
-            InferErrorKind::Unbound(symbol) => {
-                let message = format!("undefined identifier `{symbol}`");
+            CheckErrorKind::InvalidPath(path) => {
+                let message = format!("invalid path: `{path}`");
+                let label = DiagnosticLabel::new("not valid", value.span());
+                Self::new(message, label, Vec::new())
+            }
+            CheckErrorKind::InvalidImport(path) => {
+                let message = format!("invalid import: `{path}`");
+                let label = DiagnosticLabel::new("not valid", value.span());
+                Self::new(message, label, Vec::new())
+            }
+            CheckErrorKind::Unbound(symbol) => {
+                let message = format!("undefined identifier: `{symbol}`");
                 let label = DiagnosticLabel::new("not defined", value.span());
                 Self::new(message, label, Vec::new())
             }
-            InferErrorKind::UnboundPath(symbol) => {
-                let message = format!("undefined path `{symbol}`");
-                let label = DiagnosticLabel::new("not defined", value.span());
-                Self::new(message, label, Vec::new())
+            CheckErrorKind::SameNameConstructor(name, span) => {
+                let label = DiagnosticLabel::new(
+                    format!("constructor `{name}` already defined"),
+                    value.span(),
+                );
+                let snd = DiagnosticLabel::new("previously defined here", *span);
+                Self::new("constructor with same name", label, vec![snd])
             }
-            InferErrorKind::NotConstructor(ty) => {
-                let message = format!("`{ty}` is not a constructor");
+            CheckErrorKind::NotConstructor(ty) => {
+                let message = format!("not a constructor: `{ty}`");
                 let label = DiagnosticLabel::new("expected a value constructor", value.span());
                 Self::new(message, label, Vec::new())
             }
-            InferErrorKind::NotModule(ty) => {
-                let message = format!("`{ty}` is not a module");
+            CheckErrorKind::NotConstructorName(ty) => {
+                let message = format!("not a constructor: `{ty}`");
+                let label = DiagnosticLabel::new("expected a value constructor", value.span());
+                Self::new(message, label, Vec::new())
+            }
+            CheckErrorKind::NotModule(name) => {
+                let message = format!("not a module: `{name}`");
                 let label = DiagnosticLabel::new("expected a module", value.span());
                 Self::new(message, label, Vec::new())
             }
-            InferErrorKind::Kind(ty) => {
+            CheckErrorKind::NotType(name) => {
+                let message = format!("not a type: `{name}`");
+                let label = DiagnosticLabel::new("expected a type", value.span());
+                Self::new(message, label, Vec::new())
+            }
+            CheckErrorKind::NotClass(name) => {
+                let message = format!("not a class: `{name}`");
+                let label = DiagnosticLabel::new("expected a class", value.span());
+                Self::new(message, label, Vec::new())
+            }
+            CheckErrorKind::NotVal(name) => {
+                let message = format!("not a declared value: `{name}`");
+                let label = DiagnosticLabel::new("expected a declared value", value.span());
+                Self::new(message, label, Vec::new())
+            }
+            CheckErrorKind::NotInstance(ty, class) => {
+                let label = DiagnosticLabel::new(
+                    format!("expected `{ty}` to be instance of `{class}`"),
+                    value.span(),
+                );
+                Self::new("not a instance", label, Vec::new())
+            }
+            CheckErrorKind::Kind(ty) => {
                 let label = DiagnosticLabel::new("pattern should have kind *", value.span());
                 let snd_label =
                     DiagnosticLabel::new(format!("this is of type `{ty}`"), value.span());
                 Self::new("kind error", label, vec![snd_label])
+            }
+            CheckErrorKind::MultipleInstances(ident, ty, span) => {
+                let label = DiagnosticLabel::new(
+                    format!("multiple instances of `{ident}` for `{ty}`"),
+                    value.span(),
+                );
+                let snd_label = DiagnosticLabel::new("previous instantiation", *span);
+                Self::new("multiple instances", label, vec![snd_label])
             }
         }
     }
@@ -337,12 +377,6 @@ impl Display for MatchNonExhaustive {
         }
         write!(f, " not covered")
     }
-}
-
-impl std::error::Error for InferErrorKind {
-}
-
-impl std::error::Error for InferError {
 }
 
 impl std::error::Error for Uninferable {

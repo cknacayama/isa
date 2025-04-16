@@ -22,6 +22,14 @@ impl Path {
         }
     }
 
+    pub fn span(&self) -> Span {
+        self.segments
+            .iter()
+            .map(|id| id.span)
+            .reduce(|span, cur| span.union(cur))
+            .unwrap()
+    }
+
     pub fn eq_in_module(&self, other: &Self, module: Ident) -> bool {
         match (self.segments.as_slice(), other.segments.as_slice()) {
             ([id], [path, other_id]) | ([path, other_id], [id]) => {

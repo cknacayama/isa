@@ -16,7 +16,9 @@ use super::ctx::{
     AliasData, ClassData, Ctx, CtxData, Generator, IdGenerator, InstanceData, MemberData,
     ModuleData, VarData,
 };
-use super::error::{DiagnosticLabel, InferError, InferErrorKind, IsaError, Uninferable};
+use super::error::{
+    CheckError, CheckErrorKind, CheckResult, DiagnosticLabel, IsaError, Uninferable,
+};
 use super::infer::{
     ClassConstraint, ClassConstraintSet as Set, Constraint, EqConstraint, EqConstraintSet, Subs,
     Substitute, unify,
@@ -82,15 +84,11 @@ impl Checker {
     where
         Set: From<ClassSet>,
     {
-        self.ctx.insert(id, ty, Set::from(set), span)
+        self.ctx.insert_let(id, ty, Set::from(set), span)
     }
 
-    fn get_variable(&self, id: Ident) -> Option<Ty> {
+    fn get_variable(&self, id: Ident) -> CheckResult<Ty> {
         self.ctx.get_var(id).map(VarData::ty).cloned()
-    }
-
-    fn get_constructor(&self, name: &Path) -> Option<&Ty> {
-        self.ctx.get_constructor(name)
     }
 
     fn gen_id(&mut self) -> u64 {
@@ -367,7 +365,7 @@ impl Checker {
         &mut self,
         bind: UntypedLetBind,
     ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>, Set)> {
-        if let Some(val) = self.ctx.get_val(bind.name) {
+        if let Ok(val) = self.ctx.get_val(bind.name) {
             let VarData {
                 ty, constrs, span, ..
             } = val.clone();
@@ -480,7 +478,7 @@ impl Checker {
         parameters: Box<[Ty]>,
         constructors: Box<[UntypedConstructor]>,
         span: Span,
-    ) -> TypedExpr {
+    ) -> IsaResult<TypedExpr> {
         let mut quant = Vec::new();
 
         for param in &parameters {
@@ -498,7 +496,7 @@ impl Checker {
         let mut typed_constructors = Vec::new();
         for c in constructors {
             let ctor = Self::check_constructor(c, quant.clone(), ty.clone());
-            self.ctx.insert_constructor_for_ty(name, &quant, &ctor);
+            self.ctx.insert_constructor_for_ty(name, &quant, &ctor)?;
             typed_constructors.push(ctor);
         }
 
@@ -510,7 +508,7 @@ impl Checker {
             constructors,
         };
 
-        TypedExpr::new(kind, span, Ty::Unit)
+        Ok(TypedExpr::new(kind, span, Ty::Unit))
     }
 
     fn check_val(&mut self, val: &mut ValDeclaration) {
@@ -552,15 +550,15 @@ impl Checker {
         args: Box<[UntypedPat]>,
         span: Span,
     ) -> IsaResult<TypedPat> {
-        let ctor = match (self.get_constructor(&name), name.segments.as_slice()) {
-            (Some(ctor), _) => ctor.clone(),
-            (None, [name]) if args.is_empty() => {
+        let ctor = match (self.ctx.get_constructor(&name), name.segments.as_slice()) {
+            (Ok(ctor), _) => ctor.clone(),
+            (Err(_), [name]) if args.is_empty() => {
                 let var = self.gen_type_var();
                 self.insert_variable(*name, var.clone(), [], span);
                 return Ok(TypedPat::new(TypedPatKind::Ident(*name), span, var));
             }
-            _ => {
-                return Err(InferError::new(InferErrorKind::UnboundPath(name), span).into());
+            (Err(err), _) => {
+                return Err(IsaError::from(err));
             }
         };
 
@@ -572,7 +570,7 @@ impl Checker {
         for arg in args {
             let arg = self.check_pat(arg)?;
             let Ty::Fn { param, ret } = &ty else {
-                return Err(InferError::new(InferErrorKind::NotConstructor(ty), span).into());
+                return Err(CheckError::new(CheckErrorKind::NotConstructor(ty), span).into());
             };
             c.push(EqConstraint::new(
                 param.as_ref().clone(),
@@ -584,7 +582,7 @@ impl Checker {
         }
 
         if ty.is_fn() {
-            return Err(InferError::new(InferErrorKind::Kind(ty), span).into());
+            return Err(CheckError::new(CheckErrorKind::Kind(ty), span).into());
         }
 
         let (subs, _) = self.unify(c, [])?;
@@ -626,7 +624,8 @@ impl Checker {
 
         self.ctx
             .get_from_current_mut(name)
-            .and_then(CtxData::as_class_mut)
+            .unwrap()
+            .as_class_mut()
             .unwrap()
             .extend_signature(val_signatures);
     }
@@ -712,14 +711,11 @@ impl Checker {
         impls: Box<[UntypedLetBind]>,
         span: Span,
     ) -> IsaResult<(TypedExpr, Set)> {
-        let class_data = self
-            .ctx
-            .get_class(&class)
-            .ok_or_else(|| InferError::new(InferErrorKind::UnboundPath(class.clone()), span))?;
+        let class_data = self.ctx.get_class(&class)?;
 
         let scheme = self.ctx.generalize(instance.clone());
         for constr in class_data.constraints().iter() {
-            if self.ctx.implementation(&scheme, constr.class()).is_none() {
+            if self.ctx.implementation(&scheme, constr.class()).is_err() {
                 let fst = DiagnosticLabel::new(
                     format!("type `{scheme}` doesn't implement `{}`", constr.class()),
                     span,
@@ -981,32 +977,26 @@ impl Checker {
     ) -> IsaResult<(Path, Ty, Set)> {
         match path {
             [] => unreachable!(),
-            [id] => {
-                let id = *id;
+            &[id] => {
                 let VarData {
                     ty, mut constrs, ..
-                } = ctx
-                    .get_var(id)
-                    .cloned()
-                    .ok_or_else(|| InferError::new(InferErrorKind::Unbound(id.ident), span))?;
+                } = ctx.get_var(id)?.clone();
                 let (ty, subs) = ty.instantiate(generator);
                 constrs.substitute_many(&subs);
 
                 Ok((Path::from_ident(id), ty, constrs))
             }
-            [first, id] => {
-                let data = ctx
-                    .resolve(*first)
-                    .ok_or_else(|| InferError::new(InferErrorKind::Unbound(first.ident), span))?;
+            &[first, id] => {
+                let data = ctx.resolve(first)?;
 
                 let path = Path {
-                    segments: smallvec![*first, *id],
+                    segments: smallvec![first, id],
                 };
 
                 match data {
                     CtxData::Module(module_data) => {
                         let (_, ty, set) =
-                            Self::check_path(module_data.ctx(), &[*id], generator, span)?;
+                            Self::check_path(module_data.ctx(), &[id], generator, span)?;
 
                         Ok((path, ty, set))
                     }
@@ -1014,18 +1004,18 @@ impl Checker {
                         let constructor = ty_data
                             .constructors()
                             .iter()
-                            .find(|c| c.name == *id)
+                            .find(|c| c.name == id)
                             .ok_or_else(|| {
-                                InferError::new(InferErrorKind::Unbound(id.ident), span)
+                                CheckError::new(CheckErrorKind::Unbound(id.ident), span)
                             })?;
                         let (ty, _) = constructor.ty.clone().instantiate(generator);
                         Ok((path, ty, Set::new()))
                     }
                     CtxData::Class(class_data) => {
                         let (sig, set) = Self::check_class_member(
-                            ctx.new_path_from_current(*first),
+                            ctx.new_path_from_current(first),
                             class_data,
-                            *id,
+                            id,
                             generator,
                             span,
                         )?;
@@ -1033,19 +1023,17 @@ impl Checker {
                     }
 
                     CtxData::Let(_) | CtxData::Val(_) | CtxData::Constructor(_) => {
-                        Err(IsaError::from(InferError::new(
-                            InferErrorKind::NotModule(first.ident),
+                        Err(IsaError::from(CheckError::new(
+                            CheckErrorKind::NotModule(first.ident),
                             span,
                         )))
                     }
 
-                    CtxData::Imported(_) => todo!(),
+                    CtxData::Import(_) => todo!(),
                 }
             }
             [first, rest @ ..] => {
-                let data = ctx
-                    .get(*first)
-                    .ok_or_else(|| InferError::new(InferErrorKind::Unbound(first.ident), span))?;
+                let data = ctx.get(*first)?;
                 let mut path = Path::from_ident(*first);
                 match data {
                     CtxData::Module(module_data) => {
@@ -1054,8 +1042,8 @@ impl Checker {
                         path.segments.append(&mut rest.segments);
                         Ok((path, ty, set))
                     }
-                    _ => Err(IsaError::from(InferError::new(
-                        InferErrorKind::NotModule(first.ident),
+                    _ => Err(IsaError::from(CheckError::new(
+                        CheckErrorKind::NotModule(first.ident),
                         span,
                     ))),
                 }
@@ -1317,7 +1305,7 @@ impl Checker {
 
                 let class = ClassData::new(set.clone(), var, expr.span);
                 self.ctx.insert_class(*name, class);
-                self.ctx.insert_instance_at_env(
+                let _ = self.ctx.insert_instance_at_env(
                     Ty::Var(var),
                     *name,
                     InstanceData::new(Set::new(), expr.span),
@@ -1331,7 +1319,6 @@ impl Checker {
                 params,
                 set,
                 instance,
-                class,
                 ..
             } => {
                 let mut subs = Vec::new();
@@ -1346,17 +1333,6 @@ impl Checker {
 
                 set.substitute_param(&subs);
                 instance.substitute_param(&subs);
-
-                let instance = self.ctx.generalize(instance.clone());
-
-                if let Some(previous) = self.ctx.implementation(&instance, class) {
-                    let fst = DiagnosticLabel::new(
-                        format!("multiple instantiations of `{class}` for {instance}"),
-                        expr.span,
-                    );
-                    let snd = DiagnosticLabel::new("previously instantiated here", previous.span());
-                    return Err(IsaError::new("multiple instantiations", fst, vec![snd]));
-                }
 
                 None
             }
@@ -1412,7 +1388,7 @@ impl Checker {
             .signatures()
             .get(&member)
             .cloned()
-            .ok_or_else(|| InferError::new(InferErrorKind::Unbound(member.ident), span))?;
+            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(member.ident), span))?;
 
         for c in &mut member_set.constrs {
             *c.span_mut() = span;
@@ -1441,7 +1417,7 @@ impl Checker {
         Ok((sig, constraints))
     }
 
-    fn check_expr_for_class_signatures(&mut self, expr: &mut UntypedExpr) {
+    fn check_expr_for_class_signatures(&mut self, expr: &mut UntypedExpr) -> IsaResult<()> {
         match &mut expr.kind {
             UntypedExprKind::Class {
                 name,
@@ -1450,6 +1426,7 @@ impl Checker {
                 ..
             } => {
                 self.check_class_signatures(*name, signatures, defaults);
+                Ok(())
             }
             UntypedExprKind::Instance {
                 set,
@@ -1459,10 +1436,11 @@ impl Checker {
             } => {
                 let data = InstanceData::new(set.clone(), expr.span);
                 let instance = self.ctx.generalize(instance.clone());
-                self.ctx.insert_instance(instance, class, data);
+                self.ctx.insert_instance(instance, class, data)?;
+                Ok(())
             }
             UntypedExprKind::Semi(expr) => self.check_expr_for_class_signatures(expr),
-            _ => (),
+            _ => Ok(()),
         }
     }
 
@@ -1498,16 +1476,17 @@ impl Checker {
             self.ctx.push_scope();
 
             for expr in &mut module.exprs {
-                self.check_expr_for_class_signatures(expr);
+                self.check_expr_for_class_signatures(expr)?;
             }
 
             let mut exprs = Vec::new();
 
-            for (expr, mut expr_set) in module
+            for res in module
                 .exprs
                 .extract_if(.., |e| e.kind.is_type_or_val())
-                .map(|e| self.check(e).unwrap())
+                .map(|e| self.check(e))
             {
+                let (expr, mut expr_set) = res?;
                 exprs.push(expr);
                 set.append(&mut expr_set);
             }
@@ -1614,7 +1593,7 @@ impl Checker {
                 parameters,
                 constructors,
             } => Ok((
-                self.check_type_definition(name, parameters, constructors, span),
+                self.check_type_definition(name, parameters, constructors, span)?,
                 Set::new(),
             )),
 
