@@ -1,7 +1,7 @@
 use std::iter::Peekable;
 use std::rc::Rc;
 
-use smallvec::{SmallVec, smallvec};
+use smallvec::smallvec;
 
 use super::ast::untyped::{
     UntypedConstructor, UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm,

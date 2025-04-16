@@ -41,11 +41,11 @@ pub struct ModuleData {
 }
 
 impl ModuleData {
-    pub fn new(ctx: FxHashMap<Ident, CtxData>) -> Self {
+    pub const fn new(ctx: FxHashMap<Ident, CtxData>) -> Self {
         Self { ctx }
     }
 
-    pub fn ctx(&self) -> &FxHashMap<Ident, CtxData> {
+    pub const fn ctx(&self) -> &FxHashMap<Ident, CtxData> {
         &self.ctx
     }
 
@@ -61,7 +61,6 @@ impl ModuleData {
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
     }
 
-    #[must_use]
     pub fn get_var(&self, id: Ident) -> CheckResult<&VarData> {
         self.get(id)?
             .as_var()
@@ -377,7 +376,7 @@ impl CtxData {
         }
     }
 
-    pub fn as_import(&self) -> Option<Ident> {
+    pub const fn as_import(&self) -> Option<Ident> {
         if let Self::Import(v) = self {
             Some(*v)
         } else {
@@ -547,7 +546,7 @@ fn default_classes() -> FxHashMap<Ident, CtxData> {
         classes,
         Ordering = constructor!(Less -> ordering_type.clone()),
         constructor!(Equal -> ordering_type.clone()),
-        constructor!(Greater -> ordering_type.clone()),
+        constructor!(Greater -> ordering_type),
     );
 
     // type_decl!(
@@ -612,7 +611,6 @@ impl Ctx {
         self.current_module = module;
     }
 
-    #[must_use]
     pub fn get(&self, id: Ident) -> CheckResult<&CtxData> {
         self.env
             .iter()
@@ -621,14 +619,12 @@ impl Ctx {
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
     }
 
-    #[must_use]
     pub fn get_var(&self, id: Ident) -> CheckResult<&VarData> {
         self.resolve(id)?
             .as_var()
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
     }
 
-    #[must_use]
     pub fn get_mut(&mut self, id: Ident) -> CheckResult<&mut CtxData> {
         self.env
             .iter_mut()
@@ -637,17 +633,16 @@ impl Ctx {
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
     }
 
-    #[must_use]
     pub fn get_constructor(&self, id: &Path) -> CheckResult<&Ty> {
-        match id.segments.as_slice() {
-            &[id] => self
+        match *id.segments.as_slice() {
+            [id] => self
                 .get_from_current(id)?
                 .as_constructor()
                 .ok_or_else(|| {
                     CheckError::new(CheckErrorKind::NotConstructorName(id.ident), id.span)
                 })
                 .map(VarData::ty),
-            &[ty, id] => self
+            [ty, id] => self
                 .get_from_current(ty)?
                 .as_ty()
                 .ok_or_else(|| CheckError::new(CheckErrorKind::NotType(ty.ident), ty.span))
@@ -659,7 +654,7 @@ impl Ctx {
                             CheckError::new(CheckErrorKind::NotConstructorName(id.ident), id.span)
                         })
                 }),
-            &[_, _, _] => todo!(),
+            [_, _, _] => todo!(),
             _ => Err(CheckError::new(
                 CheckErrorKind::InvalidPath(id.clone()),
                 id.span(),
@@ -678,11 +673,8 @@ impl Ctx {
         let module = self.get_module(module)?;
         let data = module.get(member)?;
 
-        if let Some(module) = data.as_import() {
-            self.get_from_module(module, member)
-        } else {
-            Ok(data)
-        }
+        data.as_import()
+            .map_or(Ok(data), |module| self.get_from_module(module, member))
     }
 
     fn get_from_module_mut(&mut self, module: Ident, member: Ident) -> CheckResult<&mut CtxData> {
@@ -708,14 +700,12 @@ impl Ctx {
         self.get_from_module_mut(self.current_module, id)
     }
 
-    #[must_use]
     pub fn get_val(&self, id: Ident) -> CheckResult<&VarData> {
         let val = self.resolve(id)?;
         val.as_val()
             .ok_or_else(|| CheckError::new(CheckErrorKind::NotVal(id.ident), id.span))
     }
 
-    #[must_use]
     pub fn get_module(&self, id: Ident) -> CheckResult<&ModuleData> {
         let module = self.get(id)?;
         module
@@ -723,7 +713,6 @@ impl Ctx {
             .ok_or_else(|| CheckError::new(CheckErrorKind::NotModule(id.ident), id.span))
     }
 
-    #[must_use]
     pub fn get_module_mut(&mut self, id: Ident) -> CheckResult<&mut ModuleData> {
         let module = self.get_mut(id)?;
         module
@@ -886,12 +875,12 @@ impl Ctx {
     }
 
     pub fn get_ty(&self, id: &Path) -> CheckResult<&TyData> {
-        match id.segments.as_slice() {
-            &[id] => self
+        match *id.segments.as_slice() {
+            [id] => self
                 .get_from_current(id)?
                 .as_ty()
                 .ok_or_else(|| CheckError::new(CheckErrorKind::NotType(id.ident), id.span)),
-            &[module, id] => self
+            [module, id] => self
                 .get_from_module(module, id)?
                 .as_ty()
                 .ok_or_else(|| CheckError::new(CheckErrorKind::NotType(id.ident), id.span)),
@@ -908,7 +897,6 @@ impl Ctx {
             .map_or(&[], |data| data.constructors.as_slice())
     }
 
-    #[must_use]
     pub fn get_type_arity(&self, name: &Path) -> CheckResult<usize> {
         self.get_ty(name).map(|data| data.params.len())
     }
@@ -1063,14 +1051,13 @@ impl Ctx {
         }
     }
 
-    #[must_use]
     pub fn get_class(&self, name: &Path) -> CheckResult<&ClassData> {
-        match name.segments.as_slice() {
-            &[id] => self
+        match *name.segments.as_slice() {
+            [id] => self
                 .get_from_current(id)?
                 .as_class()
                 .ok_or_else(|| CheckError::new(CheckErrorKind::NotClass(id.ident), id.span)),
-            &[module, id] => self
+            [module, id] => self
                 .get_from_module(module, id)?
                 .as_class()
                 .ok_or_else(|| CheckError::new(CheckErrorKind::NotClass(id.ident), id.span)),
@@ -1081,14 +1068,13 @@ impl Ctx {
         }
     }
 
-    #[must_use]
     pub fn get_class_mut(&mut self, name: &Path) -> CheckResult<&mut ClassData> {
-        match name.segments.as_slice() {
-            &[id] => self
+        match *name.segments.as_slice() {
+            [id] => self
                 .get_from_current_mut(id)?
                 .as_class_mut()
                 .ok_or_else(|| CheckError::new(CheckErrorKind::NotClass(id.ident), id.span)),
-            &[module, id] => self
+            [module, id] => self
                 .get_from_module_mut(module, id)?
                 .as_class_mut()
                 .ok_or_else(|| CheckError::new(CheckErrorKind::NotClass(id.ident), id.span)),

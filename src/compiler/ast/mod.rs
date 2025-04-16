@@ -26,7 +26,7 @@ impl Path {
         self.segments
             .iter()
             .map(|id| id.span)
-            .reduce(|span, cur| span.union(cur))
+            .reduce(super::super::span::Span::union)
             .unwrap()
     }
 

@@ -74,7 +74,7 @@ impl Checker {
         self.ctx.insert_val(id, ty, Set::from(set), span)
     }
 
-    fn insert_variable<ClassSet>(
+    fn insert_let<ClassSet>(
         &mut self,
         id: Ident,
         ty: Ty,
@@ -87,7 +87,7 @@ impl Checker {
         self.ctx.insert_let(id, ty, Set::from(set), span)
     }
 
-    fn get_variable(&self, id: Ident) -> CheckResult<Ty> {
+    fn get_var_ty(&self, id: Ident) -> CheckResult<Ty> {
         self.ctx.get_var(id).map(VarData::ty).cloned()
     }
 
@@ -179,10 +179,10 @@ impl Checker {
         self.ctx.push_scope();
 
         let var = self.gen_type_var();
-        self.insert_variable(param.name, var, [], param.name.span);
+        self.insert_let(param.name, var, [], param.name.span);
 
         let (expr, set) = self.check(expr)?;
-        let var = self.get_variable(param.name).unwrap();
+        let var = self.get_var_ty(param.name).unwrap();
 
         self.ctx.pop_scope();
 
@@ -278,7 +278,7 @@ impl Checker {
                     IsaError::new("type mismatch", fst, vec![snd, trd])
                         .with_note("let bind should have same type as val declaration")
                 })?;
-                self.insert_variable(p.name, decl.clone(), [], p.name.span);
+                self.insert_let(p.name, decl.clone(), [], p.name.span);
                 Ok(TypedParam::new(p.name, decl))
             })
             .collect::<IsaResult<Box<_>>>()?;
@@ -290,7 +290,7 @@ impl Checker {
             let (mut expr, set) = self.check(*bind.expr)?;
 
             for p in &mut typed_params {
-                p.ty = self.get_variable(p.name).unwrap();
+                p.ty = self.get_var_ty(p.name).unwrap();
             }
 
             expr.ty = Ty::function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
@@ -379,7 +379,7 @@ impl Checker {
             .into_iter()
             .map(|p| {
                 let var = self.gen_type_var();
-                self.insert_variable(p.name, var.clone(), [], p.name.span);
+                self.insert_let(p.name, var.clone(), [], p.name.span);
                 TypedParam::new(p.name, var)
             })
             .collect::<Box<_>>();
@@ -389,12 +389,12 @@ impl Checker {
         } else {
             let var_id = self.gen_id();
             let var = Ty::Var(var_id);
-            self.insert_variable(bind.name, var, [], bind.name.span);
+            self.insert_let(bind.name, var, [], bind.name.span);
 
             let (mut expr, set) = self.check(*bind.expr)?;
 
             for p in &mut typed_params {
-                p.ty = self.get_variable(p.name).unwrap();
+                p.ty = self.get_var_ty(p.name).unwrap();
             }
 
             expr.ty = Ty::function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
@@ -425,7 +425,7 @@ impl Checker {
 
         let mut env1 = self.ctx.clone();
         std::mem::swap(&mut self.ctx, &mut env1);
-        self.insert_variable(name, u1, set.clone(), name_span);
+        self.insert_let(name, u1, set.clone(), name_span);
 
         let (body, ty, set) = match body {
             Some(body) => {
@@ -554,7 +554,7 @@ impl Checker {
             (Ok(ctor), _) => ctor.clone(),
             (Err(_), [name]) if args.is_empty() => {
                 let var = self.gen_type_var();
-                self.insert_variable(*name, var.clone(), [], span);
+                self.insert_let(*name, var.clone(), [], span);
                 return Ok(TypedPat::new(TypedPatKind::Ident(*name), span, var));
             }
             (Err(err), _) => {
