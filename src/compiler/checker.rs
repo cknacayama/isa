@@ -13,8 +13,8 @@ use super::ast::untyped::{
 };
 use super::ast::{BinOp, Constructor, Path, UnOp, ValDeclaration};
 use super::ctx::{
-    AliasData, ClassData, Ctx, CtxData, Generator, IdGenerator, InstanceData, MemberData,
-    ModuleData, VarData,
+    AliasData, ClassData, Ctx, Generator, IdGenerator, InstanceData, MemberData, ModuleData,
+    VarData,
 };
 use super::error::{
     CheckError, CheckErrorKind, CheckResult, DiagnosticLabel, IsaError, Uninferable,
@@ -67,11 +67,14 @@ impl Checker {
         ty: Ty,
         set: ClassSet,
         span: Span,
-    ) -> Option<CtxData>
+    ) -> Option<VarData>
     where
         Set: From<ClassSet>,
     {
-        self.ctx.insert_val(id, ty, Set::from(set), span)
+        self.ctx
+            .current_mut()
+            .unwrap()
+            .insert_val(id, VarData::new(ty, Set::from(set), span))
     }
 
     fn insert_let<ClassSet>(
@@ -80,11 +83,12 @@ impl Checker {
         ty: Ty,
         set: ClassSet,
         span: Span,
-    ) -> Option<CtxData>
+    ) -> Option<VarData>
     where
         Set: From<ClassSet>,
     {
-        self.ctx.insert_let(id, ty, Set::from(set), span)
+        self.ctx
+            .insert_var(id, VarData::new(ty, Set::from(set), span))
     }
 
     fn get_var_ty(&self, id: Ident) -> CheckResult<Ty> {
@@ -365,7 +369,7 @@ impl Checker {
         &mut self,
         bind: UntypedLetBind,
     ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>, Set)> {
-        if let Ok(val) = self.ctx.get_val(bind.name) {
+        if let Ok(val) = self.ctx.current()?.get_val(bind.name) {
             let VarData {
                 ty, constrs, span, ..
             } = val.clone();
@@ -623,9 +627,9 @@ impl Checker {
         });
 
         self.ctx
-            .get_from_current_mut(name)
+            .current_mut()
             .unwrap()
-            .as_class_mut()
+            .get_class_mut(name)
             .unwrap()
             .extend_signature(val_signatures);
     }
@@ -890,15 +894,10 @@ impl Checker {
         let new_scope = self.ctx.pop_scope().unwrap();
 
         for (k, v) in scope {
-            let Some(old) = v.as_var().and_then(|v| v.ty().as_var()) else {
+            let Some(old) = v.ty().as_var() else {
                 continue;
             };
-            let new = new_scope
-                .get(&k)
-                .and_then(CtxData::as_var)
-                .unwrap()
-                .ty()
-                .clone();
+            let new = new_scope.get(&k).unwrap().ty().clone();
             pat.substitute_eq(&Subs::new(old, new));
         }
 
@@ -988,45 +987,7 @@ impl Checker {
                 Ok((Path::from_ident(id), ty, constrs))
             }
             &[first, id] => {
-                let data = ctx.get(first)?;
-
-                let path = Path {
-                    segments: smallvec![first, id],
-                };
-
-                match data {
-                    CtxData::Ty(ty_data) => {
-                        let constructor = ty_data
-                            .constructors()
-                            .iter()
-                            .find(|c| c.name == id)
-                            .ok_or_else(|| {
-                                CheckError::new(CheckErrorKind::Unbound(id.ident), span)
-                            })?;
-                        let (ty, _) = constructor.ty.clone().instantiate(generator);
-                        Ok((path, ty, Set::new()))
-                    }
-                    CtxData::Class(class_data) => {
-                        let (sig, set) = Self::check_class_member(
-                            Path {
-                                segments: smallvec![module_name, id],
-                            },
-                            class_data,
-                            id,
-                            generator,
-                            span,
-                        )?;
-                        Ok((path, sig, set))
-                    }
-
-                    CtxData::Let(_) | CtxData::Val(_) | CtxData::Constructor(_) => Err(
-                        IsaError::from(CheckError::new(CheckErrorKind::NotType(first.ident), span)),
-                    ),
-
-                    CtxData::Module(_) => unreachable!(),
-
-                    CtxData::Import(_) => todo!(),
-                }
+                todo!()
             }
             _ => Err(IsaError::from(CheckError::new(
                 CheckErrorKind::InvalidPath(Path {
@@ -1057,71 +1018,35 @@ impl Checker {
             }
 
             &[first, id] => {
-                let data = ctx.resolve(first)?;
-
                 let path = Path {
                     segments: smallvec![first, id],
                 };
 
-                match data {
-                    CtxData::Module(module_data) => {
-                        let (_, ty, set) =
-                            Self::check_path_simple(first, module_data, &[id], generator, span)?;
-
-                        Ok((path, ty, set))
-                    }
-                    CtxData::Ty(ty_data) => {
-                        let constructor = ty_data
-                            .constructors()
-                            .iter()
-                            .find(|c| c.name == id)
-                            .ok_or_else(|| {
-                                CheckError::new(CheckErrorKind::Unbound(id.ident), span)
-                            })?;
-                        let (ty, _) = constructor.ty.clone().instantiate(generator);
-                        Ok((path, ty, Set::new()))
-                    }
-                    CtxData::Class(class_data) => {
-                        let (sig, set) = Self::check_class_member(
-                            ctx.new_path_from_current(first),
-                            class_data,
-                            id,
-                            generator,
-                            span,
-                        )?;
-                        Ok((path, sig, set))
-                    }
-
-                    CtxData::Let(_) | CtxData::Val(_) | CtxData::Constructor(_) => {
-                        Err(IsaError::from(CheckError::new(
-                            CheckErrorKind::NotModule(first.ident),
-                            span,
-                        )))
-                    }
-
-                    CtxData::Import(_) => todo!(),
+                if let Ok(ty) = ctx.current().unwrap().get_type(first).and_then(|data| {
+                    data.constructors()
+                        .iter()
+                        .find_map(|c| if c.name == id { Some(&c.ty) } else { None })
+                        .ok_or_else(|| {
+                            CheckError::new(CheckErrorKind::NotConstructorName(id.ident), id.span)
+                        })
+                }) {
+                    let (ty, _) = ty.clone().instantiate(generator);
+                    return Ok((path, ty, Set::new()));
                 }
+
+                if let Ok((ty, set)) = ctx.current().unwrap().get_class(first).and_then(|data| {
+                    Self::check_class_member(Path::from_ident(first), data, id, generator, span)
+                }) {
+                    return Ok((path, ty, set));
+                }
+
+                let module = ctx.get_module(first)?;
+
+                Self::check_path_simple(first, module, &[id], generator, span)
             }
 
             &[first, ref rest @ ..] => {
-                let data = ctx.resolve(first)?;
-
-                let mut segments = smallvec![first];
-                segments.extend_from_slice(rest);
-                let path = Path { segments };
-
-                match data {
-                    CtxData::Module(module_data) => {
-                        let (_, ty, set) =
-                            Self::check_path_simple(first, module_data, rest, generator, span)?;
-
-                        Ok((path, ty, set))
-                    }
-                    _ => Err(IsaError::from(CheckError::new(
-                        CheckErrorKind::NotModule(first.ident),
-                        span,
-                    ))),
-                }
+                todo!()
             }
         }
     }
@@ -1268,8 +1193,7 @@ impl Checker {
         &mut self,
         module: &mut UntypedModule,
     ) -> IsaResult<Vec<(Ident, AliasData)>> {
-        self.ctx.push_scope_with_prelude();
-        self.ctx.set_current_module(module.name);
+        self.ctx.create_module(module.name);
         let module_name = module.name;
         let mut declared = FxHashMap::default();
         for expr in &mut module.exprs {
@@ -1291,10 +1215,6 @@ impl Checker {
         if declared.is_empty() {
             return Ok(Vec::new());
         }
-
-        let scope = self.ctx.pop_scope().unwrap();
-        let data = ModuleData::new(scope);
-        self.ctx.extend_module(module.name, data);
 
         Ok(module
             .exprs
@@ -1379,7 +1299,7 @@ impl Checker {
                 }
 
                 let class = ClassData::new(set.clone(), var, expr.span);
-                self.ctx.insert_class(*name, class);
+                let _ = self.ctx.insert_class(*name, class);
                 let _ = self.ctx.insert_instance_at_env(
                     Ty::Var(var),
                     *name,
@@ -1452,7 +1372,7 @@ impl Checker {
         member: Ident,
         generator: &mut impl Generator,
         span: Span,
-    ) -> IsaResult<(Ty, Set)> {
+    ) -> CheckResult<(Ty, Set)> {
         let instance_var = data.instance_var();
         let mut constraints = data.constraints().clone();
         let MemberData {
@@ -1567,8 +1487,7 @@ impl Checker {
             }
 
             let scope = self.ctx.pop_scope().unwrap();
-            let data = ModuleData::new(scope);
-            self.ctx.extend_module(module.name, data);
+            self.ctx.extend_module(module.name, scope);
 
             decl.push(exprs);
         }
@@ -1606,8 +1525,7 @@ impl Checker {
             set.append(&mut expr_set);
         }
         let scope = self.ctx.pop_scope().unwrap();
-        let data = ModuleData::new(scope);
-        self.ctx.extend_module(module.name, data);
+        self.ctx.extend_module(module.name, scope);
         let typed = TypedModule::new(module.name, module.imports, exprs, module.span);
 
         Ok((typed, set))
