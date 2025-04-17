@@ -21,7 +21,7 @@ use super::error::{
 };
 use super::infer::{
     ClassConstraint, ClassConstraintSet as Set, Constraint, EqConstraint, EqConstraintSet, Subs,
-    Substitute, unify,
+    Substitute,
 };
 use super::token::Ident;
 use super::types::Ty;
@@ -51,9 +51,8 @@ impl Checker {
         EqConstraintSet: From<EqSet>,
         Set: From<ClassSet>,
     {
-        unify(constr, classes, &self.ctx).inspect(|(subs, _)| {
-            self.ctx.substitute_many(subs);
-        })
+        self.ctx
+            .unify(EqConstraintSet::from(constr), Set::from(classes))
     }
 
     #[must_use]
@@ -321,7 +320,8 @@ impl Checker {
                 .with_note("let bind should have same type as val declaration")
         };
 
-        let (subs, set) = unify(constr, set, &self.ctx)
+        let (subs, set) = self
+            .unify(constr, set)
             .map_err(|err| {
                 if let Constraint::Eq(eq_constraint) = err.constr() {
                     val_error(eq_constraint.rhs(), eq_constraint.span())
@@ -1217,7 +1217,7 @@ impl Checker {
         expr: &mut UntypedExpr,
         declared: &mut FxHashMap<Ident, Span>,
     ) -> IsaResult<()> {
-        if let Some((name, span)) = match &mut expr.kind {
+        let (name, span) = match &mut expr.kind {
             UntypedExprKind::Semi(e) => return self.check_type_declaration(e, declared),
             UntypedExprKind::Type {
                 name,
@@ -1238,7 +1238,7 @@ impl Checker {
                     ctor.substitute_param(&subs);
                 }
 
-                Some((*name, expr.span))
+                (*name, expr.span)
             }
 
             UntypedExprKind::Alias {
@@ -1258,7 +1258,7 @@ impl Checker {
 
                 ty.substitute_param(&subs);
 
-                Some((*name, expr.span))
+                (*name, expr.span)
             }
 
             UntypedExprKind::Class {
@@ -1296,7 +1296,7 @@ impl Checker {
                 );
                 self.ctx.assume_constraints(set);
 
-                Some((*name, expr.span))
+                (*name, expr.span)
             }
 
             UntypedExprKind::Instance {
@@ -1318,19 +1318,19 @@ impl Checker {
                 set.substitute_param(&subs);
                 instance.substitute_param(&subs);
 
-                None
+                return Ok(());
             }
 
-            _ => None,
-        } {
-            if let Some(previous) = declared.insert(name, span) {
-                let fst = DiagnosticLabel::new(format!("multiple definitons of `{name}`"), span);
-                let snd = DiagnosticLabel::new("previously defined here", previous);
-                return Err(IsaError::new("multiple definitons", fst, vec![snd]));
-            }
+            _ => return Ok(()),
+        };
+
+        if let Some(previous) = declared.insert(name, span) {
+            let fst = DiagnosticLabel::new(format!("multiple definitons of `{name}`"), span);
+            let snd = DiagnosticLabel::new("previously defined here", previous);
+            Err(IsaError::new("multiple definitons", fst, vec![snd]))
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 
     fn check_alias_declaration(expr: &UntypedExpr) -> Option<(Ident, AliasData)> {

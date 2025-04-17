@@ -30,15 +30,6 @@ impl Path {
             .unwrap()
     }
 
-    pub fn eq_in_module(&self, other: &Self, module: Ident) -> bool {
-        match (self.segments.as_slice(), other.segments.as_slice()) {
-            ([id], [path, other_id]) | ([path, other_id], [id]) => {
-                *path == module && other_id == id
-            }
-            _ => self == other,
-        }
-    }
-
     pub fn base_name(&self) -> Ident {
         match self.segments.as_slice() {
             [] => unreachable!(),

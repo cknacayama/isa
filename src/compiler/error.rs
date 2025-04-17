@@ -144,7 +144,7 @@ impl CheckError {
     where
         F: FnOnce(Symbol) -> CheckErrorKind,
     {
-        CheckError::new(constructor(id.ident), id.span)
+        Self::new(constructor(id.ident), id.span)
     }
 }
 
