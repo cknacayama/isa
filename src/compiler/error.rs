@@ -5,7 +5,7 @@ use codespan_reporting::diagnostic::Label;
 use super::ast::Path;
 use super::exhaust::pat::WitnessPat;
 use super::infer::{Constraint, Subs};
-use super::token::TokenKind;
+use super::token::{Ident, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
 use crate::span::Span;
@@ -138,6 +138,13 @@ impl CheckError {
     #[must_use]
     pub const fn span(&self) -> Span {
         self.span
+    }
+
+    pub fn from_ident<F>(constructor: F, id: Ident) -> Self
+    where
+        F: FnOnce(Symbol) -> CheckErrorKind,
+    {
+        CheckError::new(constructor(id.ident), id.span)
     }
 }
 
@@ -276,7 +283,7 @@ impl From<Uninferable> for IsaError {
                 let fst = DiagnosticLabel::new(
                     format!(
                         "type `{}` is not instance of class `{}`",
-                        class.constrained(),
+                        class.ty(),
                         class.class()
                     ),
                     class.span(),

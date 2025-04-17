@@ -1,4 +1,3 @@
-use std::collections::hash_map::{self, Entry};
 use std::fmt::Display;
 use std::rc::Rc;
 use std::{fmt, vec};
@@ -39,23 +38,22 @@ impl VarData {
 pub struct ModuleData {
     lets:         FxHashMap<Ident, VarData>,
     vals:         FxHashMap<Ident, VarData>,
-    imports:      FxHashMap<Ident, Ident>,
     types:        FxHashMap<Ident, TyData>,
     constructors: FxHashMap<Ident, VarData>,
-    classes:      FxHashMap<Ident, ClassData>,
+    classes:      FxHashMap<Ident, ClassDataImport>,
 }
 
 impl ModuleData {
     pub fn get_type(&self, id: Ident) -> CheckResult<&TyData> {
         self.types
             .get(&id)
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_val(&self, id: Ident) -> CheckResult<&VarData> {
         self.vals
             .get(&id)
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_var(&self, id: Ident) -> CheckResult<&VarData> {
@@ -65,60 +63,57 @@ impl ModuleData {
     pub fn get_let(&self, id: Ident) -> CheckResult<&VarData> {
         self.lets
             .get(&id)
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
-    }
-
-    pub fn get_import(&self, id: Ident) -> CheckResult<Ident> {
-        self.imports
-            .get(&id)
-            .copied()
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_constructor(&self, id: Ident) -> CheckResult<&VarData> {
         self.constructors
             .get(&id)
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
-    pub fn get_class(&self, id: Ident) -> CheckResult<&ClassData> {
+    fn get_class(&self, id: Ident) -> CheckResult<&ClassDataImport> {
         self.classes
             .get(&id)
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_type_mut(&mut self, id: Ident) -> CheckResult<&mut TyData> {
         self.types
             .get_mut(&id)
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_val_mut(&mut self, id: Ident) -> CheckResult<&mut VarData> {
         self.vals
             .get_mut(&id)
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_let_mut(&mut self, id: Ident) -> CheckResult<&mut VarData> {
         self.lets
             .get_mut(&id)
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_constructor_mut(&mut self, id: Ident) -> CheckResult<&mut VarData> {
         self.constructors
             .get_mut(&id)
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
-    pub fn get_import_mut(&mut self, id: Ident) -> CheckResult<Ident> {
-        self.imports
+    pub fn get_class_data_mut(&mut self, id: Ident) -> CheckResult<&mut ClassData> {
+        self.classes
             .get_mut(&id)
-            .copied()
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
+            .and_then(|class| {
+                class
+                    .as_class_mut()
+                    .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotClass, id))
+            })
     }
 
-    pub fn get_class_mut(&mut self, id: Ident) -> CheckResult<&mut ClassData> {
+    fn get_class_mut(&mut self, id: Ident) -> CheckResult<&mut ClassDataImport> {
         self.classes
             .get_mut(&id)
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
@@ -136,20 +131,19 @@ impl ModuleData {
         self.lets.insert(id, data)
     }
 
-    pub fn insert_import(&mut self, id: Ident, data: Ident) -> Option<Ident> {
-        self.imports.insert(id, data)
+    pub fn insert_class(&mut self, id: Ident, data: ClassData) -> Option<ClassDataImport> {
+        self.classes.insert(id, ClassDataImport::Class(data))
     }
 
-    pub fn insert_class(&mut self, id: Ident, data: ClassData) -> Option<ClassData> {
-        self.classes.insert(id, data)
+    pub fn insert_class_import(&mut self, id: Ident, data: Ident) -> Option<ClassDataImport> {
+        self.classes.insert(id, ClassDataImport::Import(data))
     }
 
     fn exportable(&self, id: Ident) -> bool {
-        !self.imports.contains_key(&id)
-            && (self.classes.contains_key(&id)
-                || self.types.contains_key(&id)
-                || self.lets.contains_key(&id)
-                || self.vals.contains_key(&id))
+        self.classes.get(&id).is_some_and(|class| class.is_class())
+            || self.types.contains_key(&id)
+            || self.lets.contains_key(&id)
+            || self.vals.contains_key(&id)
     }
 }
 
@@ -211,6 +205,7 @@ pub trait CtxFmt {
 pub struct TyData {
     params:       Rc<[u64]>,
     constructors: Vec<TypedConstructor>,
+    imported:     Option<Ident>,
 }
 
 impl TyData {
@@ -219,6 +214,14 @@ impl TyData {
         Self {
             params,
             constructors,
+            imported: None,
+        }
+    }
+
+    fn as_import(self, module: Ident) -> Self {
+        Self {
+            imported: Some(module),
+            ..self
         }
     }
 
@@ -348,6 +351,48 @@ impl ClassData {
     }
 }
 
+#[derive(Debug, Clone)]
+enum ClassDataImport {
+    Import(Ident),
+    Class(ClassData),
+}
+
+impl ClassDataImport {
+    fn as_import(&self) -> Option<Ident> {
+        if let Self::Import(v) = self {
+            Some(*v)
+        } else {
+            None
+        }
+    }
+
+    fn as_class(&self) -> Option<&ClassData> {
+        if let Self::Class(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    fn as_class_mut(&mut self) -> Option<&mut ClassData> {
+        if let Self::Class(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    fn is_import(&self) -> bool {
+        matches!(self, Self::Import(..))
+    }
+
+    #[must_use]
+    fn is_class(&self) -> bool {
+        matches!(self, Self::Class(..))
+    }
+}
+
 fn default_classes() -> ModuleData {
     use global::intern_symbol as intern;
 
@@ -363,14 +408,14 @@ fn default_classes() -> ModuleData {
             data.extend_signature([
                 $($member),+
             ]);
-            $classes.insert(Ident { ident: intern(stringify!($name)), span }, data);
+            $classes.insert(Ident { ident: intern(stringify!($name)), span }, ClassDataImport::Class(data));
         }};
         ($classes:ident, $instances:expr, $name:ident, $($member:expr;)+) => {{
             let mut data = ClassData::with_instances(ClassConstraintSet::new(), 0, $instances, span);
             data.extend_signature([
                 $($member),+
             ]);
-            $classes.insert(Ident { ident: intern(stringify!($name)), span }, data);
+            $classes.insert(Ident { ident: intern(stringify!($name)), span }, ClassDataImport::Class(data));
         }};
     }
 
@@ -572,10 +617,7 @@ impl Ctx {
     pub fn get_var(&self, id: Ident) -> CheckResult<&VarData> {
         self.get(id).or_else(|_| {
             let current = self.current()?;
-            current.get_var(id).or_else(|_| {
-                let import = current.get_import(id)?;
-                self.get_module(import)?.get_var(id)
-            })
+            current.get_var(id)
         })
     }
 
@@ -613,10 +655,11 @@ impl Ctx {
             .ok_or_else(|| CheckError::new(CheckErrorKind::NotModule(id.ident), id.span))
     }
 
-    pub fn create_module(&mut self, id: Ident) {
-        self.modules.insert(id, ModuleData::default());
+    pub fn create_module(&mut self, id: Ident) -> CheckResult<()> {
+        let prelude = self.import_prelude()?;
+        self.modules.insert(id, prelude);
         self.current_module = id;
-        let _ = self.import_prelude();
+        Ok(())
     }
 
     fn insert_module(&mut self, id: Ident, data: ModuleData) {
@@ -708,21 +751,12 @@ impl Ctx {
         match *id.segments.as_slice() {
             [id] => {
                 let current = self.current()?;
-                current
-                    .get_constructor(id)
-                    .or_else(|_| {
-                        let module = current.get_import(id)?;
-                        self.get_module(module)?.get_constructor(id)
-                    })
-                    .map(VarData::ty)
+                current.get_constructor(id).map(VarData::ty)
             }
 
             [ty, id] => {
                 let current = self.current()?;
-                let data = current.get_type(ty).or_else(|_| {
-                    let module = current.get_import(ty)?;
-                    self.get_module(module)?.get_type(ty)
-                })?;
+                let data = current.get_type(ty)?;
 
                 data.constructors
                     .iter()
@@ -739,80 +773,56 @@ impl Ctx {
         }
     }
 
-    fn get_maybe_import<T, F>(&self, module: Ident, id: Ident, f: F) -> CheckResult<&T>
+    fn get_from_module<T, F>(&self, module: Ident, id: Ident, f: F) -> CheckResult<&T>
     where
-        F: Fn(&ModuleData, Ident) -> CheckResult<&T>,
+        F: FnOnce(&ModuleData, Ident) -> CheckResult<&T>,
     {
         let module = self.get_module(module)?;
-        f(module, id).or_else(|_| {
-            let import = module.get_import(id)?;
-            let module = self.get_module(import)?;
-            f(module, id)
-        })
+        f(module, id)
     }
 
-    fn get_maybe_import_mut<T, F, FMut>(
-        &mut self,
-        module: Ident,
-        id: Ident,
-        f: F,
-        fmut: FMut,
-    ) -> CheckResult<&mut T>
+    fn get_from_module_mut<T, F>(&mut self, module: Ident, id: Ident, f: F) -> CheckResult<&mut T>
     where
-        F: Fn(&ModuleData, Ident) -> CheckResult<&T>,
-        FMut: Fn(&mut ModuleData, Ident) -> CheckResult<&mut T>,
+        F: FnOnce(&mut ModuleData, Ident) -> CheckResult<&mut T>,
     {
-        let data = self.get_module(module)?;
-        if f(data, id).is_ok() {
-            fmut(self.get_module_mut(module).unwrap(), id)
-        } else {
-            let import = data.get_import(id)?;
-            let data = self.get_module_mut(import)?;
-            fmut(data, id)
-        }
+        let module = self.get_module_mut(module)?;
+        f(module, id)
     }
 
     pub fn get_ty(&self, id: &Path) -> CheckResult<&TyData> {
-        match *id.segments.as_slice() {
-            [id] => self.get_maybe_import(self.current_module, id, ModuleData::get_type),
-            [module, id] => self.get_maybe_import(module, id, ModuleData::get_type),
-            _ => Err(CheckError::new(
-                CheckErrorKind::InvalidPath(id.clone()),
-                id.span(),
-            )),
-        }
+        let (module, id) = self.get_module_and_ident(id)?;
+
+        self.get_from_module(module, id, ModuleData::get_type)
     }
 
     pub fn get_class(&self, name: &Path) -> CheckResult<&ClassData> {
-        match *name.segments.as_slice() {
-            [id] => self.get_maybe_import(self.current_module, id, ModuleData::get_class),
-            [module, id] => self.get_maybe_import(module, id, ModuleData::get_class),
-            _ => Err(CheckError::new(
-                CheckErrorKind::InvalidPath(name.clone()),
-                name.span(),
-            )),
+        let (module, id) = self.get_module_and_ident(name)?;
+
+        let class = self.get_from_module(module, id, ModuleData::get_class)?;
+        match class {
+            ClassDataImport::Import(module) => Ok(self
+                .get_from_module(*module, id, ModuleData::get_class)
+                .unwrap()
+                .as_class()
+                .unwrap()),
+            ClassDataImport::Class(class_data) => Ok(class_data),
         }
     }
 
     pub fn get_class_mut(&mut self, name: &Path) -> CheckResult<&mut ClassData> {
-        match *name.segments.as_slice() {
-            [id] => self.get_maybe_import_mut(
-                self.current_module,
-                id,
-                ModuleData::get_class,
-                ModuleData::get_class_mut,
-            ),
-            [module, id] => self.get_maybe_import_mut(
-                module,
-                id,
-                ModuleData::get_class,
-                ModuleData::get_class_mut,
-            ),
-            _ => Err(CheckError::new(
-                CheckErrorKind::InvalidPath(name.clone()),
-                name.span(),
-            )),
+        let (mut module, id) = self.get_module_and_ident(name)?;
+
+        let class = self.get_from_module(module, id, ModuleData::get_class)?;
+
+        if let Some(import) = class.as_import() {
+            module = import;
         }
+
+        Ok(self
+            .get_from_module_mut(module, id, ModuleData::get_class_mut)
+            .unwrap()
+            .as_class_mut()
+            .unwrap())
     }
 
     #[must_use]
@@ -830,62 +840,69 @@ impl Ctx {
         Ok(())
     }
 
-    pub fn import<'a>(
-        &mut self,
-        to: Ident,
-        imports: impl IntoIterator<Item = &'a Path>,
-    ) -> CheckResult<()> {
-        for path in imports {
-            self.import_single(to, path)?;
+    fn get_module_and_ident(&self, path: &Path) -> CheckResult<(Ident, Ident)> {
+        match *path.segments.as_slice() {
+            [id] => Ok((self.current_module, id)),
+            [module, id] => Ok((module, id)),
+            _ => Err(CheckError::new(
+                CheckErrorKind::InvalidPath(path.clone()),
+                path.span(),
+            )),
         }
-        Ok(())
     }
 
-    fn import_prelude(&mut self) -> CheckResult<()> {
+    pub fn same_type_name(&self, lhs: &Path, rhs: &Path) -> CheckResult<bool> {
+        let (lhs_module, lhs_ty) = self.get_module_and_ident(lhs)?;
+        let (rhs_module, rhs_ty) = self.get_module_and_ident(rhs)?;
+
+        if lhs_ty != rhs_ty {
+            return Ok(false);
+        }
+        if lhs_module == rhs_module {
+            return Ok(true);
+        }
+
+        let lhs = self.get_ty(lhs)?;
+        let rhs = self.get_ty(rhs)?;
+
+        let lhs = lhs.imported.unwrap_or(lhs_module);
+        let rhs = rhs.imported.unwrap_or(rhs_module);
+
+        Ok(lhs == rhs)
+    }
+
+    fn import_prelude(&mut self) -> CheckResult<ModuleData> {
         let prelude_name = Ident {
             ident: global::intern_symbol("prelude"),
             span:  Span::default(),
         };
         let prelude = self.get_module(prelude_name)?;
 
-        let mut to_import = Vec::new();
+        let mut imports = FxHashMap::default();
+        let classes = prelude
+            .classes
+            .iter()
+            .map(|(&id, _)| (id, ClassDataImport::Import(prelude_name)))
+            .collect();
+        let types = prelude
+            .types
+            .iter()
+            .map(|(&id, data)| (id, data.clone().as_import(prelude_name)))
+            .collect();
+        let vals = prelude.vals.clone();
 
-        to_import.extend(prelude.classes.keys());
-        to_import.extend(prelude.types.keys());
-        to_import.extend(prelude.vals.keys());
+        imports.extend(prelude.classes.keys().map(|&name| (name, prelude_name)));
+        imports.extend(prelude.types.keys().map(|&name| (name, prelude_name)));
+        imports.extend(prelude.vals.keys().map(|&name| (name, prelude_name)));
 
-        for import in to_import {
-            self.current_mut()?.insert_import(import, prelude_name);
-        }
-
-        Ok(())
-    }
-
-    fn import_single(&mut self, to: Ident, what: &Path) -> CheckResult<()> {
-        let &[module, id] = what.segments.as_slice() else {
-            return Err(CheckError::new(
-                CheckErrorKind::InvalidPath(what.clone()),
-                what.span(),
-            ));
+        let module = ModuleData {
+            classes,
+            types,
+            vals,
+            ..Default::default()
         };
 
-        if module == to {
-            return Ok(());
-        }
-
-        let module_data = self.get_module(module)?;
-
-        if !module_data.exportable(id) {
-            return Err(CheckError::new(
-                CheckErrorKind::InvalidImport(what.clone()),
-                what.span(),
-            ));
-        }
-
-        let to = self.get_module_mut(to)?;
-        to.insert_import(id, module);
-
-        Ok(())
+        Ok(module)
     }
 
     pub fn insert_instance_at_env(
@@ -894,7 +911,12 @@ impl Ctx {
         class: Ident,
         data: InstanceData,
     ) -> CheckResult<()> {
-        let class_data = self.current_mut()?.get_class_mut(class)?;
+        let Some(class_data) = self.current_mut()?.get_class_mut(class)?.as_class_mut() else {
+            return Err(CheckError::new(
+                CheckErrorKind::NotClass(class.ident),
+                class.span,
+            ));
+        };
 
         let span = data.span;
         match class_data.instances.insert(ty.clone(), data) {
@@ -922,7 +944,7 @@ impl Ctx {
     pub fn assume_constraints(&mut self, set: &ClassConstraintSet) {
         for c in set.iter() {
             let _ = self.insert_instance(
-                c.constrained().clone(),
+                c.ty().clone(),
                 c.class(),
                 InstanceData::new(ClassConstraintSet::new(), c.span()),
             );
@@ -990,12 +1012,46 @@ impl Ctx {
         write!(f, "{ctor}")
     }
 
+    pub fn equivalent(&self, lhs: &Ty, rhs: &Ty) -> bool {
+        match (lhs, rhs) {
+            (Ty::Named { name: n1, args: a1 }, Ty::Named { name: n2, args: a2 }) => {
+                self.same_type_name(n1, n2).unwrap()
+                    && a1.len() == a2.len()
+                    && a1
+                        .iter()
+                        .zip(a2.iter())
+                        .all(|(t1, t2)| self.equivalent(t1, t2))
+            }
+
+            (Ty::Generic { args: a1, .. }, Ty::Generic { args: a2, .. })
+            | (Ty::Tuple(a1), Ty::Tuple(a2)) => {
+                a1.len() == a2.len()
+                    && a1
+                        .iter()
+                        .zip(a2.iter())
+                        .all(|(t1, t2)| self.equivalent(t1, t2))
+            }
+
+            (Ty::Fn { param: p1, ret: r1 }, Ty::Fn { param: p2, ret: r2 }) => {
+                self.equivalent(p1, p2) && self.equivalent(r1, r2)
+            }
+
+            (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 }) => {
+                q1.len() == q2.len() && self.equivalent(t1, t2)
+            }
+
+            (Ty::Var(_), Ty::Var(_)) => true,
+
+            (lhs, rhs) => lhs == rhs,
+        }
+    }
+
     pub fn implementation(&self, ty: &Ty, class: &Path) -> CheckResult<&InstanceData> {
         let class_data = self.get_class(class)?;
 
         let instance = if ty.is_scheme() {
             class_data.instances.iter().find_map(|(instance, data)| {
-                if ty.equivalent(instance) {
+                if self.equivalent(ty, instance) {
                     Some(data)
                 } else {
                     None
@@ -1013,30 +1069,55 @@ impl Ctx {
         })
     }
 
-    fn implementation_mut(&mut self, ty: &Ty, class: &Path) -> CheckResult<&mut InstanceData> {
+    fn implementation_mut(&mut self, mut ty: Ty, class: &Path) -> CheckResult<&mut InstanceData> {
+        if ty.is_scheme() {
+            let class_data = self.get_class(class)?;
+            let instance = class_data
+                .instances
+                .keys()
+                .find(|instance| self.equivalent(&ty, instance));
+            if let Some(instance) = instance {
+                ty = instance.clone();
+            }
+        }
+
         let class_data = self.get_class_mut(class)?;
 
-        let instance = if ty.is_scheme() {
-            class_data
-                .instances
-                .iter_mut()
-                .find_map(|(instance, data)| {
-                    if ty.equivalent(instance) {
-                        Some(data)
-                    } else {
-                        None
-                    }
-                })
-        } else {
-            class_data.instances.get_mut(ty)
-        };
+        let instance = class_data.instances.get_mut(&ty);
 
         instance.ok_or_else(|| {
-            CheckError::new(
-                CheckErrorKind::NotInstance(ty.clone(), class.clone()),
-                class.span(),
-            )
+            CheckError::new(CheckErrorKind::NotInstance(ty, class.clone()), class.span())
         })
+    }
+
+    fn zip_args(&self, lhs: &Ty, rhs: &Ty) -> Option<Vec<(Ty, Ty)>> {
+        match (lhs, rhs) {
+            (Ty::Named { name: n1, args: a1 }, Ty::Named { name: n2, args: a2 })
+                if self.same_type_name(n1, n2).unwrap() && a1.len() == a2.len() =>
+            {
+                Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
+            }
+            (Ty::Generic { args: a1, .. }, Ty::Generic { args: a2, .. })
+            | (Ty::Tuple(a1), Ty::Tuple(a2))
+                if a1.len() == a2.len() =>
+            {
+                Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
+            }
+            (Ty::Fn { param: p1, ret: r1 }, Ty::Fn { param: p2, ret: r2 }) => {
+                Some(vec![(p1.into(), p2.into()), (r1.into(), r2.into())])
+            }
+            (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 })
+                if q1.len() == q2.len() =>
+            {
+                self.zip_args(t1, t2)
+            }
+
+            (Ty::Var(_), Ty::Var(_)) => Some(Vec::new()),
+
+            (lhs, rhs) if lhs == rhs => Some(Vec::new()),
+
+            _ => None,
+        }
     }
 
     pub fn instantiate_class(
@@ -1053,44 +1134,44 @@ impl Ctx {
             .get_class(class)
             .map_err(|_| vec![ClassConstraint::new(class.clone(), ty.clone(), span)])?;
 
-        for (instance, data) in &data.instances {
-            if let Ty::Scheme {
-                ty: instance_ty, ..
-            } = instance
-            {
-                let Some(args) = instance_ty.zip_args(ty) else {
-                    continue;
+        let (args, constraints) = data
+            .instances
+            .iter()
+            .find_map(|(instance, data)| {
+                let Ty::Scheme {
+                    ty: instance_ty, ..
+                } = instance
+                else {
+                    return None;
                 };
+                self.zip_args(instance_ty, ty)
+                    .map(|args| (args, data.constraints().iter()))
+            })
+            .ok_or_else(|| vec![ClassConstraint::new(class.clone(), ty.clone(), span)])?;
 
-                let mut constraints = Vec::new();
+        let new = constraints
+            .filter_map(|c| {
+                args.iter().find_map(|(a1, a2)| {
+                    if c.ty() == a1 {
+                        self.instantiate_class(c.class(), a2, span).err()
+                    } else {
+                        None
+                    }
+                })
+            })
+            .reduce(|mut new, mut constr| {
+                new.append(&mut constr);
+                new
+            });
 
-                data.constraints()
-                    .iter()
-                    .filter_map(|constr| {
-                        args.iter().find_map(|(a1, a2)| {
-                            if constr.constrained() == a1 {
-                                self.instantiate_class(constr.class(), a2, span).err()
-                            } else {
-                                None
-                            }
-                        })
-                    })
-                    .for_each(|mut constr| {
-                        constraints.append(&mut constr);
-                    });
-
-                return if constraints.is_empty() {
-                    Ok(())
-                } else {
-                    Err(constraints)
-                };
-            }
+        if let Some(new) = new {
+            Err(new)
+        } else {
+            Ok(())
         }
-
-        Err(vec![ClassConstraint::new(class.clone(), ty.clone(), span)])
     }
 
-    pub fn set_constraints(&mut self, class: &Path, ty: &Ty, constr: ClassConstraintSet) {
+    pub fn set_constraints(&mut self, class: &Path, ty: Ty, constr: ClassConstraintSet) {
         self.implementation_mut(ty, class).unwrap().constraints = constr;
     }
 
@@ -1115,22 +1196,25 @@ impl Display for Ctx {
 
 impl Display for ModuleData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (id, import) in &self.imports {
-            writeln!(f, "  import {id}::{import}")?;
-        }
-
         for (id, class) in &self.classes {
-            writeln!(
-                f,
-                "  class {}{id} '{} =",
-                class.constraints(),
-                class.instance_var()
-            )?;
-            for (id, sig) in class.signatures() {
-                writeln!(f, "    val {}{id}: {}", sig.set, sig.ty)?;
-            }
-            for (ty, data) in &class.instances {
-                writeln!(f, "    instance {}{ty}", data.constraints)?;
+            match class {
+                ClassDataImport::Import(import) => {
+                    writeln!(f, "  import {import}::{id}")?;
+                }
+                ClassDataImport::Class(class) => {
+                    writeln!(
+                        f,
+                        "  class {}{id} '{} =",
+                        class.constraints(),
+                        class.instance_var()
+                    )?;
+                    for (id, sig) in class.signatures() {
+                        writeln!(f, "    val {}{id}: {}", sig.set, sig.ty)?;
+                    }
+                    for (ty, data) in &class.instances {
+                        writeln!(f, "    instance {}{ty}", data.constraints)?;
+                    }
+                }
             }
         }
 

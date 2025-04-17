@@ -193,14 +193,14 @@ impl From<EqConstraint> for EqConstraintSet {
 
 #[derive(Debug, Clone, Eq)]
 pub struct ClassConstraint {
-    class:       Path,
-    constrained: Ty,
-    span:        Span,
+    class: Path,
+    ty:    Ty,
+    span:  Span,
 }
 
 impl PartialEq for ClassConstraint {
     fn eq(&self, other: &Self) -> bool {
-        self.class == other.class && self.constrained == other.constrained
+        self.class == other.class && self.ty == other.ty
     }
 }
 
@@ -208,7 +208,7 @@ impl ClassConstraint {
     pub const fn new(class: Path, constrained: Ty, span: Span) -> Self {
         Self {
             class,
-            constrained,
+            ty: constrained,
             span,
         }
     }
@@ -217,8 +217,8 @@ impl ClassConstraint {
         &self.class
     }
 
-    pub const fn constrained(&self) -> &Ty {
-        &self.constrained
+    pub const fn ty(&self) -> &Ty {
+        &self.ty
     }
 
     pub const fn span(&self) -> Span {
@@ -235,7 +235,7 @@ impl Substitute for ClassConstraint {
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
-        self.constrained.substitute(subs);
+        self.ty.substitute(subs);
     }
 }
 
@@ -314,7 +314,7 @@ fn unify_eq(
     c: EqConstraint,
     cset: &mut EqConstraintSet,
     subs: &mut Vec<Subs>,
-    module: Ident,
+    ctx: &Ctx,
 ) -> Result<(), Uninferable> {
     let span = c.span;
     match (&c.lhs, &c.rhs) {
@@ -394,7 +394,7 @@ fn unify_eq(
                 name: n2,
                 args: args2,
             },
-        ) if n1.eq_in_module(n2, module) && args1.len() == args2.len() => {
+        ) if ctx.same_type_name(n1, n2).unwrap() && args1.len() == args2.len() => {
             let args1 = args1.clone();
             let args2 = args2.clone();
             let parent = Rc::new(c);
@@ -449,13 +449,10 @@ fn unify_class(
     for constr in classes
         .constrs
         .into_iter()
-        .filter_map(|c| {
-            ctx.instantiate_class(c.class(), c.constrained(), c.span())
-                .err()
-        })
+        .filter_map(|c| ctx.instantiate_class(c.class(), c.ty(), c.span()).err())
         .flat_map(Vec::into_iter)
     {
-        if constr.constrained().is_var() {
+        if constr.ty().is_var() {
             constrs.push(constr);
         } else {
             return Err(constr);
@@ -479,7 +476,7 @@ where
     let mut subs = Vec::new();
 
     while let Some(c) = cset.constrs.pop_front() {
-        unify_eq(c, &mut cset, &mut subs, ctx.current_module())?;
+        unify_eq(c, &mut cset, &mut subs, ctx)?;
     }
 
     classes.substitute_many(&subs);
@@ -540,7 +537,7 @@ impl Display for EqConstraintSet {
 
 impl Display for ClassConstraint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.class, self.constrained)
+        write!(f, "{} {}", self.class, self.ty)
     }
 }
 

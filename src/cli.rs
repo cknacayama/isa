@@ -116,7 +116,7 @@ impl Config {
         println!("{}", checker.ctx());
         println!("where");
         for c in set.iter() {
-            println!("  {} {},", c.class(), c.constrained());
+            println!("  {} {},", c.class(), c.ty());
         }
 
         println!("ran in {duration:?}");

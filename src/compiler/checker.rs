@@ -342,11 +342,7 @@ impl Checker {
 
         if let Some(c) = set.iter().find(|c| !val_set.contains(c)) {
             let fst = DiagnosticLabel::new(
-                format!(
-                    "type `{}` is not instance of `{}`",
-                    c.constrained(),
-                    c.class()
-                ),
+                format!("type `{}` is not instance of `{}`", c.ty(), c.class()),
                 c.span(),
             );
             let snd = DiagnosticLabel::new("declared here", ty_span);
@@ -629,7 +625,7 @@ impl Checker {
         self.ctx
             .current_mut()
             .unwrap()
-            .get_class_mut(name)
+            .get_class_data_mut(name)
             .unwrap()
             .extend_signature(val_signatures);
     }
@@ -752,7 +748,7 @@ impl Checker {
         let instance_var = class_data.instance_var();
         let mut arity_error = false;
 
-        self.ctx.set_constraints(&class, &scheme, set.clone());
+        self.ctx.set_constraints(&class, scheme, set.clone());
         self.ctx.assume_constraints(&set);
 
         let (impls, set) = if let Ty::Named {
@@ -1022,19 +1018,12 @@ impl Checker {
                     segments: smallvec![first, id],
                 };
 
-                if let Ok(ty) = ctx.current().unwrap().get_type(first).and_then(|data| {
-                    data.constructors()
-                        .iter()
-                        .find_map(|c| if c.name == id { Some(&c.ty) } else { None })
-                        .ok_or_else(|| {
-                            CheckError::new(CheckErrorKind::NotConstructorName(id.ident), id.span)
-                        })
-                }) {
+                if let Ok(ty) = ctx.get_constructor(&path) {
                     let (ty, _) = ty.clone().instantiate(generator);
                     return Ok((path, ty, Set::new()));
                 }
 
-                if let Ok((ty, set)) = ctx.current().unwrap().get_class(first).and_then(|data| {
+                if let Ok((ty, set)) = ctx.get_class(&Path::from_ident(first)).and_then(|data| {
                     Self::check_class_member(Path::from_ident(first), data, id, generator, span)
                 }) {
                     return Ok((path, ty, set));
@@ -1193,7 +1182,7 @@ impl Checker {
         &mut self,
         module: &mut UntypedModule,
     ) -> IsaResult<Vec<(Ident, AliasData)>> {
-        self.ctx.create_module(module.name);
+        let _ = self.ctx.create_module(module.name);
         let module_name = module.name;
         let mut declared = FxHashMap::default();
         for expr in &mut module.exprs {
