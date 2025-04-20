@@ -37,7 +37,14 @@ pub enum TokenKind {
     Ge,
     Lt,
     Le,
-    Pipe,
+
+    Dollar,
+
+    /// compose action '>>'
+    GtGt,
+    /// bind operator '>>='
+    GtGtEq,
+    Dot,
 
     Underscore,
 
@@ -57,7 +64,6 @@ pub enum TokenKind {
     Semicolon,
     Colon,
     ColonColon,
-    Dot,
     DotDot,
     DotDotEq,
 
@@ -133,7 +139,9 @@ impl Display for TokenKind {
             Self::Ge => write!(f, ">="),
             Self::Lt => write!(f, "<"),
             Self::Le => write!(f, "<="),
-            Self::Pipe => write!(f, "|>"),
+            Self::GtGt => write!(f, ">>"),
+            Self::GtGtEq => write!(f, ">>="),
+            Self::Dollar => write!(f, "$"),
             Self::Underscore => write!(f, "_"),
             Self::LParen => write!(f, "("),
             Self::RParen => write!(f, ")"),

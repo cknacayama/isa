@@ -25,7 +25,7 @@ class Eq a =
     val eq: a -> a -> bool,
     val ne: a -> a -> bool,
 
-    let ne a b = ! Eq::eq a b,
+    let ne a = Not::not . Eq::eq a,
 ;
 
 class {Eq a} => Cmp a =

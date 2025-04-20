@@ -106,6 +106,7 @@ pub enum CheckErrorKind {
     Unbound(Symbol),
     NotModule(Symbol),
     SameNameConstructor(Symbol, Span),
+    SameNameType(Symbol, Span),
     NotConstructor(Ty),
     NotConstructorName(Symbol),
     NotVal(Symbol),
@@ -213,6 +214,12 @@ impl From<CheckError> for IsaError {
                 );
                 let snd = DiagnosticLabel::new("previously defined here", *span);
                 Self::new("constructor with same name", label, vec![snd])
+            }
+            CheckErrorKind::SameNameType(name, span) => {
+                let label =
+                    DiagnosticLabel::new(format!("type `{name}` already defined"), value.span());
+                let snd = DiagnosticLabel::new("previously defined here", *span);
+                Self::new("type with same name", label, vec![snd])
             }
             CheckErrorKind::NotConstructor(ty) => {
                 let message = format!("not a constructor: `{ty}`");

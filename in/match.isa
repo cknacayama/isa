@@ -4,11 +4,11 @@ module Option
 
 module Main
     
-    val foo: Option.Option () -> int;
+    val foo: Option::Option () -> int;
     let foo a =
         match a with
-            Option.Some () -> 10,
-            Option.None -> 10,
+            Option::Some () -> 10,
+            Option::None -> 10,
         ;
 
     val {a} => bar: Option.Option a -> Option.Option a -> bool;

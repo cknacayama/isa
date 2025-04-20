@@ -25,7 +25,7 @@ use super::infer::{
 };
 use super::token::Ident;
 use super::types::Ty;
-use crate::global::{self};
+use crate::global::{self, Symbol};
 use crate::span::Span;
 
 #[derive(Debug, Default)]
@@ -62,7 +62,7 @@ impl Checker {
 
     fn insert_val<ClassSet>(
         &mut self,
-        id: Ident,
+        id: Symbol,
         ty: Ty,
         set: ClassSet,
         span: Span,
@@ -76,18 +76,12 @@ impl Checker {
             .insert_val(id, VarData::new(ty, Set::from(set), span))
     }
 
-    fn insert_let<ClassSet>(
-        &mut self,
-        id: Ident,
-        ty: Ty,
-        set: ClassSet,
-        span: Span,
-    ) -> Option<VarData>
+    fn insert_let<ClassSet>(&mut self, id: Ident, ty: Ty, set: ClassSet) -> Option<VarData>
     where
         Set: From<ClassSet>,
     {
         self.ctx
-            .insert_var(id, VarData::new(ty, Set::from(set), span))
+            .insert_var(id.ident, VarData::new(ty, Set::from(set), id.span))
     }
 
     fn get_var_ty(&self, id: Ident) -> CheckResult<Ty> {
@@ -100,6 +94,25 @@ impl Checker {
 
     fn gen_type_var(&mut self) -> Ty {
         self.generator.gen_type_var()
+    }
+
+    fn check_valid_type(&self, ty: &Ty) -> IsaResult<()> {
+        match ty {
+            Ty::Generic { args, .. } | Ty::Tuple(args) => {
+                args.iter().map(|ty| self.check_valid_type(ty)).collect()
+            }
+            Ty::Fn { param, ret } => {
+                self.check_valid_type(param)?;
+                self.check_valid_type(ret)
+            }
+            Ty::Scheme { ty, .. } => self.check_valid_type(ty),
+            Ty::Named { name, args } => {
+                self.ctx.get_ty(name)?;
+                args.iter().map(|ty| self.check_valid_type(ty)).collect()
+            }
+
+            Ty::Unit | Ty::Int | Ty::Bool | Ty::Char | Ty::Var(_) => Ok(()),
+        }
     }
 
     fn check_if(
@@ -182,7 +195,7 @@ impl Checker {
         self.ctx.push_scope();
 
         let var = self.gen_type_var();
-        self.insert_let(param.name, var, [], param.name.span);
+        self.insert_let(param.name, var, []);
 
         let (expr, set) = self.check(expr)?;
         let var = self.get_var_ty(param.name).unwrap();
@@ -281,7 +294,7 @@ impl Checker {
                     IsaError::new("type mismatch", fst, vec![snd, trd])
                         .with_note("let bind should have same type as val declaration")
                 })?;
-                self.insert_let(p.name, decl.clone(), [], p.name.span);
+                self.insert_let(p.name, decl.clone(), []);
                 Ok(TypedParam::new(p.name, decl))
             })
             .collect::<IsaResult<Box<_>>>()?;
@@ -379,7 +392,7 @@ impl Checker {
             .into_iter()
             .map(|p| {
                 let var = self.gen_type_var();
-                self.insert_let(p.name, var.clone(), [], p.name.span);
+                self.insert_let(p.name, var.clone(), []);
                 TypedParam::new(p.name, var)
             })
             .collect::<Box<_>>();
@@ -389,7 +402,7 @@ impl Checker {
         } else {
             let var_id = self.gen_id();
             let var = Ty::Var(var_id);
-            self.insert_let(bind.name, var, [], bind.name.span);
+            self.insert_let(bind.name, var, []);
 
             let (mut expr, set) = self.check(*bind.expr)?;
 
@@ -419,13 +432,12 @@ impl Checker {
         span: Span,
     ) -> IsaResult<(TypedExpr, Set)> {
         let name = bind.name;
-        let name_span = bind.name.span;
 
         let (u1, expr, params, set) = self.check_let_bind(bind)?;
 
         let mut env1 = self.ctx.clone();
         std::mem::swap(&mut self.ctx, &mut env1);
-        self.insert_let(name, u1, set.clone(), name_span);
+        self.insert_let(name, u1, set.clone());
 
         let (body, ty, set) = match body {
             Some(body) => {
@@ -448,28 +460,30 @@ impl Checker {
     }
 
     fn check_constructor(
+        &self,
         constructor: UntypedConstructor,
         quant: Rc<[u64]>,
         mut ret: Ty,
-    ) -> TypedConstructor {
+    ) -> IsaResult<TypedConstructor> {
         for param in constructor.params.iter().rev() {
             ret = Ty::Fn {
                 param: Rc::new(param.clone()),
                 ret:   Rc::new(ret),
             };
         }
+        self.check_valid_type(&ret)?;
         if !quant.is_empty() {
             ret = Ty::Scheme {
                 quant,
                 ty: Rc::new(ret),
             };
         }
-        Constructor {
+        Ok(Constructor {
             name:   constructor.name,
             params: constructor.params,
             span:   constructor.span,
             ty:     ret,
-        }
+        })
     }
 
     fn check_type_definition(
@@ -495,8 +509,8 @@ impl Checker {
 
         let mut typed_constructors = Vec::new();
         for c in constructors {
-            let ctor = Self::check_constructor(c, quant.clone(), ty.clone());
-            self.ctx.insert_constructor_for_ty(name, &quant, &ctor)?;
+            let ctor = self.check_constructor(c, quant.clone(), ty.clone())?;
+            self.ctx.insert_constructor_for_ty(name, &ctor)?;
             typed_constructors.push(ctor);
         }
 
@@ -511,7 +525,7 @@ impl Checker {
         Ok(TypedExpr::new(kind, span, Ty::Unit))
     }
 
-    fn check_val(&mut self, val: &mut ValDeclaration) {
+    fn check_val(&mut self, val: &mut ValDeclaration) -> IsaResult<()> {
         let mut subs = Vec::new();
         let mut quant = Vec::new();
 
@@ -532,16 +546,18 @@ impl Checker {
                 ty:    Rc::new(val.ty.clone()),
             };
         }
+
+        self.check_valid_type(&val.ty)
     }
 
-    fn check_val_expr(&mut self, mut val: ValDeclaration, span: Span) -> TypedExpr {
-        self.check_val(&mut val);
+    fn check_val_expr(&mut self, mut val: ValDeclaration, span: Span) -> IsaResult<TypedExpr> {
+        self.check_val(&mut val)?;
 
-        self.insert_val(val.name, val.ty.clone(), val.set.clone(), val.span);
+        self.insert_val(val.name.ident, val.ty.clone(), val.set.clone(), val.span);
 
         let kind = TypedExprKind::Val(val);
 
-        TypedExpr::new(kind, span, Ty::Unit)
+        Ok(TypedExpr::new(kind, span, Ty::Unit))
     }
 
     fn check_constructor_pat(
@@ -554,7 +570,7 @@ impl Checker {
             (Ok(ctor), _) => ctor.clone(),
             (Err(_), [name]) if args.is_empty() => {
                 let var = self.gen_type_var();
-                self.insert_let(*name, var.clone(), [], span);
+                self.insert_let(*name, var.clone(), []);
                 return Ok(TypedPat::new(TypedPatKind::Ident(*name), span, var));
             }
             (Err(err), _) => {
@@ -605,9 +621,9 @@ impl Checker {
         name: Ident,
         signatures: &mut [ValDeclaration],
         defaults: &[UntypedLetBind],
-    ) {
+    ) -> IsaResult<()> {
         for val in signatures.iter_mut() {
-            self.check_val(val);
+            self.check_val(val)?;
         }
 
         let val_signatures = signatures.iter().map(|val| {
@@ -628,6 +644,8 @@ impl Checker {
             .get_class_data_mut(name)
             .unwrap()
             .extend_signature(val_signatures);
+
+        Ok(())
     }
 
     fn check_class(
@@ -1035,7 +1053,14 @@ impl Checker {
             }
 
             &[first, ref rest @ ..] => {
-                todo!()
+                let mut path = Path {
+                    segments: smallvec![first],
+                };
+                path.segments.extend_from_slice(rest);
+
+                let module = ctx.get_module(first)?;
+
+                Self::check_path_simple(first, module, rest, generator, span)
             }
         }
     }
@@ -1047,8 +1072,8 @@ impl Checker {
         rhs: UntypedExpr,
         span: Span,
     ) -> IsaResult<(TypedExpr, Set)> {
-        if op.is_pipe() {
-            return self.check_call(rhs, lhs, span);
+        if op.is_apply() {
+            return self.check_call(lhs, rhs, span);
         }
 
         let (mut lhs, lhs_set) = self.check(lhs)?;
@@ -1082,7 +1107,6 @@ impl Checker {
 
                 Ok((TypedExpr::new(kind, span, ty), set))
             }
-
             BinOp::Gt
             | BinOp::Ge
             | BinOp::Lt
@@ -1115,7 +1139,46 @@ impl Checker {
                 Ok((TypedExpr::new(kind, span, Ty::Bool), set))
             }
 
-            BinOp::Pipe => unreachable!(),
+            BinOp::Bind => todo!(),
+            BinOp::Action => todo!(),
+            BinOp::Compose => {
+                let id_a = self.gen_id();
+                let id_b = self.gen_id();
+                let id_c = self.gen_id();
+
+                let a = Rc::new(Ty::Var(id_a));
+                let b = Rc::new(Ty::Var(id_b));
+                let c = Rc::new(Ty::Var(id_c));
+
+                let first = Ty::Fn {
+                    param: b.clone(),
+                    ret:   c.clone(),
+                };
+                let second = Ty::Fn {
+                    param: a.clone(),
+                    ret:   b.clone(),
+                };
+                let mut ty = Ty::Fn {
+                    param: a.clone(),
+                    ret:   c.clone(),
+                };
+
+                let c1 = EqConstraint::new(first, lhs.ty.clone(), lhs.span);
+                let c2 = EqConstraint::new(second, rhs.ty.clone(), rhs.span);
+
+                let (subs, set) = self.unify([c1, c2], set)?;
+
+                ty.substitute_many(&subs);
+
+                let kind = TypedExprKind::Bin {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                };
+
+                Ok((TypedExpr::new(kind, span, ty), set))
+            }
+            BinOp::Apply => unreachable!(),
         }
     }
 
@@ -1205,11 +1268,11 @@ impl Checker {
             return Ok(Vec::new());
         }
 
-        Ok(module
+        module
             .exprs
             .iter()
-            .filter_map(Self::check_alias_declaration)
-            .collect())
+            .filter_map(|expr| self.check_alias_declaration(expr))
+            .collect()
     }
 
     fn check_type_declaration(
@@ -1225,6 +1288,7 @@ impl Checker {
                 constructors,
             } => {
                 let mut subs = Vec::new();
+                let mut params = Vec::new();
 
                 for param in parameters {
                     let id = self.gen_id();
@@ -1232,11 +1296,14 @@ impl Checker {
                     std::mem::swap(param, &mut new);
                     let old = new.get_ident().unwrap();
                     subs.push((old, id));
+                    params.push(id);
                 }
 
                 for ctor in constructors {
                     ctor.substitute_param(&subs);
                 }
+
+                self.ctx.insert_ty(*name, params.into())?;
 
                 (*name, expr.span)
             }
@@ -1247,6 +1314,7 @@ impl Checker {
                 ty,
             } => {
                 let mut subs = Vec::new();
+                let mut params = Vec::new();
 
                 for param in parameters {
                     let id = self.gen_id();
@@ -1254,9 +1322,12 @@ impl Checker {
                     std::mem::swap(param, &mut new);
                     let old = new.get_ident().unwrap();
                     subs.push((old, id));
+                    params.push(id);
                 }
 
                 ty.substitute_param(&subs);
+
+                self.ctx.insert_ty(*name, params.into())?;
 
                 (*name, expr.span)
             }
@@ -1288,7 +1359,7 @@ impl Checker {
                 }
 
                 let class = ClassData::new(set.clone(), var, expr.span);
-                let _ = self.ctx.insert_class(*name, class);
+                let _ = self.ctx.insert_class(name.ident, class);
                 let _ = self.ctx.insert_instance_at_env(
                     Ty::Var(var),
                     *name,
@@ -1333,9 +1404,9 @@ impl Checker {
         }
     }
 
-    fn check_alias_declaration(expr: &UntypedExpr) -> Option<(Ident, AliasData)> {
+    fn check_alias_declaration(&self, expr: &UntypedExpr) -> Option<IsaResult<(Ident, AliasData)>> {
         match &expr.kind {
-            UntypedExprKind::Semi(e) => Self::check_alias_declaration(e),
+            UntypedExprKind::Semi(e) => self.check_alias_declaration(e),
             UntypedExprKind::Alias {
                 name,
                 parameters,
@@ -1348,7 +1419,10 @@ impl Checker {
                     vars.push(id);
                 }
 
-                Some((*name, AliasData::new(vars.into(), ty.clone())))
+                Some(
+                    self.check_valid_type(ty)
+                        .map(|()| (*name, AliasData::new(vars.into(), ty.clone()))),
+                )
             }
 
             _ => None,
@@ -1408,10 +1482,7 @@ impl Checker {
                 signatures,
                 defaults,
                 ..
-            } => {
-                self.check_class_signatures(*name, signatures, defaults);
-                Ok(())
-            }
+            } => self.check_class_signatures(*name, signatures, defaults),
             UntypedExprKind::Instance {
                 set,
                 class,
@@ -1419,6 +1490,7 @@ impl Checker {
                 ..
             } => {
                 let data = InstanceData::new(set.clone(), expr.span);
+                self.check_valid_type(&instance)?;
                 let instance = self.ctx.generalize(instance.clone());
                 self.ctx.insert_instance(instance, class, data)?;
                 Ok(())
@@ -1596,7 +1668,10 @@ impl Checker {
                 Set::new(),
             )),
 
-            UntypedExprKind::Val(val) => Ok((self.check_val_expr(val, span), Set::new())),
+            UntypedExprKind::Val(val) => {
+                let val = self.check_val_expr(val, span)?;
+                Ok((val, Set::new()))
+            }
 
             UntypedExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
 

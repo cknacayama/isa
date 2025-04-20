@@ -446,18 +446,41 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> ParseResult<UntypedExpr> {
-        self.parse_pipe()
+        self.parse_apply()
     }
 
-    fn parse_pipe(&mut self) -> ParseResult<UntypedExpr> {
+    fn parse_apply(&mut self) -> ParseResult<UntypedExpr> {
+        let mut lhs = self.parse_monad()?;
+
+        while self.next_if_match(TokenKind::Dollar).is_some() {
+            let rhs = self.parse_monad()?;
+            let span = lhs.span.union(rhs.span);
+            lhs = UntypedExpr::untyped(
+                UntypedExprKind::Bin {
+                    op:  BinOp::Apply,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            );
+        }
+
+        Ok(lhs)
+    }
+
+    fn parse_monad(&mut self) -> ParseResult<UntypedExpr> {
         let mut lhs = self.parse_or()?;
 
-        while self.next_if_match(TokenKind::Pipe).is_some() {
+        while let Some(op) = self.next_if_map(|tk| match tk.data {
+            TokenKind::GtGt => Some(BinOp::Action),
+            TokenKind::GtGtEq => Some(BinOp::Bind),
+            _ => None,
+        }) {
             let rhs = self.parse_or()?;
             let span = lhs.span.union(rhs.span);
             lhs = UntypedExpr::untyped(
                 UntypedExprKind::Bin {
-                    op:  BinOp::Pipe,
+                    op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
                 },
@@ -594,7 +617,26 @@ impl<'a> Parser<'a> {
 
             Ok(UntypedExpr::untyped(kind, span))
         } else {
-            self.parse_call()
+            self.parse_compose()
+        }
+    }
+
+    fn parse_compose(&mut self) -> ParseResult<UntypedExpr> {
+        let expr = self.parse_call()?;
+
+        if self.next_if_match(TokenKind::Dot).is_some() {
+            let rhs = self.parse_compose()?;
+            let span = expr.span.union(rhs.span);
+
+            let kind = UntypedExprKind::Bin {
+                op:  BinOp::Compose,
+                lhs: Box::new(expr),
+                rhs: Box::new(rhs),
+            };
+
+            Ok(UntypedExpr::untyped(kind, span))
+        } else {
+            Ok(expr)
         }
     }
 

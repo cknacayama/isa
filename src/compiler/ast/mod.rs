@@ -67,15 +67,14 @@ pub enum BinOp {
     Le,
     And,
     Or,
-    Pipe,
+
+    Bind,
+    Action,
+    Compose,
+    Apply,
 }
 
 impl BinOp {
-    #[must_use]
-    pub const fn is_pipe(self) -> bool {
-        matches!(self, Self::Pipe)
-    }
-
     pub const fn class(self) -> &'static str {
         match self {
             Self::Add => "Add",
@@ -87,8 +86,16 @@ impl BinOp {
             Self::Gt | Self::Ge | Self::Lt | Self::Le => "Cmp",
             Self::And => "And",
             Self::Or => "Or",
-            Self::Pipe => "Pipe",
+
+            Self::Bind | Self::Action => "Monad",
+
+            _ => "",
         }
+    }
+
+    #[must_use]
+    pub const fn is_apply(&self) -> bool {
+        matches!(self, Self::Apply)
     }
 }
 
@@ -108,7 +115,10 @@ impl Display for BinOp {
             Self::Le => write!(f, "<="),
             Self::And => write!(f, "&&"),
             Self::Or => write!(f, "||"),
-            Self::Pipe => write!(f, "|>"),
+            Self::Bind => write!(f, ">>="),
+            Self::Action => write!(f, ">>"),
+            Self::Compose => write!(f, "."),
+            Self::Apply => write!(f, "$"),
         }
     }
 }

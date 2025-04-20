@@ -12,7 +12,7 @@ use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::token::Ident;
 use super::types::Ty;
 use crate::compiler::ast::Constructor;
-use crate::global::{self};
+use crate::global::{self, Symbol};
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
@@ -36,23 +36,23 @@ impl VarData {
 
 #[derive(Debug, Clone, Default)]
 pub struct ModuleData {
-    lets:         FxHashMap<Ident, VarData>,
-    vals:         FxHashMap<Ident, VarData>,
-    types:        FxHashMap<Ident, TyData>,
-    constructors: FxHashMap<Ident, VarData>,
-    classes:      FxHashMap<Ident, ClassDataImport>,
+    lets:         FxHashMap<Symbol, VarData>,
+    vals:         FxHashMap<Symbol, VarData>,
+    types:        FxHashMap<Symbol, TyData>,
+    constructors: FxHashMap<Symbol, VarData>,
+    classes:      FxHashMap<Symbol, ClassDataImport>,
 }
 
 impl ModuleData {
     pub fn get_type(&self, id: Ident) -> CheckResult<&TyData> {
         self.types
-            .get(&id)
+            .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_val(&self, id: Ident) -> CheckResult<&VarData> {
         self.vals
-            .get(&id)
+            .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
@@ -62,49 +62,49 @@ impl ModuleData {
 
     pub fn get_let(&self, id: Ident) -> CheckResult<&VarData> {
         self.lets
-            .get(&id)
+            .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_constructor(&self, id: Ident) -> CheckResult<&VarData> {
         self.constructors
-            .get(&id)
+            .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     fn get_class(&self, id: Ident) -> CheckResult<&ClassDataImport> {
         self.classes
-            .get(&id)
+            .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_type_mut(&mut self, id: Ident) -> CheckResult<&mut TyData> {
         self.types
-            .get_mut(&id)
+            .get_mut(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_val_mut(&mut self, id: Ident) -> CheckResult<&mut VarData> {
         self.vals
-            .get_mut(&id)
+            .get_mut(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_let_mut(&mut self, id: Ident) -> CheckResult<&mut VarData> {
         self.lets
-            .get_mut(&id)
+            .get_mut(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_constructor_mut(&mut self, id: Ident) -> CheckResult<&mut VarData> {
         self.constructors
-            .get_mut(&id)
+            .get_mut(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_class_data_mut(&mut self, id: Ident) -> CheckResult<&mut ClassData> {
         self.classes
-            .get_mut(&id)
+            .get_mut(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
             .and_then(|class| {
                 class
@@ -115,31 +115,31 @@ impl ModuleData {
 
     fn get_class_mut(&mut self, id: Ident) -> CheckResult<&mut ClassDataImport> {
         self.classes
-            .get_mut(&id)
+            .get_mut(&id.ident)
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
     }
 
-    pub fn insert_type(&mut self, id: Ident, data: TyData) -> Option<TyData> {
+    pub fn insert_type(&mut self, id: Symbol, data: TyData) -> Option<TyData> {
         self.types.insert(id, data)
     }
 
-    pub fn insert_val(&mut self, id: Ident, data: VarData) -> Option<VarData> {
+    pub fn insert_val(&mut self, id: Symbol, data: VarData) -> Option<VarData> {
         self.vals.insert(id, data)
     }
 
-    pub fn insert_let(&mut self, id: Ident, data: VarData) -> Option<VarData> {
+    pub fn insert_let(&mut self, id: Symbol, data: VarData) -> Option<VarData> {
         self.lets.insert(id, data)
     }
 
-    pub fn insert_class(&mut self, id: Ident, data: ClassData) -> Option<ClassDataImport> {
+    pub fn insert_class(&mut self, id: Symbol, data: ClassData) -> Option<ClassDataImport> {
         self.classes.insert(id, ClassDataImport::Class(data))
     }
 
-    pub fn insert_class_import(&mut self, id: Ident, data: Ident) -> Option<ClassDataImport> {
+    pub fn insert_class_import(&mut self, id: Symbol, data: Ident) -> Option<ClassDataImport> {
         self.classes.insert(id, ClassDataImport::Import(data))
     }
 
-    fn exportable(&self, id: Ident) -> bool {
+    fn exportable(&self, id: Symbol) -> bool {
         self.classes.get(&id).is_some_and(ClassDataImport::is_class)
             || self.types.contains_key(&id)
             || self.lets.contains_key(&id)
@@ -206,15 +206,17 @@ pub struct TyData {
     params:       Rc<[u64]>,
     constructors: Vec<TypedConstructor>,
     imported:     Option<Ident>,
+    span:         Span,
 }
 
 impl TyData {
     #[must_use]
-    const fn new(params: Rc<[u64]>, constructors: Vec<TypedConstructor>) -> Self {
+    const fn new(params: Rc<[u64]>, constructors: Vec<TypedConstructor>, span: Span) -> Self {
         Self {
             params,
             constructors,
             imported: None,
+            span,
         }
     }
 
@@ -352,7 +354,7 @@ impl ClassData {
 }
 
 #[derive(Debug, Clone)]
-enum ClassDataImport {
+pub enum ClassDataImport {
     Import(Ident),
     Class(ClassData),
 }
@@ -408,14 +410,14 @@ fn default_classes() -> ModuleData {
             data.extend_signature([
                 $($member),+
             ]);
-            $classes.insert(Ident { ident: intern(stringify!($name)), span }, ClassDataImport::Class(data));
+            $classes.insert(intern(stringify!($name)), ClassDataImport::Class(data));
         }};
         ($classes:ident, $instances:expr, $name:ident, $($member:expr;)+) => {{
             let mut data = ClassData::with_instances(ClassConstraintSet::new(), 0, $instances, span);
             data.extend_signature([
                 $($member),+
             ]);
-            $classes.insert(Ident { ident: intern(stringify!($name)), span }, ClassDataImport::Class(data));
+            $classes.insert(intern(stringify!($name)), ClassDataImport::Class(data));
         }};
     }
 
@@ -447,13 +449,11 @@ fn default_classes() -> ModuleData {
     macro_rules! type_decl {
         ($classes:ident, $name:ident = $($constructor:expr,)+) => {{
             $classes.insert(
-                Ident {
-                    ident: intern(stringify!($name)),
-                    span,
-                },
+                intern(stringify!($name)),
                 TyData::new(
                         Rc::from([]),
                         vec![$($constructor),+],
+                        span
                 ),
             );
         }};
@@ -466,6 +466,7 @@ fn default_classes() -> ModuleData {
                 TyData::new(
                         Rc::from([$($param),+]),
                         vec![$($constructor),+],
+                        span
                 ),
             );
         }};
@@ -574,7 +575,7 @@ fn default_classes() -> ModuleData {
 #[derive(Debug, Clone)]
 pub struct Ctx {
     modules:        FxHashMap<Ident, ModuleData>,
-    env:            Vec<FxHashMap<Ident, VarData>>,
+    env:            Vec<FxHashMap<Symbol, VarData>>,
     current_module: Ident,
 }
 
@@ -610,8 +611,8 @@ impl Ctx {
         self.env
             .iter()
             .rev()
-            .find_map(|e| e.get(&id))
-            .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
+            .find_map(|e| e.get(&id.ident))
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
     pub fn get_var(&self, id: Ident) -> CheckResult<&VarData> {
@@ -621,7 +622,7 @@ impl Ctx {
         })
     }
 
-    pub fn insert_var(&mut self, name: Ident, data: VarData) -> Option<VarData> {
+    pub fn insert_var(&mut self, name: Symbol, data: VarData) -> Option<VarData> {
         self.env.last_mut().unwrap().insert(name, data)
     }
 
@@ -660,7 +661,7 @@ impl Ctx {
         self.modules.insert(id, data);
     }
 
-    pub fn extend_module(&mut self, name: Ident, data: FxHashMap<Ident, VarData>) {
+    pub fn extend_module(&mut self, name: Ident, data: FxHashMap<Symbol, VarData>) {
         self.modules.entry(name).or_default().lets.extend(data);
     }
 
@@ -668,11 +669,11 @@ impl Ctx {
         self.env.push(FxHashMap::default());
     }
 
-    pub fn current_scope(&self) -> Option<&FxHashMap<Ident, VarData>> {
+    pub fn current_scope(&self) -> Option<&FxHashMap<Symbol, VarData>> {
         self.env.last()
     }
 
-    pub fn pop_scope(&mut self) -> Option<FxHashMap<Ident, VarData>> {
+    pub fn pop_scope(&mut self) -> Option<FxHashMap<Symbol, VarData>> {
         self.env.pop()
     }
 
@@ -717,18 +718,29 @@ impl Ctx {
         }
     }
 
+    pub fn insert_ty(&mut self, name: Ident, params: Rc<[u64]>) -> CheckResult<()> {
+        let module = self.current_mut()?;
+
+        if let Some(prev) =
+            module.insert_type(name.ident, TyData::new(params, Vec::new(), name.span))
+        {
+            Err(CheckError::new(
+                CheckErrorKind::SameNameType(name.ident, prev.span),
+                name.span,
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn insert_constructor_for_ty(
         &mut self,
         name: Ident,
-        params: &Rc<[u64]>,
         ctor: &TypedConstructor,
     ) -> CheckResult<()> {
         let module = self.current_mut()?;
 
-        let data = module
-            .types
-            .entry(name)
-            .or_insert_with(|| TyData::new(params.clone(), Vec::default()));
+        let data = module.get_type_mut(name)?;
 
         if let Some(prev) = data.constructors.iter().find(|c| c.name == ctor.name) {
             Err(CheckError::new(
@@ -827,7 +839,7 @@ impl Ctx {
         self.get_ty(name).map(|data| data.params.len())
     }
 
-    pub fn insert_class(&mut self, name: Ident, data: ClassData) -> CheckResult<()> {
+    pub fn insert_class(&mut self, name: Symbol, data: ClassData) -> CheckResult<()> {
         self.current_mut()?.insert_class(name, data);
         Ok(())
     }

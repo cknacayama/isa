@@ -184,17 +184,32 @@ impl<'a> Lexer<'a> {
             '/' => token!(Slash),
             '%' => token!(Percent),
             '+' => token!(Plus),
+            '$' => token!(Dollar),
             ':' => token!(Colon, ':' => ColonColon),
             '=' => token!(Eq, '>' => Rocket),
-            '|' => token!(Bar, '>' => Pipe, '|' => BarBar),
+            '|' => token!(Bar, '|' => BarBar),
             '&' => token!(Amp, '&' => AmpAmp),
             '-' => token!(Minus, '>' => Arrow),
             '!' => token!(Bang, '=' => BangEq),
             '<' => token!(Lt, '=' => Le),
-            '>' => token!(Gt, '=' => Ge),
             '0'..='9' => Some(Ok(self.number())),
             '\'' => Some(self.character()),
             '_' | 'a'..='z' | 'A'..='Z' => Some(Ok(self.identifier_or_keyword())),
+            '>' => match (self.peek(), self.peek_next()) {
+                (Some('>'), Some('=')) => {
+                    self.bump_twice();
+                    Some(Ok(self.make_token(TokenKind::GtGtEq)))
+                }
+                (Some('>'), _) => {
+                    self.bump();
+                    Some(Ok(self.make_token(TokenKind::GtGt)))
+                }
+                (Some('='), _) => {
+                    self.bump();
+                    Some(Ok(self.make_token(TokenKind::Ge)))
+                }
+                _ => Some(Ok(self.make_token(TokenKind::Gt))),
+            },
             '.' => match (self.peek(), self.peek_next()) {
                 (Some('.'), Some('=')) => {
                     self.bump_twice();
