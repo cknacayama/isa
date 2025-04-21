@@ -91,7 +91,7 @@ impl BinOp {
     }
 
     #[must_use]
-    pub const fn is_apply(&self) -> bool {
+    pub const fn is_apply(self) -> bool {
         matches!(self, Self::Apply)
     }
 }

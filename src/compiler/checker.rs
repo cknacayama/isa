@@ -96,7 +96,7 @@ impl Checker {
     fn check_valid_type(&self, ty: &Ty) -> IsaResult<()> {
         match ty {
             Ty::Generic { args, .. } | Ty::Tuple(args) => {
-                args.iter().map(|ty| self.check_valid_type(ty)).collect()
+                args.iter().try_for_each(|ty| self.check_valid_type(ty))
             }
             Ty::Fn { param, ret } => {
                 self.check_valid_type(param)?;
@@ -105,7 +105,7 @@ impl Checker {
             Ty::Scheme { ty, .. } => self.check_valid_type(ty),
             Ty::Named { name, args } => {
                 self.ctx.get_ty(name)?;
-                args.iter().map(|ty| self.check_valid_type(ty)).collect()
+                args.iter().try_for_each(|ty| self.check_valid_type(ty))
             }
 
             Ty::Unit | Ty::Int | Ty::Bool | Ty::Char | Ty::Var(_) => Ok(()),
@@ -523,24 +523,12 @@ impl Checker {
     }
 
     fn check_val(&mut self, val: &mut ValDeclaration) -> IsaResult<()> {
-        let mut subs = Vec::new();
-        let mut quant = Vec::new();
+        let quant: Rc<_> = val.params.iter().map(|p| p.as_var().unwrap()).collect();
 
-        for param in &mut val.params {
-            let id = self.gen_id();
-            let mut new = Ty::Var(id);
-            std::mem::swap(param, &mut new);
-            let old = new.get_ident().unwrap();
-            quant.push(id);
-            subs.push((old, id));
-        }
-
-        if !subs.is_empty() {
-            val.ty.substitute_param(&subs);
-            val.set.substitute_param(&subs);
+        if !quant.is_empty() {
             val.ty = Ty::Scheme {
-                quant: quant.into(),
-                ty:    Rc::new(val.ty.clone()),
+                quant,
+                ty: Rc::new(val.ty.clone()),
             };
         }
 
@@ -1153,12 +1141,9 @@ impl Checker {
                 };
                 let second = Ty::Fn {
                     param: a.clone(),
-                    ret:   b.clone(),
+                    ret:   b,
                 };
-                let mut ty = Ty::Fn {
-                    param: a.clone(),
-                    ret:   c.clone(),
-                };
+                let mut ty = Ty::Fn { param: a, ret: c };
 
                 let c1 = EqConstraint::new(first, lhs.ty.clone(), lhs.span);
                 let c2 = EqConstraint::new(second, rhs.ty.clone(), rhs.span);
@@ -1305,6 +1290,22 @@ impl Checker {
                 (*name, expr.span)
             }
 
+            UntypedExprKind::Val(val) => {
+                let mut subs = Vec::new();
+
+                for param in &mut val.params {
+                    let id = self.gen_id();
+                    let mut new = Ty::Var(id);
+                    std::mem::swap(param, &mut new);
+                    let old = new.get_ident().unwrap();
+                    subs.push((old, id));
+                }
+
+                val.ty.substitute_param(&subs);
+
+                return Ok(());
+            }
+
             UntypedExprKind::Alias {
                 name,
                 parameters,
@@ -1353,6 +1354,16 @@ impl Checker {
                 set.substitute(&mut subs);
                 for sig in signatures {
                     sig.substitute(&mut subs);
+
+                    let mut subs = Vec::new();
+                    for param in &mut sig.params {
+                        let id = self.gen_id();
+                        let mut new = Ty::Var(id);
+                        std::mem::swap(param, &mut new);
+                        let old = new.get_ident().unwrap();
+                        subs.push((old, id));
+                    }
+                    sig.substitute_param(&subs);
                 }
 
                 let class = ClassData::new(set.clone(), var, expr.span);
@@ -1392,13 +1403,11 @@ impl Checker {
             _ => return Ok(()),
         };
 
-        if let Some(previous) = declared.insert(name, span) {
+        declared.insert(name, span).map_or(Ok(()), |previous| {
             let fst = DiagnosticLabel::new(format!("multiple definitons of `{name}`"), span);
             let snd = DiagnosticLabel::new("previously defined here", previous);
             Err(IsaError::new("multiple definitons", fst, vec![snd]))
-        } else {
-            Ok(())
-        }
+        })
     }
 
     fn check_alias_declaration(&self, expr: &UntypedExpr) -> Option<IsaResult<(Ident, AliasData)>> {
@@ -1487,7 +1496,7 @@ impl Checker {
                 ..
             } => {
                 let data = InstanceData::new(set.clone(), expr.span);
-                self.check_valid_type(&instance)?;
+                self.check_valid_type(instance)?;
                 let instance = self.ctx.generalize(instance.clone());
                 self.ctx.insert_instance(instance, class, data)?;
                 Ok(())

@@ -219,7 +219,7 @@ impl TyData {
         }
     }
 
-    fn as_import(self, module: Ident) -> Self {
+    fn with_import(self, module: Ident) -> Self {
         Self {
             imported: Some(module),
             ..self
@@ -889,7 +889,7 @@ impl Ctx {
         let types = prelude
             .types
             .iter()
-            .map(|(&id, data)| (id, data.clone().as_import(prelude_name)))
+            .map(|(&id, data)| (id, data.clone().with_import(prelude_name)))
             .collect();
         let vals = prelude.vals.clone();
 

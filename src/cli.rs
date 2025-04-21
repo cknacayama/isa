@@ -98,6 +98,8 @@ impl Config {
             _ => return,
         };
 
+        let end_parse = Instant::now();
+
         let mut checker = Checker::new();
 
         let (modules, set) = match checker.check_many_modules(modules) {
@@ -105,13 +107,17 @@ impl Config {
             Err(err) => return self.report(&err, checker.ctx()),
         };
 
+        let end_check = Instant::now();
+
         for module in modules {
             if let Err(err) = check_matches(&module.exprs, checker.ctx()) {
                 return self.report(&err, checker.ctx());
             }
         }
 
-        let duration = start.elapsed();
+        let end_exhaust = Instant::now();
+
+        let duration = end_exhaust.duration_since(start);
 
         println!("{}", checker.ctx());
         println!("where");
@@ -120,5 +126,14 @@ impl Config {
         }
 
         println!("ran in {duration:?}");
+        println!("  parsing in {:?}", end_parse.duration_since(start));
+        println!(
+            "  type analysis in {:?}",
+            end_check.duration_since(end_parse)
+        );
+        println!(
+            "  exhaustivness check in {:?}",
+            end_exhaust.duration_since(end_check)
+        );
     }
 }

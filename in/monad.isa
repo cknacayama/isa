@@ -1,9 +1,15 @@
-module Monad
+module monad
 
 type Option a = None | Some a;
 
+val {a,b} => const: a -> b -> a;
+let const a b = a;
+
 class Functor f =
-    val {a,b} => fmap: (a -> b) -> f a -> f b
+    val {a,b} => fmap: (a -> b) -> f a -> f b,
+    val {a,b} => replace: a -> f b -> f a,
+
+    let replace = Functor::fmap . const,
 ;
 
 class {Functor f} => Applicative f =
@@ -20,19 +26,19 @@ class {Applicative f} => Monad f =
 
 instance Functor Option =
     let fmap f opt = match opt with
-        Some a -> Some (f a),
-        None -> None,
+        Option::Some a -> Option::Some (f a),
+        Option::None -> Option::None,
 ;
 
 instance Applicative Option =
-    let pure = Some,
+    let pure = Option::Some,
     let apply f x = match (f,x) with
-        (Some f, Some x) -> Some (f x),
-        _ -> None,
+        (Option::Some f, Option::Some x) -> Option::Some (f x),
+        _ -> Option::None,
 ;
 
 instance Monad Option =
     let bind opt f = match opt with
-        Some a -> f a,
-        None -> None,
+        Option::Some a -> f a,
+        Option::None -> Option::None,
 ;
