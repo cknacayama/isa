@@ -3,15 +3,12 @@ use std::rc::Rc;
 use rustc_hash::FxHashMap;
 use smallvec::smallvec;
 
-use super::ast::typed::{
-    TypedConstructor, TypedExpr, TypedExprKind, TypedLetBind, TypedMatchArm, TypedModule,
-    TypedParam, TypedPat, TypedPatKind,
+use super::ast::{
+    BinOp, Constructor, Path, TypedConstructor, TypedExpr, TypedExprKind, TypedLetBind,
+    TypedMatchArm, TypedModule, TypedParam, TypedPat, TypedPatKind, UnOp, UntypedConstructor,
+    UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
+    UntypedPat, UntypedPatKind, ValDeclaration,
 };
-use super::ast::untyped::{
-    UntypedConstructor, UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm,
-    UntypedModule, UntypedParam, UntypedPat, UntypedPatKind,
-};
-use super::ast::{BinOp, Constructor, Path, UnOp, ValDeclaration};
 use super::ctx::{
     AliasData, ClassData, Ctx, Generator, IdGenerator, InstanceData, MemberData, ModuleData,
     VarData,

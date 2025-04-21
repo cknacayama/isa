@@ -1,6 +1,3 @@
-pub mod typed;
-pub mod untyped;
-
 use std::fmt::{Debug, Display, Write};
 
 use smallvec::{SmallVec, smallvec};
@@ -992,5 +989,46 @@ impl<T: Display> Expr<T> {
             }
         }
         .and_then(|()| write!(f, ": {}", self.ty))
+    }
+}
+
+pub type TypedModule = Module<Ty>;
+pub type TypedExpr = Expr<Ty>;
+pub type TypedPatKind = PatKind<Ty>;
+pub type TypedLetBind = LetBind<Ty>;
+pub type TypedPat = Pat<Ty>;
+pub type TypedExprKind = ExprKind<Ty>;
+pub type TypedMatchArm = MatchArm<Ty>;
+pub type TypedParam = Param<Ty>;
+pub type TypedConstructor = Constructor<Ty>;
+
+pub type UntypedModule = Module<()>;
+pub type UntypedExpr = Expr<()>;
+pub type UntypedLetBind = LetBind<()>;
+pub type UntypedPatKind = PatKind<()>;
+pub type UntypedPat = Pat<()>;
+pub type UntypedExprKind = ExprKind<()>;
+pub type UntypedMatchArm = MatchArm<()>;
+pub type UntypedParam = Param<()>;
+pub type UntypedConstructor = Constructor<()>;
+
+impl UntypedExpr {
+    #[must_use]
+    pub const fn untyped(kind: UntypedExprKind, span: Span) -> Self {
+        Self::new(kind, span, ())
+    }
+}
+
+impl UntypedPat {
+    #[must_use]
+    pub const fn untyped(kind: UntypedPatKind, span: Span) -> Self {
+        Self::new(kind, span, ())
+    }
+}
+
+impl UntypedParam {
+    #[must_use]
+    pub const fn untyped(name: Ident) -> Self {
+        Self::new(name, ())
     }
 }

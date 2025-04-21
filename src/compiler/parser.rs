@@ -3,12 +3,10 @@ use std::rc::Rc;
 
 use smallvec::smallvec;
 
-use super::ast::untyped::{
-    UntypedConstructor, UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm,
-    UntypedModule, UntypedParam, UntypedPat, UntypedPatKind,
-};
 use super::ast::{
-    BinOp, Constructor, Import, ImportClause, ImportWildcard, Path, RangePat, UnOp, ValDeclaration,
+    BinOp, Constructor, Import, ImportClause, ImportWildcard, Path, RangePat, UnOp,
+    UntypedConstructor, UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm,
+    UntypedModule, UntypedParam, UntypedPat, UntypedPatKind, ValDeclaration,
 };
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};

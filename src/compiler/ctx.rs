@@ -5,8 +5,7 @@ use std::{fmt, vec};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::smallvec;
 
-use super::ast::Path;
-use super::ast::typed::TypedConstructor;
+use super::ast::{Path, TypedConstructor};
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::token::Ident;

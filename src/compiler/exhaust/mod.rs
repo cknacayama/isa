@@ -6,8 +6,7 @@ use std::num::NonZeroUsize;
 use ctor::{Ctor, CtorSet, IntRange, MaybeInfinite};
 use pat::{Pat, PatMatrix, PatMatrixRow, PatOrWild, PatVector, WitnessPat};
 
-use super::ast::typed::{TypedExpr, TypedPat, TypedPatKind};
-use super::ast::{ExprKind, LetBind, MatchArm, RangePat};
+use super::ast::{ExprKind, LetBind, MatchArm, RangePat, TypedExpr, TypedPat, TypedPatKind};
 use super::ctx::Ctx as TypeCtx;
 use super::error::MatchNonExhaustive;
 use super::types::Ty;
