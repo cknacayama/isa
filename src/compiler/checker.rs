@@ -1532,6 +1532,7 @@ impl Checker {
                 });
             }
             self.ctx.set_current_module(module.name);
+            let _ = self.ctx.import_clause(module.imports.clone());
 
             self.ctx.push_scope();
 
@@ -1580,7 +1581,7 @@ impl Checker {
         self.ctx.push_scope();
 
         self.ctx.set_current_module(module.name);
-        self.ctx.import_clause(&module.imports)?;
+        self.ctx.import_clause(module.imports.clone())?;
 
         let mut exprs = Vec::new();
         let mut set = Set::new();

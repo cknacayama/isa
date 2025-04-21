@@ -13,6 +13,10 @@ pub struct Path {
 }
 
 impl Path {
+    pub const fn new(segments: SmallVec<[Ident; 2]>) -> Self {
+        Self { segments }
+    }
+
     pub fn from_ident(ident: Ident) -> Self {
         Self {
             segments: smallvec![ident],
@@ -208,6 +212,21 @@ impl<T> Display for Constructor<T> {
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportClause(pub Box<[Import]>);
+
+impl ImportClause {
+    pub fn iter(&self) -> std::slice::Iter<'_, Import> {
+        self.0.iter()
+    }
+}
+
+impl IntoIterator for ImportClause {
+    type Item = Import;
+    type IntoIter = std::vec::IntoIter<Import>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum ImportWildcard {

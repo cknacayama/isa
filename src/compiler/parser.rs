@@ -156,6 +156,7 @@ impl<'a> Parser<'a> {
                             ident,
                             span: tk.span,
                         });
+                        self.next();
                     }
                     TokenKind::Star => {
                         self.next();

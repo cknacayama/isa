@@ -1,20 +1,20 @@
-module Option
+module option
 
-    type Option a = None | Some a;
+    type Opt a = None | Some a;
 
-module Main
+module main with {option::Opt};
     
-    val foo: Option::Option () -> int;
+    val foo: Opt () -> int;
     let foo a =
         match a with
-            Option::Some () -> 10,
-            Option::None -> 10,
+            Opt::Some () -> 10,
+            Opt::None -> 10,
         ;
 
-    val {a} => bar: Option.Option a -> Option.Option a -> bool;
+    val {a} => bar: Opt a -> Opt a -> bool;
     let bar = fn a -> fn b ->
         match (a,b) with
-            (Some 10, Some _) -> true,
-            (None, None) -> false,
+            (Opt::Some _, Opt::Some _) -> true,
+            (Opt::None, Opt::None) -> false,
             _ -> false,
         ;

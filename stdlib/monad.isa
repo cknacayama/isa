@@ -1,0 +1,24 @@
+module monad with {prelude::{id, const}}
+
+class Functor f =
+    val {a,b} => fmap: (a -> b) -> f a -> f b,
+    val {a,b} => replace: a -> f b -> f a,
+
+    let replace = Functor::fmap . const,
+;
+
+class {Functor f} => Applicative f =
+    val {a} => pure: a -> f a,
+    val {a,b} => apply: f (a -> b) -> f a -> f b,
+    val {a,b,c} => liftA2: (a -> b -> c) -> f a -> f b -> f c,
+
+    let liftA2 f x = Applicative::apply (Functor::fmap f x),
+;
+
+class {Applicative f} => Monad f =
+    val {a} => return: a -> f a,
+    val {a,b} => bind: f a -> (a -> f b) -> f b,
+
+    let return = Applicative::pure,
+;
+

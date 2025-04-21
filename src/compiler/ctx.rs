@@ -676,10 +676,6 @@ impl Ctx {
     fn import_from_module(&mut self, from: Ident, id: Ident) -> CheckResult<()> {
         let module_data = self.get_module(from)?;
 
-        if let Ok(data) = module_data.get_val(id).cloned() {
-            self.current_mut()?.insert_val(id.ident, data);
-            return Ok(());
-        }
         if let Ok(data) = module_data.get_type(id).cloned() {
             if data.imported.is_some() {
                 self.current_mut()?.insert_type(id.ident, data);
@@ -695,7 +691,10 @@ impl Ctx {
             } else {
                 self.current_mut()?.insert_class_import(id.ident, from);
             }
-
+            return Ok(());
+        }
+        if let Ok(data) = module_data.get_val(id).cloned() {
+            self.current_mut()?.insert_val(id.ident, data);
             return Ok(());
         }
 
@@ -707,19 +706,96 @@ impl Ctx {
         Err(CheckError::new(CheckErrorKind::InvalidImport(path), span))
     }
 
-    fn import(&mut self, import: &Import) -> CheckResult<()> {
-        match &import.wildcard {
+    fn import(&mut self, import: Import) -> CheckResult<()> {
+        match import.wildcard {
             ImportWildcard::Nil => self.import_single(&import.path),
-            ImportWildcard::Clause(_) => todo!(),
+            ImportWildcard::Clause(clause) => {
+                let [module] = *import.path.segments.as_slice() else {
+                    return Err(CheckError::new(
+                        CheckErrorKind::InvalidImport(import.path.clone()),
+                        import.path.span(),
+                    ));
+                };
+                let clause = clause
+                    .into_iter()
+                    .map(|mut import| {
+                        let mut path = Path::new(smallvec![module]);
+                        path.segments.append(&mut import.path.segments);
+                        import.path = path;
+                        import
+                    })
+                    .collect();
+                let clause = ImportClause(clause);
+                self.import_clause(clause)
+            }
             ImportWildcard::Wildcard => todo!(),
         }
     }
 
-    pub fn import_clause(&mut self, import_clause: &ImportClause) -> CheckResult<()> {
-        for import in &import_clause.0 {
-            self.import(import)?;
+    fn import_wildcard(&mut self, path: &Path) -> CheckResult<()> {
+        match *path.segments.as_slice() {
+            [module] => {
+                let module_data = self.get_module(module)?;
+
+                let classes = module_data
+                    .classes
+                    .iter()
+                    .map(|(&id, data)| match *data {
+                        ClassDataImport::Import(ident) => (id, ClassDataImport::Import(ident)),
+                        ClassDataImport::Class(_) => (id, ClassDataImport::Import(module)),
+                    })
+                    .collect::<Vec<_>>();
+                let types = module_data
+                    .types
+                    .iter()
+                    .map(|(&id, data)| {
+                        let data = TyData {
+                            imported: data.imported.or(Some(module)),
+                            ..data.clone()
+                        };
+                        (id, data)
+                    })
+                    .collect::<Vec<_>>();
+                let vals = module_data.vals.clone();
+
+                let module = self.current_mut()?;
+
+                module.vals.extend(vals);
+                module.types.extend(types);
+                module.classes.extend(classes);
+
+                Ok(())
+            }
+            [module, ty] => {
+                let module_data = self.get_module(module)?;
+                let ty_data = module_data.get_type(ty)?;
+                let constructors: Vec<_> = ty_data
+                    .constructors
+                    .iter()
+                    .map(|c| (c.name, c.ty.clone(), c.span))
+                    .collect();
+
+                let cur = self.current_mut()?;
+                for (ctor, ty, span) in constructors {
+                    cur.insert_constructor(
+                        ctor.ident,
+                        VarData::new(ty, ClassConstraintSet::new(), span),
+                    );
+                }
+
+                Ok(())
+            }
+            _ => Err(CheckError::new(
+                CheckErrorKind::InvalidImport(path.clone()),
+                path.span(),
+            )),
         }
-        Ok(())
+    }
+
+    pub fn import_clause(&mut self, import_clause: ImportClause) -> CheckResult<()> {
+        import_clause
+            .into_iter()
+            .fold(Ok(()), |res, import| self.import(import).and(res))
     }
 
     fn import_single(&mut self, path: &Path) -> CheckResult<()> {

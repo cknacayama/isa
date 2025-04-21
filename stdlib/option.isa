@@ -1,0 +1,22 @@
+module option with {monad::*}
+
+type Option a = None | Some a;
+
+instance Functor Option =
+    let fmap f opt = match opt with
+        Some a -> Some $ f a,
+        None -> None,
+;
+
+instance Applicative Option =
+    let pure = Some,
+    let apply f x = match (f,x) with
+        (Some f, Some x) -> Some $ f x,
+        _ -> None,
+;
+
+instance Monad Option =
+    let bind opt f = match opt with
+        Some a -> f a,
+        None -> None,
+;
