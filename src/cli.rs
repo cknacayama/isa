@@ -28,6 +28,7 @@ pub struct Config {
     bin_path:   PathBuf,
     files:      SimpleFiles<String, String>,
     file_id:    usize,
+    prelude_id: usize,
 }
 
 impl Config {
@@ -56,6 +57,7 @@ impl Config {
             .unwrap_or_default()
             .to_owned();
         let file_id = files.add(input_file_name, input);
+        let prelude_id = Self::add_prelude(&mut files);
 
         let opt = env
             .next()
@@ -71,47 +73,63 @@ impl Config {
             bin_path,
             files,
             file_id,
+            prelude_id,
         }
     }
 
-    fn report<E>(&self, err: &E, ctx: &Ctx)
+    fn add_prelude(files: &mut SimpleFiles<String, String>) -> usize {
+        let input_path = PathBuf::from("stdlib/prelude.isa");
+        let input = std::fs::read_to_string(&input_path).expect("Should have valid path as input");
+        let input_file_name = input_path
+            .file_name()
+            .and_then(OsStr::to_str)
+            .unwrap_or_default()
+            .to_owned();
+        files.add(input_file_name, input)
+    }
+
+    fn report<E>(&self, err: &E, ctx: &Ctx, id: usize)
     where
         E: Report,
     {
         let writer = StandardStream::stderr(ColorChoice::Auto);
         let config = term::Config::default();
-        let diagnostic = err.diagnostic(self.file_id, ctx);
+        let diagnostic = err.diagnostic(id, ctx);
 
         let _ = term::emit(&mut writer.lock(), &config, &self.files, &diagnostic);
     }
 
-    pub fn run(&self) {
-        let input = self.files.get(self.file_id).unwrap().source();
-
+    fn compile(&self, mut checker: Checker, id: usize) -> Checker {
+        let input = self.files.get(id).unwrap().source();
         let start = Instant::now();
 
         let mut parser = Parser::from_input(input);
 
         let modules = match parser.parse_all() {
             Ok(expr) if !expr.is_empty() => expr,
-            Err(err) => return self.report(&err, &Ctx::default()),
-            _ => return,
+            Err(err) => {
+                self.report(&err, &Ctx::default(), id);
+                return checker;
+            }
+            _ => return checker,
         };
 
         let end_parse = Instant::now();
 
-        let mut checker = Checker::new();
-
         let (modules, set) = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
-            Err(err) => return self.report(&err, checker.ctx()),
+            Err(err) => {
+                self.report(&err, &Ctx::default(), id);
+                return checker;
+            }
         };
 
         let end_check = Instant::now();
 
         for module in modules {
             if let Err(err) = check_matches(&module.exprs, checker.ctx()) {
-                return self.report(&err, checker.ctx());
+                self.report(&err, &Ctx::default(), id);
+                return checker;
             }
         }
 
@@ -135,5 +153,12 @@ impl Config {
             "  exhaustivness check in {:?}",
             end_exhaust.duration_since(end_check)
         );
+
+        checker
+    }
+
+    pub fn run(&self) {
+        let prelude = self.compile(Checker::default(), self.prelude_id);
+        self.compile(prelude, self.file_id);
     }
 }

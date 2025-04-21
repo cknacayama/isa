@@ -34,11 +34,6 @@ pub struct Checker {
 pub type IsaResult<T> = Result<T, IsaError>;
 
 impl Checker {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     fn unify<EqSet, ClassSet>(
         &mut self,
         constr: EqSet,
@@ -522,7 +517,7 @@ impl Checker {
         Ok(TypedExpr::new(kind, span, Ty::Unit))
     }
 
-    fn check_val(&mut self, val: &mut ValDeclaration) -> IsaResult<()> {
+    fn check_val(&self, val: &mut ValDeclaration) -> IsaResult<()> {
         let quant: Rc<_> = val.params.iter().map(|p| p.as_var().unwrap()).collect();
 
         if !quant.is_empty() {
@@ -988,12 +983,15 @@ impl Checker {
             &[first, id] => {
                 todo!()
             }
-            _ => Err(IsaError::from(CheckError::new(
-                CheckErrorKind::InvalidPath(Path {
-                    segments: path.into(),
-                }),
-                span,
-            ))),
+            _ => {
+                let mut invalid = Path::from_ident(module_name);
+                invalid.segments.extend_from_slice(path);
+
+                Err(IsaError::from(CheckError::new(
+                    CheckErrorKind::InvalidPath(invalid),
+                    span,
+                )))
+            }
         }
     }
 
@@ -1582,6 +1580,7 @@ impl Checker {
         self.ctx.push_scope();
 
         self.ctx.set_current_module(module.name);
+        self.ctx.import_clause(&module.imports)?;
 
         let mut exprs = Vec::new();
         let mut set = Set::new();

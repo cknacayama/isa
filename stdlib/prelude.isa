@@ -1,0 +1,105 @@
+module prelude
+
+class Add a = val add: a -> a -> a;
+class Sub a = val sub: a -> a -> a;
+class Mul a = val mul: a -> a -> a;
+class Div a =
+    val div: a -> a -> a,
+    val rem: a -> a -> a,
+;
+class Neg a = val neg: a -> a;
+class Not a = val not: a -> a;
+class And a = val and: a -> a -> bool;
+class Or a = val or: a -> a -> bool;
+class Eq a =
+    val eq: a -> a -> bool,
+    val ne: a -> a -> bool,
+
+    let ne a = Not::not . Eq::eq a,
+;
+class {Eq a} => Cmp a =
+    val cmp: a -> a -> Ordering,
+    val gt:  a -> a -> bool,
+    val lt:  a -> a -> bool,
+    val ge:  a -> a -> bool,
+    val le:  a -> a -> bool,
+
+    let gt a b = match Cmp::cmp a b with
+        Ordering::Greater -> true,
+        _ -> false,
+    ,
+
+    let lt a b = match Cmp::cmp a b with
+        Ordering::Less -> true,
+        _ -> false,
+    ,
+
+    let le a b = match Cmp::cmp a b with
+        Ordering::Less | Ordering::Equal -> true,
+        _ -> false,
+    ,
+
+    let ge a b = match Cmp::cmp a b with
+        Ordering::Greater | Ordering::Equal -> true,
+        _ -> false,
+    ,
+;
+class {Cmp a, Add a, Sub a, Mul a, Div a, Neg a} => 
+    Number a = val from_int: int -> a;
+
+instance Add int = let add a b = a + b;
+instance Sub int = let sub a b = a - b;
+instance Mul int = let mul a b = a * b;
+instance Div int = 
+    let div a b = a / b,
+    let rem a b = a % b,
+;
+instance Neg int = let neg a = -a;
+instance Eq int = let eq a b = a = b;
+instance Cmp int = 
+    let cmp a b = 
+        if a = b then 
+            Ordering::Equal
+        else if a > b then
+            Ordering::Greater 
+        else
+            Ordering::Less
+;
+instance Number int = let from_int a = a;
+
+instance And bool = let and a b = a && b;
+instance Or bool = let or a b = a || b;
+instance Not bool = let not a = !a;
+
+
+type Ordering = Less | Equal | Greater;
+type Option a = None | Some a;
+type Result a e = Err e | Ok a;
+
+val {a,b} => const: a -> b -> a;
+let const a b = a;
+
+val {a} => id: a -> a;
+let id a = a;
+
+class Functor f =
+    val {a,b} => fmap: (a -> b) -> f a -> f b,
+    val {a,b} => replace: a -> f b -> f a,
+
+    let replace = Functor::fmap . const,
+;
+
+class {Functor f} => Applicative f =
+    val {a} => pure: a -> f a,
+    val {a,b} => apply: f (a -> b) -> f a -> f b,
+    val {a,b,c} => liftA2: (a -> b -> c) -> f a -> f b -> f c,
+
+    let liftA2 f x = Applicative::apply (Functor::fmap f x),
+;
+
+class {Applicative f} => Monad f =
+    val {a} => return: a -> f a,
+    val {a,b} => bind: f a -> (a -> f b) -> f b,
+
+    let return = Applicative::pure,
+;

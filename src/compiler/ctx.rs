@@ -5,12 +5,11 @@ use std::{fmt, vec};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::smallvec;
 
-use super::ast::{Path, TypedConstructor};
+use super::ast::{Import, ImportClause, ImportWildcard, Path, TypedConstructor};
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::token::Ident;
 use super::types::Ty;
-use crate::compiler::ast::Constructor;
 use crate::global::{self, Symbol};
 use crate::span::Span;
 
@@ -56,7 +55,9 @@ impl ModuleData {
     }
 
     pub fn get_var(&self, id: Ident) -> CheckResult<&VarData> {
-        self.get_let(id).or_else(|_| self.get_val(id))
+        self.get_let(id)
+            .or_else(|_| self.get_val(id))
+            .or_else(|_| self.get_constructor(id))
     }
 
     pub fn get_let(&self, id: Ident) -> CheckResult<&VarData> {
@@ -128,6 +129,10 @@ impl ModuleData {
 
     pub fn insert_let(&mut self, id: Symbol, data: VarData) -> Option<VarData> {
         self.lets.insert(id, data)
+    }
+
+    pub fn insert_constructor(&mut self, id: Symbol, data: VarData) -> Option<VarData> {
+        self.constructors.insert(id, data)
     }
 
     pub fn insert_class(&mut self, id: Symbol, data: ClassData) -> Option<ClassDataImport> {
@@ -226,11 +231,18 @@ impl TyData {
         }
     }
 
-    pub fn constructors(&self) -> &[TypedConstructor] {
+    fn constructors(&self) -> &[TypedConstructor] {
         &self.constructors
     }
 
-    pub fn params(&self) -> &[u64] {
+    fn find_constructor(&self, ctor: Ident) -> CheckResult<&TypedConstructor> {
+        self.constructors
+            .iter()
+            .find(|c| c.name == ctor)
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotConstructorName, ctor))
+    }
+
+    fn params(&self) -> &[u64] {
         &self.params
     }
 }
@@ -306,21 +318,6 @@ pub struct ClassData {
 }
 
 impl ClassData {
-    pub fn with_instances(
-        constraints: ClassConstraintSet,
-        instance_var: u64,
-        instances: FxHashMap<Ty, InstanceData>,
-        span: Span,
-    ) -> Self {
-        Self {
-            constraints,
-            instance_var,
-            signatures: FxHashMap::default(),
-            instances,
-            span,
-        }
-    }
-
     pub fn new(constraints: ClassConstraintSet, instance_var: u64, span: Span) -> Self {
         Self {
             constraints,
@@ -384,217 +381,16 @@ impl ClassDataImport {
     }
 
     #[must_use]
-    const fn is_import(&self) -> bool {
-        matches!(self, Self::Import(..))
-    }
-
-    #[must_use]
     const fn is_class(&self) -> bool {
         matches!(self, Self::Class(..))
     }
 }
 
-fn default_classes() -> ModuleData {
-    use global::intern_symbol as intern;
-
-    let instance_ty = Ty::Var(0);
-    let span = Span::default();
-
-    macro_rules! class {
-        ($classes:ident, $instances:expr, {$($constr:ident)+} => $name:ident, $($member:expr;)+) => {{
-            let set = ClassConstraintSet::from([
-                $(ClassConstraint::new(Path::from_ident(Ident { ident: intern(stringify!($constr)), span }), instance_ty.clone(), span),)+
-            ]);
-            let mut data = ClassData::with_instances(set, 0, $instances, span);
-            data.extend_signature([
-                $($member),+
-            ]);
-            $classes.insert(intern(stringify!($name)), ClassDataImport::Class(data));
-        }};
-        ($classes:ident, $instances:expr, $name:ident, $($member:expr;)+) => {{
-            let mut data = ClassData::with_instances(ClassConstraintSet::new(), 0, $instances, span);
-            data.extend_signature([
-                $($member),+
-            ]);
-            $classes.insert(intern(stringify!($name)), ClassDataImport::Class(data));
-        }};
-    }
-
-    macro_rules! signature {
-        ($name:ident: ($($t:expr,)+) -> $ret:expr) => {
-            (
-                Ident { ident: intern(stringify!($name)), span: Span::default() },
-                MemberData {
-                    has_default: false,
-                    ty: Ty::function_type([$($t),+], $ret),
-                    set: ClassConstraintSet::new(),
-                    span: Span::default(),
-                }
-            )
-        };
-        (default $name:ident: ($($t:expr,)+) -> $ret:expr) => {
-            (
-                Ident { ident: intern(stringify!($name)), span: Span::default() },
-                MemberData {
-                    has_default: true,
-                    ty: Ty::function_type([$($t),+], $ret),
-                    set: ClassConstraintSet::new(),
-                    span: Span::default(),
-                }
-            )
-        };
-    }
-
-    macro_rules! type_decl {
-        ($classes:ident, $name:ident = $($constructor:expr,)+) => {{
-            $classes.insert(
-                intern(stringify!($name)),
-                TyData::new(
-                        Rc::from([]),
-                        vec![$($constructor),+],
-                        span
-                ),
-            );
-        }};
-        ($classes:ident, $name:ident $($param:literal)+ = $($constructor:expr,)+) => {{
-            $classes.insert(
-                Ident {
-                    ident: intern(stringify!($name)),
-                    span,
-                },
-                TyData::new(
-                        Rc::from([$($param),+]),
-                        vec![$($constructor),+],
-                        span
-                ),
-            );
-        }};
-    }
-
-    macro_rules! constructor {
-        ($name:ident $($param:literal )* -> $ret:expr) => {{
-            Constructor {
-                name: Ident { ident: intern(stringify!($name)), span },
-                params: Box::from([$(Ty::Var($param)),*]),
-                span,
-                ty: Ty::function_type([$(Ty::Var($param)),*], $ret),
-            }
-        }};
-    }
-
-    macro_rules! instances {
-        ($($instance:expr,)+) => {{
-            [
-                $(
-                    (
-                        $instance,
-                        InstanceData { constraints: ClassConstraintSet::new(), span },
-                    )
-                ,)+
-            ].into_iter().collect::<FxHashMap<Ty, InstanceData>>()
-        }};
-    }
-
-    let mut classes = FxHashMap::default();
-    let mut types = FxHashMap::default();
-
-    let ordering_type = Ty::Named {
-        name: Path::from_ident(Ident {
-            ident: global::intern_symbol("Ordering"),
-            span,
-        }),
-        args: Rc::from([]),
-    };
-
-    let eq_instances = instances!(Ty::Unit, Ty::Int, Ty::Bool, Ty::Char,);
-    let num_instances = instances!(Ty::Int,);
-    let bool_instances = instances!(Ty::Bool,);
-
-    class!(classes, eq_instances, Eq,
-        signature!(eq: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
-        signature!(default ne: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
-    );
-    class!(classes, num_instances.clone(), Add,
-        signature!(add: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone());
-    );
-    class!(classes, num_instances.clone(),Sub,
-        signature!(sub: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone());
-    );
-    class!(classes, num_instances.clone(),Mul,
-        signature!(mul: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone());
-    );
-    class!(classes,num_instances.clone(), Div,
-        signature!(div: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone());
-        signature!(rem: (instance_ty.clone(), instance_ty.clone(),) -> instance_ty.clone());
-    );
-    class!(classes, num_instances.clone(),Neg,
-        signature!(neg: (instance_ty.clone(),) -> instance_ty.clone());
-        signature!(abs: (instance_ty.clone(),) -> instance_ty.clone());
-    );
-    class!(classes,bool_instances.clone(), Not,
-        signature!(not: (instance_ty.clone(),) -> instance_ty.clone());
-    );
-    class!(classes,bool_instances.clone(), And,
-        signature!(and: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
-    );
-    class!(classes,bool_instances, Or,
-        signature!(or: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
-    );
-    class!(classes, num_instances.clone(), {Eq} => Cmp,
-        signature!(cmp: (instance_ty.clone(), instance_ty.clone(),) -> ordering_type.clone());
-        signature!(default lt: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
-        signature!(default gt: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
-        signature!(default ge: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
-        signature!(default le: (instance_ty.clone(), instance_ty.clone(),) -> Ty::Bool);
-    );
-    class!(classes, num_instances, {Add Sub Mul Div Neg Cmp} => Number,
-        signature!(from_int: (Ty::Int,) -> instance_ty);
-    );
-
-    type_decl!(
-        types,
-        Ordering = constructor!(Less -> ordering_type.clone()),
-        constructor!(Equal -> ordering_type.clone()),
-        constructor!(Greater -> ordering_type),
-    );
-
-    // type_decl!(
-    //     classes,
-    //     Option 1 = constructor!(None -> option_type.clone()),
-    //     constructor!(Some 1 -> option_type.clone()),
-    // );
-
-    ModuleData {
-        types,
-        classes,
-        ..Default::default()
-    }
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Ctx {
     modules:        FxHashMap<Ident, ModuleData>,
     env:            Vec<FxHashMap<Symbol, VarData>>,
     current_module: Ident,
-}
-
-impl Default for Ctx {
-    fn default() -> Self {
-        let env = default_classes();
-        let mut ctx = Self {
-            env:            vec![FxHashMap::default()],
-            modules:        FxHashMap::default(),
-            current_module: Ident::default(),
-        };
-        ctx.insert_module(
-            Ident {
-                ident: global::intern_symbol("prelude"),
-                span:  Span::default(),
-            },
-            env,
-        );
-        ctx
-    }
 }
 
 impl Ctx {
@@ -650,9 +446,13 @@ impl Ctx {
     }
 
     pub fn create_module(&mut self, id: Ident) -> CheckResult<()> {
-        let prelude = self.import_prelude()?;
-        self.modules.insert(id, prelude);
+        let data = if id.ident == global::intern_symbol("prelude") {
+            ModuleData::default()
+        } else {
+            self.import_prelude()?
+        };
         self.current_module = id;
+        self.insert_module(id, data);
         Ok(())
     }
 
@@ -741,7 +541,7 @@ impl Ctx {
 
         let data = module.get_type_mut(name)?;
 
-        if let Some(prev) = data.constructors.iter().find(|c| c.name == ctor.name) {
+        if let Ok(prev) = data.find_constructor(ctor.name) {
             Err(CheckError::new(
                 CheckErrorKind::SameNameConstructor(ctor.name.ident, prev.span),
                 ctor.span,
@@ -763,12 +563,11 @@ impl Ctx {
                 let current = self.current()?;
                 let data = current.get_type(ty)?;
 
-                data.constructors
-                    .iter()
-                    .find_map(|c| if c.name == id { Some(&c.ty) } else { None })
-                    .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotConstructorName, id))
+                data.find_constructor(id).map(|c| &c.ty)
             }
+
             [_, _, _] => todo!(),
+
             _ => Err(CheckError::new(
                 CheckErrorKind::InvalidPath(id.clone()),
                 id.span(),
@@ -874,6 +673,81 @@ impl Ctx {
         Ok(lhs == rhs)
     }
 
+    fn import_from_module(&mut self, from: Ident, id: Ident) -> CheckResult<()> {
+        let module_data = self.get_module(from)?;
+
+        if let Ok(data) = module_data.get_val(id).cloned() {
+            self.current_mut()?.insert_val(id.ident, data);
+            return Ok(());
+        }
+        if let Ok(data) = module_data.get_type(id).cloned() {
+            if data.imported.is_some() {
+                self.current_mut()?.insert_type(id.ident, data);
+            } else {
+                self.current_mut()?
+                    .insert_type(id.ident, data.with_import(from));
+            }
+            return Ok(());
+        }
+        if let Ok(data) = module_data.get_class(id).cloned() {
+            if let ClassDataImport::Import(data) = data {
+                self.current_mut()?.insert_class_import(id.ident, data);
+            } else {
+                self.current_mut()?.insert_class_import(id.ident, from);
+            }
+
+            return Ok(());
+        }
+
+        let path = Path {
+            segments: smallvec![from, id],
+        };
+        let span = from.span.union(id.span);
+
+        Err(CheckError::new(CheckErrorKind::InvalidImport(path), span))
+    }
+
+    fn import(&mut self, import: &Import) -> CheckResult<()> {
+        match &import.wildcard {
+            ImportWildcard::Nil => self.import_single(&import.path),
+            ImportWildcard::Clause(_) => todo!(),
+            ImportWildcard::Wildcard => todo!(),
+        }
+    }
+
+    pub fn import_clause(&mut self, import_clause: &ImportClause) -> CheckResult<()> {
+        for import in &import_clause.0 {
+            self.import(import)?;
+        }
+        Ok(())
+    }
+
+    fn import_single(&mut self, path: &Path) -> CheckResult<()> {
+        match *path.segments.as_slice() {
+            [module, id] => self.import_from_module(module, id),
+
+            [module, ty, ctor] => {
+                let module_data = self.get_module(module)?;
+                let data = module_data.get_type(ty).and_then(|ty| match ty.imported {
+                    Some(_) => Err(CheckError::new(
+                        CheckErrorKind::InvalidImport(path.clone()),
+                        path.span(),
+                    )),
+                    None => Ok(ty),
+                })?;
+                let data = data.find_constructor(ctor)?;
+                let data = VarData::new(data.ty.clone(), ClassConstraintSet::new(), path.span());
+                self.current_mut()?.insert_constructor(ctor.ident, data);
+                Ok(())
+            }
+
+            _ => Err(CheckError::new(
+                CheckErrorKind::InvalidImport(path.clone()),
+                path.span(),
+            )),
+        }
+    }
+
     fn import_prelude(&self) -> CheckResult<ModuleData> {
         let prelude_name = Ident {
             ident: global::intern_symbol("prelude"),
@@ -892,10 +766,12 @@ impl Ctx {
             .map(|(&id, data)| (id, data.clone().with_import(prelude_name)))
             .collect();
         let vals = prelude.vals.clone();
+        let constructors = prelude.constructors.clone();
 
         let module = ModuleData {
             vals,
             types,
+            constructors,
             classes,
             ..Default::default()
         };
