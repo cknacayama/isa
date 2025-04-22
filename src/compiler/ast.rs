@@ -243,16 +243,24 @@ pub struct Import {
 
 #[derive(Clone)]
 pub struct Module<T> {
-    pub name:    Ident,
-    pub imports: ImportClause,
-    pub exprs:   Vec<Expr<T>>,
-    pub span:    Span,
+    pub no_prelude: bool,
+    pub name:       Ident,
+    pub imports:    ImportClause,
+    pub exprs:      Vec<Expr<T>>,
+    pub span:       Span,
 }
 
 impl<T> Module<T> {
     #[must_use]
-    pub const fn new(name: Ident, imports: ImportClause, exprs: Vec<Expr<T>>, span: Span) -> Self {
+    pub const fn new(
+        no_prelude: bool,
+        name: Ident,
+        imports: ImportClause,
+        exprs: Vec<Expr<T>>,
+        span: Span,
+    ) -> Self {
         Self {
+            no_prelude,
             name,
             imports,
             exprs,

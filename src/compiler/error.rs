@@ -164,12 +164,12 @@ impl DiagnosticLabel {
         }
     }
 
-    pub fn as_primary<FileId>(&self, file_id: FileId) -> Label<FileId> {
-        Label::primary(file_id, self.span()).with_message(self.message())
+    pub fn as_primary(&self) -> Label<usize> {
+        Label::primary(self.span().file_id(), self.span()).with_message(self.message())
     }
 
-    pub fn as_secondary<FileId>(&self, file_id: FileId) -> Label<FileId> {
-        Label::secondary(file_id, self.span()).with_message(self.message())
+    pub fn as_secondary(&self) -> Label<usize> {
+        Label::secondary(self.span().file_id(), self.span()).with_message(self.message())
     }
 
     pub fn message(&self) -> &str {

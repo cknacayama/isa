@@ -25,8 +25,8 @@ pub struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     #[must_use]
-    pub fn from_input(input: &'a str) -> Self {
-        Self::new(Lexer::new(input))
+    pub fn from_input(file_id: usize, input: &'a str) -> Self {
+        Self::new(Lexer::new(file_id, input))
     }
 
     #[must_use]
@@ -186,6 +186,7 @@ impl<'a> Parser<'a> {
     /// parses one module
     fn parse_module(&mut self) -> ParseResult<UntypedModule> {
         let mut span = self.expect(TokenKind::KwModule)?;
+        let no_prelude = self.next_if_match(TokenKind::Bang).is_some();
         let name = self.expect_id()?;
 
         let imports = if self.next_if_match(TokenKind::KwWith).is_some() {
@@ -205,7 +206,7 @@ impl<'a> Parser<'a> {
             span = span.union(expr.span);
         }
 
-        Ok(UntypedModule::new(name, imports, exprs, span))
+        Ok(UntypedModule::new(no_prelude, name, imports, exprs, span))
     }
 
     pub fn parse_all(&mut self) -> ParseResult<Vec<UntypedModule>> {

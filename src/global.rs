@@ -29,14 +29,15 @@ impl Display for Symbol {
 impl Span {
     #[must_use]
     pub fn union(self, other: Self) -> Self {
-        let (self_data, other_data) = GLOBAL_DATA.with_borrow(|e| {
-            (
-                e.spans.get(self).unwrap_or_default(),
-                e.spans.get(other).unwrap_or_default(),
-            )
-        });
+        let (self_data, other_data) =
+            GLOBAL_DATA.with_borrow(|e| (e.spans.get(self).unwrap(), e.spans.get(other).unwrap()));
         let new_data = self_data.union(&other_data);
         intern_span(new_data)
+    }
+
+    pub fn file_id(self) -> usize {
+        let data = GLOBAL_DATA.with_borrow(|e| e.spans.get(self).unwrap());
+        data.file_id()
     }
 }
 

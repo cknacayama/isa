@@ -281,12 +281,12 @@ impl ClassConstraintSet {
         Self::default()
     }
 
-    pub fn append(&mut self, other: &mut Self) {
-        self.constrs.append(&mut other.constrs);
+    pub fn extend(&mut self, other: Self) {
+        self.constrs.extend(other.constrs);
     }
 
-    pub fn concat(mut self, mut other: Self) -> Self {
-        self.append(&mut other);
+    pub fn concat(mut self, other: Self) -> Self {
+        self.extend(other);
         self
     }
 }
@@ -448,7 +448,7 @@ impl Ctx {
     ) -> Result<ClassConstraintSet, Box<ClassConstraint>> {
         let mut constrs = Vec::new();
 
-        for mut constr in classes
+        for constr in classes
             .constrs
             .into_iter()
             .map(|c| self.instantiate_class(c.class(), c.ty(), c.span()).unwrap())
@@ -456,7 +456,7 @@ impl Ctx {
             if let Some(constr) = constr.iter().find(|c| !c.ty().is_var()) {
                 return Err(Box::new(constr.clone()));
             }
-            constrs.append(&mut constr);
+            constrs.extend(constr);
         }
 
         Ok(ClassConstraintSet { constrs })

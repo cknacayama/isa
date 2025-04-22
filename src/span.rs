@@ -3,25 +3,31 @@ use std::fmt::{Debug, Display};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SpanData {
-    start: usize,
-    end:   usize,
+    file_id: usize,
+    start:   usize,
+    end:     usize,
 }
 
 impl SpanData {
     #[must_use]
-    pub const fn new(start: usize, end: usize) -> Option<Self> {
+    pub const fn new(file_id: usize, start: usize, end: usize) -> Option<Self> {
         if start > end {
             None
         } else {
-            Some(Self { start, end })
+            Some(Self {
+                file_id,
+                start,
+                end,
+            })
         }
     }
 
     #[must_use]
     pub fn union(&self, other: &Self) -> Self {
         Self {
-            start: std::cmp::min(self.start, other.start),
-            end:   std::cmp::max(self.end, other.end),
+            file_id: self.file_id,
+            start:   std::cmp::min(self.start, other.start),
+            end:     std::cmp::max(self.end, other.end),
         }
     }
 
@@ -33,6 +39,10 @@ impl SpanData {
     #[must_use]
     pub const fn end(&self) -> usize {
         self.end
+    }
+
+    pub const fn file_id(&self) -> usize {
+        self.file_id
     }
 }
 

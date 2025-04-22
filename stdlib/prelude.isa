@@ -1,10 +1,8 @@
-module prelude with {
+module !prelude with {
     option::*,
     result::*,
     monad::*,
     ops::*,
-    option::Option::*,
-    result::Result::*,
 }
 
 val {a,b} => const: a -> b -> a;
@@ -36,5 +34,3 @@ instance Number int = let from_int a = a;
 instance And bool = let and a b = a && b;
 instance Or bool = let or a b = a || b;
 instance Not bool = let not a = !a;
-
-

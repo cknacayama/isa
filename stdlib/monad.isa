@@ -1,4 +1,4 @@
-module monad with {prelude::{id, const}}
+module !monad with {prelude::{id, const}}
 
 class Functor f =
     val {a,b} => fmap: (a -> b) -> f a -> f b,

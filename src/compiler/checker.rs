@@ -691,9 +691,9 @@ impl Checker {
                     })?;
                 ty.substitute(&mut subs);
                 let name = bind.name;
-                let (_, expr, params, mut bind_set) =
+                let (_, expr, params, bind_set) =
                     self.check_let_bind_with_val(bind, &ty, member_set, ty_span)?;
-                set.append(&mut bind_set);
+                set.extend(bind_set);
                 Ok(TypedLetBind::new(name, params, Box::new(expr)))
             })
             .collect::<IsaResult<_>>()?;
@@ -912,8 +912,8 @@ impl Checker {
         let mut c = EqConstraintSet::new();
 
         for arm in arms {
-            let (pat, aexpr, mut arm_set) = self.check_match_arm(arm.pat, arm.expr)?;
-            set.append(&mut arm_set);
+            let (pat, aexpr, arm_set) = self.check_match_arm(arm.pat, arm.expr)?;
+            set.extend(arm_set);
             c.push(EqConstraint::new(var.clone(), aexpr.ty.clone(), aexpr.span));
             c.push(EqConstraint::new(expr.ty.clone(), pat.ty.clone(), pat.span));
             typed_arms.push(TypedMatchArm::new(pat, aexpr));
@@ -1205,8 +1205,8 @@ impl Checker {
         let mut set = Set::new();
 
         for expr in exprs {
-            let (expr, mut expr_set) = self.check(expr)?;
-            set.append(&mut expr_set);
+            let (expr, expr_set) = self.check(expr)?;
+            set.extend(expr_set);
             types.push(expr.ty.clone());
             typed_exprs.push(expr);
         }
@@ -1467,7 +1467,7 @@ impl Checker {
             _ => None,
         };
 
-        constraints.append(&mut member_set);
+        constraints.extend(member_set);
 
         constraints.substitute(&mut subs);
         constraints.substitute_many(&sig_subs);
@@ -1533,6 +1533,9 @@ impl Checker {
             }
             self.ctx.set_current_module(module.name);
             let _ = self.ctx.import_clause(module.imports.clone());
+            if !module.no_prelude {
+                let _ = self.ctx.import_prelude();
+            }
 
             self.ctx.push_scope();
 
@@ -1547,9 +1550,9 @@ impl Checker {
                 .extract_if(.., |e| e.kind.is_type_or_val())
                 .map(|e| self.check(e))
             {
-                let (expr, mut expr_set) = res?;
+                let (expr, expr_set) = res?;
                 exprs.push(expr);
-                set.append(&mut expr_set);
+                set.extend(expr_set);
             }
 
             let scope = self.ctx.pop_scope().unwrap();
@@ -1566,10 +1569,10 @@ impl Checker {
             .into_iter()
             .zip(decl)
             .map(|(module, mut decl)| {
-                let (mut module, mut module_set) = self.check_module(module)?;
-                decl.append(&mut module.exprs);
+                let (mut module, module_set) = self.check_module(module)?;
+                decl.extend(module.exprs);
                 module.exprs = decl;
-                set.append(&mut module_set);
+                set.extend(module_set);
                 Ok(module)
             })
             .collect::<IsaResult<_>>()?;
@@ -1582,18 +1585,28 @@ impl Checker {
 
         self.ctx.set_current_module(module.name);
         self.ctx.import_clause(module.imports.clone())?;
+        if !module.no_prelude {
+            let _ = self.ctx.import_prelude();
+        }
 
         let mut exprs = Vec::new();
         let mut set = Set::new();
 
         for res in module.exprs.into_iter().map(|expr| self.check(expr)) {
-            let (expr, mut expr_set) = res?;
+            let (expr, expr_set) = res?;
             exprs.push(expr);
-            set.append(&mut expr_set);
+            set.extend(expr_set);
         }
+
         let scope = self.ctx.pop_scope().unwrap();
         self.ctx.extend_module(module.name, scope);
-        let typed = TypedModule::new(module.name, module.imports, exprs, module.span);
+        let typed = TypedModule::new(
+            module.no_prelude,
+            module.name,
+            module.imports,
+            exprs,
+            module.span,
+        );
 
         Ok((typed, set))
     }

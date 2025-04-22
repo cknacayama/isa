@@ -7,18 +7,20 @@ use crate::span::{SpanData, Spanned};
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
-    input: &'a str,
-    chars: Chars<'a>,
-    start: usize,
-    cur:   usize,
+    file_id: usize,
+    input:   &'a str,
+    chars:   Chars<'a>,
+    start:   usize,
+    cur:     usize,
 }
 
 pub type LexResult<T> = Result<T, Spanned<LexError>>;
 
 impl<'a> Lexer<'a> {
     #[must_use]
-    pub fn new(input: &'a str) -> Self {
+    pub fn new(file_id: usize, input: &'a str) -> Self {
         Self {
+            file_id,
             input,
             chars: input.chars(),
             start: 0,
@@ -79,13 +81,13 @@ impl<'a> Lexer<'a> {
     }
 
     fn make_token(&self, kind: TokenKind) -> Token {
-        let span = SpanData::new(self.start, self.cur).unwrap();
+        let span = SpanData::new(self.file_id, self.start, self.cur).unwrap();
         let span = intern_span(span);
         Token::new(kind, span)
     }
 
     fn make_err(&self, kind: LexError) -> Spanned<LexError> {
-        let span = SpanData::new(self.start, self.cur).unwrap();
+        let span = SpanData::new(self.file_id, self.start, self.cur).unwrap();
         let span = intern_span(span);
         Spanned::new(kind, span)
     }

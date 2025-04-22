@@ -1,4 +1,4 @@
-module ops
+module !ops
 
 type Ordering = Less | Equal | Greater;
 

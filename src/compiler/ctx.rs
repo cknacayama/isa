@@ -446,13 +446,8 @@ impl Ctx {
     }
 
     pub fn create_module(&mut self, id: Ident) -> CheckResult<()> {
-        let data = if id.ident == global::intern_symbol("prelude") {
-            ModuleData::default()
-        } else {
-            self.import_prelude()?
-        };
         self.current_module = id;
-        self.insert_module(id, data);
+        self.insert_module(id, ModuleData::default());
         Ok(())
     }
 
@@ -720,7 +715,7 @@ impl Ctx {
                     .into_iter()
                     .map(|mut import| {
                         let mut path = Path::new(smallvec![module]);
-                        path.segments.append(&mut import.path.segments);
+                        path.segments.extend(import.path.segments);
                         import.path = path;
                         import
                     })
@@ -728,7 +723,7 @@ impl Ctx {
                 let clause = ImportClause(clause);
                 self.import_clause(clause)
             }
-            ImportWildcard::Wildcard => todo!(),
+            ImportWildcard::Wildcard => self.import_wildcard(&import.path),
         }
     }
 
@@ -757,12 +752,14 @@ impl Ctx {
                     })
                     .collect::<Vec<_>>();
                 let vals = module_data.vals.clone();
+                let constructors = module_data.constructors.clone();
 
                 let module = self.current_mut()?;
 
                 module.vals.extend(vals);
                 module.types.extend(types);
                 module.classes.extend(classes);
+                module.constructors.extend(constructors);
 
                 Ok(())
             }
@@ -824,35 +821,12 @@ impl Ctx {
         }
     }
 
-    fn import_prelude(&self) -> CheckResult<ModuleData> {
-        let prelude_name = Ident {
+    pub fn import_prelude(&mut self) -> CheckResult<()> {
+        let prelude = Ident {
             ident: global::intern_symbol("prelude"),
             span:  Span::default(),
         };
-        let prelude = self.get_module(prelude_name)?;
-
-        let classes = prelude
-            .classes
-            .iter()
-            .map(|(&id, _)| (id, ClassDataImport::Import(prelude_name)))
-            .collect();
-        let types = prelude
-            .types
-            .iter()
-            .map(|(&id, data)| (id, data.clone().with_import(prelude_name)))
-            .collect();
-        let vals = prelude.vals.clone();
-        let constructors = prelude.constructors.clone();
-
-        let module = ModuleData {
-            vals,
-            types,
-            constructors,
-            classes,
-            ..Default::default()
-        };
-
-        Ok(module)
+        self.import_wildcard(&Path::from_ident(prelude))
     }
 
     pub fn insert_instance_at_env(
@@ -1104,8 +1078,8 @@ impl Ctx {
                     }
                 })
             })
-            .reduce(|mut new, mut constr| {
-                new.append(&mut constr);
+            .reduce(|mut new, constr| {
+                new.extend(constr);
                 new
             });
 
