@@ -13,14 +13,6 @@ impl Ident {
     pub const fn new(ident: Symbol, span: Span) -> Self {
         Self { ident, span }
     }
-
-    pub const fn ident(self) -> Symbol {
-        self.ident
-    }
-
-    pub const fn span(self) -> Span {
-        self.span
-    }
 }
 
 impl PartialEq for Ident {
@@ -45,6 +37,8 @@ pub enum TokenKind {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
 
     At,
     Eq,
@@ -161,6 +155,8 @@ impl Display for TokenKind {
             Self::RParen => write!(f, ")"),
             Self::LBrace => write!(f, "{{"),
             Self::RBrace => write!(f, "}}"),
+            Self::LBracket => write!(f, "["),
+            Self::RBracket => write!(f, "]"),
             Self::At => write!(f, "@"),
             Self::Bar => write!(f, "|"),
             Self::Comma => write!(f, ","),

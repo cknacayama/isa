@@ -4,9 +4,9 @@ use std::rc::Rc;
 use smallvec::smallvec;
 
 use super::ast::{
-    Associativity, Constructor, Expr, Import, ImportClause, ImportWildcard, OpDeclaration,
-    Operator, OperatorTable, Path, RangePat, UntypedConstructor, UntypedExpr, UntypedExprKind,
-    UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat, UntypedPatKind,
+    Associativity, Constructor, Expr, ExprKind, Import, ImportClause, ImportWildcard, ListPat,
+    OpDeclaration, Operator, OperatorTable, PatKind, Path, RangePat, UntypedConstructor,
+    UntypedExpr, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat,
     ValDeclaration,
 };
 use super::error::ParseError;
@@ -249,7 +249,7 @@ impl<'a> Parser<'a> {
 
         if self.next_if_match(TokenKind::Semicolon).is_some() {
             let span = expr.span;
-            let kind = UntypedExprKind::Semi(Box::new(expr));
+            let kind = ExprKind::Semi(Box::new(expr));
             Ok(UntypedExpr::untyped(kind, span))
         } else {
             Ok(expr)
@@ -294,7 +294,7 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let kind = UntypedExprKind::Operator {
+        let kind = ExprKind::Operator {
             params,
             set,
             ops: signatures.into_boxed_slice(),
@@ -344,7 +344,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(UntypedExpr::untyped(
-            UntypedExprKind::Class {
+            ExprKind::Class {
                 set,
                 name,
                 instance,
@@ -389,7 +389,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(UntypedExpr::untyped(
-            UntypedExprKind::Instance {
+            ExprKind::Instance {
                 params,
                 set,
                 class: name,
@@ -420,7 +420,7 @@ impl<'a> Parser<'a> {
         let span = span.union(ty_span);
 
         Ok(UntypedExpr::untyped(
-            UntypedExprKind::Alias {
+            ExprKind::Alias {
                 name,
                 parameters,
                 ty,
@@ -498,7 +498,7 @@ impl<'a> Parser<'a> {
     fn parse_val_expr(&mut self) -> ParseResult<UntypedExpr> {
         let val = self.parse_val()?;
         let span = val.span;
-        Ok(UntypedExpr::untyped(UntypedExprKind::Val(val), span))
+        Ok(UntypedExpr::untyped(ExprKind::Val(val), span))
     }
 
     fn parse_expr(&mut self) -> ParseResult<UntypedExpr> {
@@ -506,12 +506,24 @@ impl<'a> Parser<'a> {
         self.parse_precedence(lhs, 0)
     }
 
-    fn check_op(&self, token: Token, min_prec: u8) -> Option<(Ident, Operator)> {
+    fn check_op_right(&self, token: Token, min_prec: u8) -> Option<(Ident, Operator)> {
         let symbol = token.data.as_operator()?;
         let op = self.operators.get_infix(symbol)?;
         let symbol = Ident::new(symbol, token.span);
 
         if op.precedence > min_prec || (op.associativity.is_right() && op.precedence == min_prec) {
+            Some((symbol, op))
+        } else {
+            None
+        }
+    }
+
+    fn check_op(&self, token: Token, min_prec: u8) -> Option<(Ident, Operator)> {
+        let symbol = token.data.as_operator()?;
+        let op = self.operators.get_infix(symbol)?;
+        let symbol = Ident::new(symbol, token.span);
+
+        if op.precedence >= min_prec {
             Some((symbol, op))
         } else {
             None
@@ -533,7 +545,7 @@ impl<'a> Parser<'a> {
             while let Some((_, next_op)) = self
                 .peek()
                 .transpose()?
-                .and_then(|tk| self.check_op(tk, precedence))
+                .and_then(|tk| self.check_op_right(tk, curr_op.precedence))
             {
                 let next_prec =
                     curr_op.precedence + u8::from(next_op.precedence > curr_op.precedence);
@@ -542,7 +554,7 @@ impl<'a> Parser<'a> {
 
             let span = lhs.span.union(rhs.span);
             lhs = Expr::untyped(
-                UntypedExprKind::Bin {
+                ExprKind::Bin {
                     op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
@@ -574,7 +586,7 @@ impl<'a> Parser<'a> {
 
                 let op = Ident::new(op, span);
                 let span = span.union(expr.span);
-                let kind = UntypedExprKind::Un {
+                let kind = ExprKind::Un {
                     op,
                     expr: Box::new(expr),
                 };
@@ -593,7 +605,7 @@ impl<'a> Parser<'a> {
             let arg = self.parse_prim()?;
             let span = expr.span.union(arg.span);
             expr = UntypedExpr::untyped(
-                UntypedExprKind::Call {
+                ExprKind::Call {
                     callee: Box::new(expr),
                     arg:    Box::new(arg),
                 },
@@ -614,6 +626,7 @@ impl<'a> Parser<'a> {
             TokenKind::KwFn => self.parse_fn(),
             TokenKind::KwIf => self.parse_if(),
             TokenKind::KwMatch => self.parse_match(),
+            TokenKind::LBracket => self.parse_list(),
             TokenKind::LParen => {
                 self.next();
                 let mut exprs = Vec::new();
@@ -632,33 +645,52 @@ impl<'a> Parser<'a> {
                     Ok(expr)
                 } else {
                     Ok(UntypedExpr::untyped(
-                        UntypedExprKind::Tuple(exprs.into_boxed_slice()),
+                        ExprKind::Tuple(exprs.into_boxed_slice()),
                         span,
                     ))
                 }
             }
             TokenKind::Integer(lit) => {
                 self.next();
-                Ok(UntypedExpr::untyped(UntypedExprKind::Int(lit), span))
+                Ok(UntypedExpr::untyped(ExprKind::Int(lit), span))
             }
             TokenKind::Char(lit) => {
                 self.next();
-                Ok(UntypedExpr::untyped(UntypedExprKind::Char(lit), span))
+                Ok(UntypedExpr::untyped(ExprKind::Char(lit), span))
             }
             TokenKind::Ident(_) => {
                 let (path, span) = self.parse_path()?;
-                Ok(UntypedExpr::untyped(UntypedExprKind::Path(path), span))
+                Ok(UntypedExpr::untyped(ExprKind::Path(path), span))
             }
             TokenKind::KwTrue => {
                 self.next();
-                Ok(UntypedExpr::untyped(UntypedExprKind::Bool(true), span))
+                Ok(UntypedExpr::untyped(ExprKind::Bool(true), span))
             }
             TokenKind::KwFalse => {
                 self.next();
-                Ok(UntypedExpr::untyped(UntypedExprKind::Bool(false), span))
+                Ok(UntypedExpr::untyped(ExprKind::Bool(false), span))
             }
             kind => Err(Spanned::new(ParseError::ExpectedExpr(kind), span)),
         }
+    }
+
+    fn parse_list(&mut self) -> ParseResult<UntypedExpr> {
+        let span = self.expect(TokenKind::LBracket)?;
+
+        let mut exprs = Vec::new();
+        while !self.check(TokenKind::RBracket) {
+            let expr = self.parse_expr()?;
+            exprs.push(expr);
+            if self.next_if_match(TokenKind::Comma).is_none() {
+                break;
+            }
+        }
+
+        let span = span.union(self.expect(TokenKind::RBracket)?);
+
+        let kind = ExprKind::List(exprs.into_boxed_slice());
+
+        Ok(UntypedExpr::untyped(kind, span))
     }
 
     fn parse_path(&mut self) -> ParseResult<(Path, Span)> {
@@ -810,7 +842,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(UntypedExpr::untyped(
-            UntypedExprKind::Type {
+            ExprKind::Type {
                 name,
                 parameters: params.into_boxed_slice(),
                 constructors: constructors.into_boxed_slice(),
@@ -847,7 +879,7 @@ impl<'a> Parser<'a> {
         }
 
         Ok(UntypedExpr::untyped(
-            UntypedExprKind::Match {
+            ExprKind::Match {
                 expr: Box::new(expr),
                 arms: arms.into_boxed_slice(),
             },
@@ -867,7 +899,7 @@ impl<'a> Parser<'a> {
         let span = span.union(otherwise.span);
 
         Ok(UntypedExpr::untyped(
-            UntypedExprKind::If {
+            ExprKind::If {
                 cond:      Box::new(cond),
                 then:      Box::new(then),
                 otherwise: Box::new(otherwise),
@@ -928,12 +960,12 @@ impl<'a> Parser<'a> {
                     let rhs = rhs?;
                     let span = lhs_span.union(rhs.span);
                     Ok(UntypedPat::untyped(
-                        UntypedPatKind::IntRange(RangePat::Exclusive(lhs, rhs.data)),
+                        PatKind::IntRange(RangePat::Exclusive(lhs, rhs.data)),
                         span,
                     ))
                 }
                 None => Ok(UntypedPat::untyped(
-                    UntypedPatKind::IntRange(RangePat::From(lhs)),
+                    PatKind::IntRange(RangePat::From(lhs)),
                     lhs_span.union(span),
                 )),
             }
@@ -943,11 +975,11 @@ impl<'a> Parser<'a> {
             })??;
             let span = lhs_span.union(rhs.span);
             Ok(UntypedPat::untyped(
-                UntypedPatKind::IntRange(RangePat::Inclusive(lhs, rhs.data)),
+                PatKind::IntRange(RangePat::Inclusive(lhs, rhs.data)),
                 span,
             ))
         } else {
-            Ok(UntypedPat::untyped(UntypedPatKind::Int(lhs), lhs_span))
+            Ok(UntypedPat::untyped(PatKind::Int(lhs), lhs_span))
         }
     }
 
@@ -958,12 +990,12 @@ impl<'a> Parser<'a> {
                     let rhs = rhs?;
                     let span = lhs_span.union(rhs.span);
                     Ok(UntypedPat::untyped(
-                        UntypedPatKind::CharRange(RangePat::Exclusive(lhs, rhs.data)),
+                        PatKind::CharRange(RangePat::Exclusive(lhs, rhs.data)),
                         span,
                     ))
                 }
                 None => Ok(UntypedPat::untyped(
-                    UntypedPatKind::CharRange(RangePat::From(lhs)),
+                    PatKind::CharRange(RangePat::From(lhs)),
                     lhs_span.union(span),
                 )),
             }
@@ -973,11 +1005,11 @@ impl<'a> Parser<'a> {
             })??;
             let span = lhs_span.union(rhs.span);
             Ok(UntypedPat::untyped(
-                UntypedPatKind::CharRange(RangePat::Inclusive(lhs, rhs.data)),
+                PatKind::CharRange(RangePat::Inclusive(lhs, rhs.data)),
                 span,
             ))
         } else {
-            Ok(UntypedPat::untyped(UntypedPatKind::Char(lhs), lhs_span))
+            Ok(UntypedPat::untyped(PatKind::Char(lhs), lhs_span))
         }
     }
 
@@ -999,14 +1031,14 @@ impl<'a> Parser<'a> {
                     let char = char?;
                     let span = span.union(char.span);
                     Ok(UntypedPat::untyped(
-                        UntypedPatKind::CharRange(RangePat::To(char.data)),
+                        PatKind::CharRange(RangePat::To(char.data)),
                         span,
                     ))
                 } else {
                     let int = self.expect_integer()?;
                     let span = span.union(int.span);
                     Ok(UntypedPat::untyped(
-                        UntypedPatKind::IntRange(RangePat::To(int.data)),
+                        PatKind::IntRange(RangePat::To(int.data)),
                         span,
                     ))
                 }
@@ -1016,20 +1048,20 @@ impl<'a> Parser<'a> {
                     let char = char?;
                     let span = span.union(char.span);
                     Ok(UntypedPat::untyped(
-                        UntypedPatKind::CharRange(RangePat::ToInclusive(char.data)),
+                        PatKind::CharRange(RangePat::ToInclusive(char.data)),
                         span,
                     ))
                 } else {
                     let int = self.expect_integer()?;
                     let span = span.union(int.span);
                     Ok(UntypedPat::untyped(
-                        UntypedPatKind::IntRange(RangePat::ToInclusive(int.data)),
+                        PatKind::IntRange(RangePat::ToInclusive(int.data)),
                         span,
                     ))
                 }
             }
-            TokenKind::KwTrue => Ok(UntypedPat::untyped(UntypedPatKind::Bool(true), span)),
-            TokenKind::KwFalse => Ok(UntypedPat::untyped(UntypedPatKind::Bool(false), span)),
+            TokenKind::KwTrue => Ok(UntypedPat::untyped(PatKind::Bool(true), span)),
+            TokenKind::KwFalse => Ok(UntypedPat::untyped(PatKind::Bool(false), span)),
             TokenKind::LParen => {
                 let mut pats = Vec::new();
                 while !self.check(TokenKind::RParen) {
@@ -1047,11 +1079,12 @@ impl<'a> Parser<'a> {
                     Ok(pat)
                 } else {
                     Ok(UntypedPat::untyped(
-                        UntypedPatKind::Tuple(pats.into_boxed_slice()),
+                        PatKind::Tuple(pats.into_boxed_slice()),
                         span,
                     ))
                 }
             }
+            TokenKind::LBracket => self.parse_list_pat(span),
             TokenKind::Ident(ident) => {
                 let mut span = span;
                 let mut segments = smallvec![Ident { ident, span }];
@@ -1063,22 +1096,44 @@ impl<'a> Parser<'a> {
                 }
 
                 Ok(UntypedPat::untyped(
-                    UntypedPatKind::Constructor {
+                    PatKind::Constructor {
                         name: Path { segments },
                         args: Box::from([]),
                     },
                     span,
                 ))
             }
-            TokenKind::Underscore => Ok(UntypedPat::untyped(UntypedPatKind::Wild, span)),
+            TokenKind::Underscore => Ok(UntypedPat::untyped(PatKind::Wild, span)),
             _ => Err(Spanned::new(ParseError::ExpectedPattern(data), span)),
         }
+    }
+
+    fn parse_list_pat(&mut self, span: Span) -> ParseResult<UntypedPat> {
+        if let Some(close) = self.next_if_match(TokenKind::RBracket) {
+            return Ok(UntypedPat::untyped(
+                PatKind::List(ListPat::Nil),
+                span.union(close),
+            ));
+        }
+
+        let head = self.parse_pat()?;
+        let mut span = span.union(self.expect(TokenKind::RBracket)?);
+
+        let kind = if self.peek_and(|tk| tk.can_start_pat())? {
+            let rest = self.parse_pat()?;
+            span = span.union(rest.span);
+            ListPat::Cons(Box::new(head), Box::new(rest))
+        } else {
+            ListPat::Single(Box::new(head))
+        };
+
+        Ok(UntypedPat::untyped(PatKind::List(kind), span))
     }
 
     fn parse_type_pat(&mut self) -> ParseResult<UntypedPat> {
         let simple = self.parse_simple_pat()?;
 
-        let UntypedPatKind::Constructor { name, .. } = simple.kind else {
+        let PatKind::Constructor { name, .. } = simple.kind else {
             return Ok(simple);
         };
 
@@ -1091,7 +1146,7 @@ impl<'a> Parser<'a> {
         }
         let args = args.into_boxed_slice();
         Ok(UntypedPat::untyped(
-            UntypedPatKind::Constructor { name, args },
+            PatKind::Constructor { name, args },
             span,
         ))
     }
@@ -1113,7 +1168,7 @@ impl<'a> Parser<'a> {
 
             span = span.union(pats.last().unwrap().span);
 
-            pat = UntypedPat::untyped(UntypedPatKind::Or(pats.into_boxed_slice()), span);
+            pat = UntypedPat::untyped(PatKind::Or(pats.into_boxed_slice()), span);
         }
 
         Ok(pat)
@@ -1153,7 +1208,7 @@ impl<'a> Parser<'a> {
         };
 
         Ok(UntypedExpr::untyped(
-            UntypedExprKind::Let {
+            ExprKind::Let {
                 bind,
                 body: body.map(Box::new),
             },
@@ -1174,7 +1229,7 @@ impl<'a> Parser<'a> {
         let param = UntypedParam::untyped(name);
 
         Ok(UntypedExpr::untyped(
-            UntypedExprKind::Fn {
+            ExprKind::Fn {
                 param,
                 expr: Box::new(expr),
             },

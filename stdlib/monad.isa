@@ -14,7 +14,7 @@ class {Functor f} => Applicative f =
     val {a,b} => discardSnd: f a -> f b -> f a,
     val {a,b,c} => liftA2: (a -> b -> c) -> f a -> f b -> f c,
 
-    let liftA2 f x = Applicative::apply (Functor::fmap f x),
+    let liftA2 f x y = f <$> x <*> y,
     let discardFst a1 a2 = (id <$ a1) <*> a2,
     let discardSnd = Applicative::liftA2 const,
 ;

@@ -396,7 +396,7 @@ impl Ctx {
                     name: n2,
                     args: args2,
                 },
-            ) if self.same_type_name(n1, n2).unwrap() && args1.len() == args2.len() => {
+            ) if n1 == n2 && args1.len() == args2.len() => {
                 let args1 = args1.clone();
                 let args2 = args2.clone();
                 let parent = Rc::new(c);

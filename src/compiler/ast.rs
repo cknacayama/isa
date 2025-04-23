@@ -58,7 +58,11 @@ impl Path {
 macro_rules! mod_path {
     ($($seg:ident)::+) => {{
         use crate::global::symbol;
-        let segments = smallvec![Ident { ident: $(symbol!(stringify!($seg))),+, span: Span::default() }];
+        use smallvec::smallvec;
+        use crate::span::Span;
+        use crate::compiler::ast::Path;
+        use crate::compiler::token::Ident;
+        let segments = smallvec![$(Ident { ident: symbol!(stringify!($seg)), span: Span::default() }),+];
         Path::new(segments)
     }};
 }
@@ -87,16 +91,6 @@ pub enum Associativity {
 }
 
 impl Associativity {
-    #[must_use]
-    pub const fn is_non(self) -> bool {
-        matches!(self, Self::Non)
-    }
-
-    #[must_use]
-    pub const fn is_left(self) -> bool {
-        matches!(self, Self::Left)
-    }
-
     #[must_use]
     pub const fn is_right(self) -> bool {
         matches!(self, Self::Right)
@@ -155,14 +149,14 @@ impl Default for OperatorTable {
             operator!(4 ">="),
             operator!(4 "=="),
             operator!(4 "!="),
-            operator!(left 5 "+"),
-            operator!(left 5 "-"),
-            operator!(left 5 "<>"),
-            operator!(right 5 "<>"),
-            operator!(left 6 "*"),
-            operator!(left 6 "/"),
-            operator!(left 6 "%"),
-            operator!(right 7 "."),
+            operator!(right 5 "&"),
+            operator!(right 5 "++"),
+            operator!(left 6 "+"),
+            operator!(left 6 "-"),
+            operator!(left 7 "*"),
+            operator!(left 7 "/"),
+            operator!(left 7 "%"),
+            operator!(right 8 "."),
         ]);
 
         Self { infix, prefix }
@@ -175,6 +169,7 @@ impl TokenKind {
         matches!(
             self,
             Self::LParen
+                | Self::LBracket
                 | Self::Integer(_)
                 | Self::Ident(_)
                 | Self::Char(_)
@@ -200,6 +195,7 @@ impl TokenKind {
         matches!(
             self,
             Self::LParen
+                | Self::LBracket
                 | Self::DotDot
                 | Self::DotDotEq
                 | Self::Underscore
@@ -230,12 +226,6 @@ impl<T> Display for Constructor<T> {
 
 #[derive(Debug, Default, Clone)]
 pub struct ImportClause(pub Box<[Import]>);
-
-impl ImportClause {
-    pub fn iter(&self) -> std::slice::Iter<'_, Import> {
-        self.0.iter()
-    }
-}
 
 impl IntoIterator for ImportClause {
     type Item = Import;
@@ -333,6 +323,13 @@ impl<T: Debug> Display for RangePat<T> {
 }
 
 #[derive(Debug, Clone)]
+pub enum ListPat<T> {
+    Nil,
+    Single(Box<Pat<T>>),
+    Cons(Box<Pat<T>>, Box<Pat<T>>),
+}
+
+#[derive(Debug, Clone)]
 pub enum PatKind<T> {
     Wild,
 
@@ -341,6 +338,8 @@ pub enum PatKind<T> {
     Or(Box<[Pat<T>]>),
 
     Tuple(Box<[Pat<T>]>),
+
+    List(ListPat<T>),
 
     Int(i64),
 
@@ -353,6 +352,12 @@ pub enum PatKind<T> {
     Bool(bool),
 
     Constructor { name: Path, args: Box<[Pat<T>]> },
+}
+
+impl<T> PatKind<T> {
+    pub const fn is_rest_pat(&self) -> bool {
+        matches!(self, Self::List(_) | Self::Ident(_) | Self::Wild)
+    }
 }
 
 #[derive(Clone)]
@@ -407,6 +412,20 @@ impl<T: Display> Pat<T> {
                 }
                 write!(f, ")")
             }
+            PatKind::List(list) => match list {
+                ListPat::Nil => write!(f, "[]"),
+                ListPat::Single(pat) => {
+                    write!(f, "[")?;
+                    pat.format_helper(f)?;
+                    write!(f, "]")
+                }
+                ListPat::Cons(pat, pat1) => {
+                    write!(f, "[")?;
+                    pat.format_helper(f)?;
+                    write!(f, "]")?;
+                    pat1.format_helper(f)
+                }
+            },
             PatKind::Int(i) => write!(f, "{i}"),
             PatKind::Char(c) => write!(f, "{:?}", *c as char),
             PatKind::IntRange(i) => write!(f, "{i}"),
@@ -564,6 +583,8 @@ pub enum ExprKind<T> {
     Path(Path),
 
     Tuple(Box<[Expr<T>]>),
+
+    List(Box<[Expr<T>]>),
 
     Bin {
         op:  Ident,
@@ -814,7 +835,7 @@ impl Substitute for Expr<Ty> {
             ExprKind::Val(val) => {
                 val.substitute(subs);
             }
-            ExprKind::Tuple(exprs) => {
+            ExprKind::List(exprs) | ExprKind::Tuple(exprs) => {
                 for expr in exprs {
                     expr.substitute(subs);
                 }
@@ -888,6 +909,24 @@ where
     }
 }
 
+impl Substitute for ListPat<Ty> {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        match self {
+            ListPat::Nil => (),
+            ListPat::Single(pat) => {
+                pat.substitute(subs);
+            }
+            ListPat::Cons(pat, pat1) => {
+                pat.substitute(subs);
+                pat1.substitute(subs);
+            }
+        }
+    }
+}
+
 impl Substitute for Pat<Ty> {
     fn substitute<S>(&mut self, subs: &mut S)
     where
@@ -898,6 +937,10 @@ impl Substitute for Pat<Ty> {
                 for p in args {
                     p.substitute(subs);
                 }
+            }
+
+            PatKind::List(list) => {
+                list.substitute(subs);
             }
 
             PatKind::Wild
@@ -945,7 +988,7 @@ impl<T: Display> Expr<T> {
             ExprKind::Bool(b) => write!(f, "{b}"),
             ExprKind::Char(c) => write!(f, "{:?}", *c as char),
             ExprKind::Path(id) => write!(f, "{id}"),
-            ExprKind::Tuple(exprs) => {
+            ExprKind::List(exprs) | ExprKind::Tuple(exprs) => {
                 write!(f, "(")?;
                 let mut first = true;
                 for e in exprs {
@@ -1078,36 +1121,24 @@ impl<T: Display> Expr<T> {
     }
 }
 
-pub type TypedModule = Module<Ty>;
-pub type TypedExpr = Expr<Ty>;
-pub type TypedPatKind = PatKind<Ty>;
-pub type TypedLetBind = LetBind<Ty>;
-pub type TypedPat = Pat<Ty>;
-pub type TypedExprKind = ExprKind<Ty>;
-pub type TypedMatchArm = MatchArm<Ty>;
-pub type TypedParam = Param<Ty>;
-pub type TypedConstructor = Constructor<Ty>;
-
 pub type UntypedModule = Module<()>;
 pub type UntypedExpr = Expr<()>;
 pub type UntypedLetBind = LetBind<()>;
-pub type UntypedPatKind = PatKind<()>;
 pub type UntypedPat = Pat<()>;
-pub type UntypedExprKind = ExprKind<()>;
 pub type UntypedMatchArm = MatchArm<()>;
 pub type UntypedParam = Param<()>;
 pub type UntypedConstructor = Constructor<()>;
 
 impl UntypedExpr {
     #[must_use]
-    pub const fn untyped(kind: UntypedExprKind, span: Span) -> Self {
+    pub const fn untyped(kind: ExprKind<()>, span: Span) -> Self {
         Self::new(kind, span, ())
     }
 }
 
 impl UntypedPat {
     #[must_use]
-    pub const fn untyped(kind: UntypedPatKind, span: Span) -> Self {
+    pub const fn untyped(kind: PatKind<()>, span: Span) -> Self {
         Self::new(kind, span, ())
     }
 }

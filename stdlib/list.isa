@@ -1,0 +1,53 @@
+module @list with {ops::_, monad::_, option::_}
+
+type List a = Nil | Cons a (List a);
+
+val {a} => lenght: List a -> int;
+let lenght a = match a with
+    [] -> 0,
+    [_]rest -> 1 + lenght rest
+;
+
+val {a} => head: List a -> Option a;
+let head a = match a with
+    [] -> None,
+    [a]_ -> Some a,
+;
+
+val {a} => tail: List a -> Option a;
+let tail a = match a with
+    [] -> None,
+    [a] -> Some a,
+    [_]rest -> tail rest,
+;
+
+instance Functor List =
+    let fmap f a = match a with
+        [] -> [],
+        [a]rest -> f a & (f <$> rest),
+;
+
+instance Applicative List =
+    let pure a = [a],
+    let apply f a = match (f,a) with
+        ([f]restf,[a]resta) -> f a & (restf <*> resta),
+        _ -> [],
+;
+
+instance Monad List =
+    let bind a f = match a with
+        [] -> [],
+        [a]rest -> f a ++ (rest >>= f),
+;
+
+instance {a, Eq a} => Eq List a =
+    let eq a b = match (a,b) with
+        ([],[]) -> true,
+        ([a]resta, [b]restb) -> a == b && resta == restb,
+        _ -> false,
+;
+
+operator {a} => 
+    (++): List a -> List a -> List a,
+    (&): a -> List a -> List a,
+;

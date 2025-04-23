@@ -4,10 +4,9 @@ use rustc_hash::FxHashMap;
 use smallvec::smallvec;
 
 use super::ast::{
-    Constructor, OpDeclaration, Path, TypedConstructor, TypedExpr, TypedExprKind, TypedLetBind,
-    TypedMatchArm, TypedModule, TypedParam, TypedPat, TypedPatKind, UntypedConstructor,
-    UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
-    UntypedPat, UntypedPatKind, ValDeclaration,
+    Constructor, Expr, ExprKind, LetBind, ListPat, MatchArm, Module, OpDeclaration, Param, Pat,
+    PatKind, Path, UntypedConstructor, UntypedExpr, UntypedLetBind, UntypedMatchArm, UntypedModule,
+    UntypedParam, UntypedPat, ValDeclaration,
 };
 use super::ctx::{
     AliasData, ClassData, Ctx, Generator, IdGenerator, InstanceData, MemberData, ModuleData,
@@ -23,7 +22,7 @@ use super::infer::{
 use super::token::Ident;
 use super::types::Ty;
 use crate::compiler::ctx::OperatorData;
-use crate::global::Symbol;
+use crate::global::{Symbol, symbol};
 use crate::span::Span;
 
 #[derive(Debug, Default)]
@@ -114,7 +113,7 @@ impl Checker {
         then: UntypedExpr,
         otherwise: UntypedExpr,
         span: Span,
-    ) -> IsaResult<(TypedExpr, Set)> {
+    ) -> IsaResult<(Expr<Ty>, Set)> {
         let (mut cond, set) = self.check(cond)?;
         let (mut then, then_set) = self.check(then)?;
         let (mut otherwise, else_set) = self.check(otherwise)?;
@@ -170,13 +169,13 @@ impl Checker {
 
         let ty = then.ty.clone();
 
-        let kind = TypedExprKind::If {
+        let kind = ExprKind::If {
             cond:      Box::new(cond),
             then:      Box::new(then),
             otherwise: Box::new(otherwise),
         };
 
-        Ok((TypedExpr::new(kind, span, ty), set))
+        Ok((Expr::new(kind, span, ty), set))
     }
 
     fn check_fn(
@@ -184,7 +183,7 @@ impl Checker {
         param: UntypedParam,
         expr: UntypedExpr,
         span: Span,
-    ) -> IsaResult<(TypedExpr, Set)> {
+    ) -> IsaResult<(Expr<Ty>, Set)> {
         self.ctx.push_scope();
 
         let var = self.gen_type_var();
@@ -200,12 +199,12 @@ impl Checker {
             ret:   Rc::new(expr.ty.clone()),
         };
 
-        let kind = TypedExprKind::Fn {
-            param: TypedParam::new(param.name, var),
+        let kind = ExprKind::Fn {
+            param: Param::new(param.name, var),
             expr:  Box::new(expr),
         };
 
-        Ok((TypedExpr::new(kind, span, ty), set))
+        Ok((Expr::new(kind, span, ty), set))
     }
 
     fn check_call(
@@ -213,7 +212,7 @@ impl Checker {
         callee: UntypedExpr,
         arg: UntypedExpr,
         span: Span,
-    ) -> IsaResult<(TypedExpr, Set)> {
+    ) -> IsaResult<(Expr<Ty>, Set)> {
         let (mut callee, set) = self.check(callee)?;
         let (mut arg, arg_set) = self.check(arg)?;
 
@@ -255,12 +254,12 @@ impl Checker {
 
         var.substitute_many(&subs);
 
-        let kind = TypedExprKind::Call {
+        let kind = ExprKind::Call {
             callee: Box::new(callee),
             arg:    Box::new(arg),
         };
 
-        Ok((TypedExpr::new(kind, span, var), set))
+        Ok((Expr::new(kind, span, var), set))
     }
 
     fn check_let_bind_with_val(
@@ -269,7 +268,7 @@ impl Checker {
         val_decl: &Ty,
         val_set: Set,
         ty_span: Span,
-    ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>, Set)> {
+    ) -> IsaResult<(Ty, Expr<Ty>, Box<[Param<Ty>]>, Set)> {
         self.ctx.push_scope();
 
         let mut param_iter = val_decl.param_iter();
@@ -288,7 +287,7 @@ impl Checker {
                         .with_note("let bind should have same type as val declaration")
                 })?;
                 self.insert_let(p.name, decl.clone(), []);
-                Ok(TypedParam::new(p.name, decl))
+                Ok(Param::new(p.name, decl))
             })
             .collect::<IsaResult<Box<_>>>()?;
 
@@ -302,7 +301,7 @@ impl Checker {
                 p.ty = self.get_var_ty(p.name).unwrap();
             }
 
-            expr.ty = Ty::function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
+            expr.ty = Ty::function(typed_params.iter().map(Param::ty).cloned(), expr.ty);
             (expr, set)
         };
 
@@ -370,7 +369,7 @@ impl Checker {
     fn check_let_bind(
         &mut self,
         bind: UntypedLetBind,
-    ) -> IsaResult<(Ty, TypedExpr, Box<[TypedParam]>, Set)> {
+    ) -> IsaResult<(Ty, Expr<Ty>, Box<[Param<Ty>]>, Set)> {
         if let Ok(val) = self.ctx.current()?.get_val(bind.name) {
             let VarData {
                 ty, constrs, span, ..
@@ -386,7 +385,7 @@ impl Checker {
             .map(|p| {
                 let var = self.gen_type_var();
                 self.insert_let(p.name, var.clone(), []);
-                TypedParam::new(p.name, var)
+                Param::new(p.name, var)
             })
             .collect::<Box<_>>();
 
@@ -403,7 +402,7 @@ impl Checker {
                 p.ty = self.get_var_ty(p.name).unwrap();
             }
 
-            expr.ty = Ty::function_type(typed_params.iter().map(TypedParam::ty).cloned(), expr.ty);
+            expr.ty = Ty::function(typed_params.iter().map(Param::ty).cloned(), expr.ty);
 
             let subs = Subs::new(var_id, expr.ty.clone());
 
@@ -423,7 +422,7 @@ impl Checker {
         bind: UntypedLetBind,
         body: Option<UntypedExpr>,
         span: Span,
-    ) -> IsaResult<(TypedExpr, Set)> {
+    ) -> IsaResult<(Expr<Ty>, Set)> {
         let name = bind.name;
 
         let (u1, expr, params, set) = self.check_let_bind(bind)?;
@@ -442,14 +441,14 @@ impl Checker {
             None => (None, Ty::Unit, set),
         };
 
-        let bind = TypedLetBind::new(name, params, Box::new(expr));
+        let bind = LetBind::new(name, params, Box::new(expr));
 
-        let kind = TypedExprKind::Let {
+        let kind = ExprKind::Let {
             bind,
             body: body.map(Box::new),
         };
 
-        Ok((TypedExpr::new(kind, span, ty), set))
+        Ok((Expr::new(kind, span, ty), set))
     }
 
     fn check_constructor(
@@ -457,7 +456,7 @@ impl Checker {
         constructor: UntypedConstructor,
         quant: Rc<[u64]>,
         mut ret: Ty,
-    ) -> IsaResult<TypedConstructor> {
+    ) -> IsaResult<Constructor<Ty>> {
         for param in constructor.params.iter().rev() {
             ret = Ty::Fn {
                 param: Rc::new(param.clone()),
@@ -485,7 +484,7 @@ impl Checker {
         parameters: Box<[Ty]>,
         constructors: Box<[UntypedConstructor]>,
         span: Span,
-    ) -> IsaResult<TypedExpr> {
+    ) -> IsaResult<Expr<Ty>> {
         let mut quant = Vec::new();
 
         for param in &parameters {
@@ -509,13 +508,13 @@ impl Checker {
 
         let constructors = typed_constructors.into_boxed_slice();
 
-        let kind = TypedExprKind::Type {
+        let kind = ExprKind::Type {
             name,
             parameters,
             constructors,
         };
 
-        Ok(TypedExpr::new(kind, span, Ty::Unit))
+        Ok(Expr::new(kind, span, Ty::Unit))
     }
 
     fn check_operator(
@@ -524,7 +523,7 @@ impl Checker {
         set: Set,
         ops: Box<[OpDeclaration]>,
         span: Span,
-    ) -> IsaResult<TypedExpr> {
+    ) -> IsaResult<Expr<Ty>> {
         let mut quant = Vec::new();
 
         for param in &params {
@@ -549,13 +548,13 @@ impl Checker {
             new_ops.push(OpDeclaration::new(prefix, op, ty));
         }
 
-        let kind = TypedExprKind::Operator {
+        let kind = ExprKind::Operator {
             params,
             set,
             ops: new_ops.into_boxed_slice(),
         };
 
-        Ok(TypedExpr::new(kind, span, Ty::Unit))
+        Ok(Expr::new(kind, span, Ty::Unit))
     }
 
     fn check_val(&self, val: &mut ValDeclaration) -> IsaResult<()> {
@@ -571,14 +570,14 @@ impl Checker {
         self.check_valid_type(&val.ty)
     }
 
-    fn check_val_expr(&mut self, mut val: ValDeclaration, span: Span) -> IsaResult<TypedExpr> {
+    fn check_val_expr(&mut self, mut val: ValDeclaration, span: Span) -> IsaResult<Expr<Ty>> {
         self.check_val(&mut val)?;
 
         self.insert_val(val.name.ident, val.ty.clone(), val.set.clone(), val.span);
 
-        let kind = TypedExprKind::Val(val);
+        let kind = ExprKind::Val(val);
 
-        Ok(TypedExpr::new(kind, span, Ty::Unit))
+        Ok(Expr::new(kind, span, Ty::Unit))
     }
 
     fn check_constructor_pat(
@@ -586,13 +585,13 @@ impl Checker {
         name: Path,
         args: Box<[UntypedPat]>,
         span: Span,
-    ) -> IsaResult<TypedPat> {
+    ) -> IsaResult<Pat<Ty>> {
         let ctor = match (self.ctx.get_constructor(&name), name.segments.as_slice()) {
             (Ok(ctor), _) => ctor.clone(),
             (Err(_), [name]) if args.is_empty() => {
                 let var = self.gen_type_var();
                 self.insert_let(*name, var.clone(), []);
-                return Ok(TypedPat::new(TypedPatKind::Ident(*name), span, var));
+                return Ok(Pat::new(PatKind::Ident(*name), span, var));
             }
             (Err(err), _) => {
                 return Err(IsaError::from(err));
@@ -629,12 +628,12 @@ impl Checker {
         }
         ty.substitute_many(&subs);
 
-        let kind = TypedPatKind::Constructor {
+        let kind = PatKind::Constructor {
             name,
             args: typed_args.into_boxed_slice(),
         };
 
-        Ok(TypedPat::new(kind, span, ty))
+        Ok(Pat::new(kind, span, ty))
     }
 
     fn check_class_signatures(
@@ -677,7 +676,7 @@ impl Checker {
         signatures: Box<[ValDeclaration]>,
         defaults: Box<[UntypedLetBind]>,
         span: Span,
-    ) -> IsaResult<(TypedExpr, Set)> {
+    ) -> IsaResult<(Expr<Ty>, Set)> {
         let path = Path::from_ident(name);
         let data = self.ctx.get_class(&path).unwrap().instance_var();
 
@@ -686,7 +685,7 @@ impl Checker {
         let (defaults, def_set) =
             self.check_instance_impls(&path, Set::new(), defaults, |_| None)?;
 
-        let kind = TypedExprKind::Class {
+        let kind = ExprKind::Class {
             set,
             name,
             instance,
@@ -694,7 +693,7 @@ impl Checker {
             defaults: defaults.into_boxed_slice(),
         };
 
-        Ok((TypedExpr::new(kind, span, Ty::Unit), def_set))
+        Ok((Expr::new(kind, span, Ty::Unit), def_set))
     }
 
     fn check_instance_impls<F>(
@@ -703,7 +702,7 @@ impl Checker {
         mut set: Set,
         impls: impl IntoIterator<Item = UntypedLetBind>,
         mut subs: F,
-    ) -> IsaResult<(Vec<TypedLetBind>, Set)>
+    ) -> IsaResult<(Vec<LetBind<Ty>>, Set)>
     where
         F: FnMut(&Ty) -> Option<Ty>,
     {
@@ -735,7 +734,7 @@ impl Checker {
                 let (_, expr, params, bind_set) =
                     self.check_let_bind_with_val(bind, &ty, member_set, ty_span)?;
                 set.extend(bind_set);
-                Ok(TypedLetBind::new(name, params, Box::new(expr)))
+                Ok(LetBind::new(name, params, Box::new(expr)))
             })
             .collect::<IsaResult<_>>()?;
         Ok((impls, set))
@@ -749,7 +748,7 @@ impl Checker {
         instance: Ty,
         impls: Box<[UntypedLetBind]>,
         span: Span,
-    ) -> IsaResult<(TypedExpr, Set)> {
+    ) -> IsaResult<(Expr<Ty>, Set)> {
         let class_data = self.ctx.get_class(&class)?;
 
         let scheme = self.ctx.generalize(instance.clone());
@@ -824,7 +823,7 @@ impl Checker {
             })
         }?;
 
-        let kind = TypedExprKind::Instance {
+        let kind = ExprKind::Instance {
             params,
             set: set.clone(),
             class,
@@ -832,16 +831,47 @@ impl Checker {
             impls: impls.into(),
         };
 
-        Ok((TypedExpr::new(kind, span, Ty::Unit), set))
+        Ok((Expr::new(kind, span, Ty::Unit), set))
     }
 
-    fn check_pat(&mut self, UntypedPat { kind, span, .. }: UntypedPat) -> IsaResult<TypedPat> {
-        match kind {
-            UntypedPatKind::Wild => {
-                let var = self.gen_type_var();
-                Ok(TypedPat::new(TypedPatKind::Wild, span, var))
+    fn check_list_pat(&mut self, list: ListPat<()>, span: Span) -> IsaResult<Pat<Ty>> {
+        match list {
+            ListPat::Nil => {
+                let ty = Ty::list(self.gen_type_var());
+                Ok(Pat::new(PatKind::List(ListPat::Nil), span, ty))
             }
-            UntypedPatKind::Or(spanneds) => {
+            ListPat::Single(pat) => {
+                let pat = self.check_pat(*pat)?;
+                let ty = Ty::list(pat.ty.clone());
+                let kind = PatKind::List(ListPat::Single(Box::new(pat)));
+                Ok(Pat::new(kind, span, ty))
+            }
+            ListPat::Cons(pat, pat1) => {
+                let pat = self.check_pat(*pat)?;
+                let pat1 = self.check_pat(*pat1)?;
+                if !pat1.kind.is_rest_pat() {
+                    let fst = DiagnosticLabel::new("expected rest pattern", pat1.span);
+                    let note = "rest pattern should be of form _, identifier or list pattern";
+                    return Err(IsaError::new("pattern error", fst, Vec::new()).with_note(note));
+                }
+                let mut ty = Ty::list(pat.ty.clone());
+                let c = EqConstraint::new(ty.clone(), pat1.ty.clone(), span);
+                let (subs, _) = self.unify(c, [])?;
+                ty.substitute_many(&subs);
+                let kind = PatKind::List(ListPat::Cons(Box::new(pat), Box::new(pat1)));
+
+                Ok(Pat::new(kind, span, ty))
+            }
+        }
+    }
+
+    fn check_pat(&mut self, UntypedPat { kind, span, .. }: UntypedPat) -> IsaResult<Pat<Ty>> {
+        match kind {
+            PatKind::Wild => {
+                let var = self.gen_type_var();
+                Ok(Pat::new(PatKind::Wild, span, var))
+            }
+            PatKind::Or(spanneds) => {
                 let mut patterns = Vec::new();
                 let mut c = EqConstraintSet::new();
 
@@ -861,22 +891,19 @@ impl Checker {
                 }
                 var.substitute_many(&subs);
 
-                Ok(TypedPat::new(
-                    TypedPatKind::Or(patterns.into_boxed_slice()),
+                Ok(Pat::new(
+                    PatKind::Or(patterns.into_boxed_slice()),
                     span,
                     var,
                 ))
             }
-            UntypedPatKind::Int(i) => Ok(TypedPat::new(TypedPatKind::Int(i), span, Ty::Int)),
-            UntypedPatKind::Bool(b) => Ok(TypedPat::new(TypedPatKind::Bool(b), span, Ty::Bool)),
-            UntypedPatKind::Char(c) => Ok(TypedPat::new(TypedPatKind::Char(c), span, Ty::Char)),
-            UntypedPatKind::Tuple(pats) => {
+            PatKind::List(list) => self.check_list_pat(list, span),
+            PatKind::Int(i) => Ok(Pat::new(PatKind::Int(i), span, Ty::Int)),
+            PatKind::Bool(b) => Ok(Pat::new(PatKind::Bool(b), span, Ty::Bool)),
+            PatKind::Char(c) => Ok(Pat::new(PatKind::Char(c), span, Ty::Char)),
+            PatKind::Tuple(pats) => {
                 if pats.is_empty() {
-                    return Ok(TypedPat::new(
-                        TypedPatKind::Tuple(Box::new([])),
-                        span,
-                        Ty::Unit,
-                    ));
+                    return Ok(Pat::new(PatKind::Tuple(Box::new([])), span, Ty::Unit));
                 }
 
                 let mut typed_pats = Vec::new();
@@ -888,28 +915,20 @@ impl Checker {
                     typed_pats.push(pat);
                 }
 
-                let kind = TypedPatKind::Tuple(typed_pats.into_boxed_slice());
+                let kind = PatKind::Tuple(typed_pats.into_boxed_slice());
                 let ty = Ty::Tuple(types.into());
 
-                Ok(TypedPat::new(kind, span, ty))
+                Ok(Pat::new(kind, span, ty))
             }
-            UntypedPatKind::Constructor { name, args } => {
-                self.check_constructor_pat(name, args, span)
-            }
+            PatKind::Constructor { name, args } => self.check_constructor_pat(name, args, span),
 
-            UntypedPatKind::Ident(_) => {
+            PatKind::Ident(_) => {
                 unreachable!("Parser never returns Ident pattern")
             }
 
-            UntypedPatKind::IntRange(range) => {
-                Ok(TypedPat::new(TypedPatKind::IntRange(range), span, Ty::Int))
-            }
+            PatKind::IntRange(range) => Ok(Pat::new(PatKind::IntRange(range), span, Ty::Int)),
 
-            UntypedPatKind::CharRange(range) => Ok(TypedPat::new(
-                TypedPatKind::CharRange(range),
-                span,
-                Ty::Char,
-            )),
+            PatKind::CharRange(range) => Ok(Pat::new(PatKind::CharRange(range), span, Ty::Char)),
         }
     }
 
@@ -917,7 +936,7 @@ impl Checker {
         &mut self,
         pat: UntypedPat,
         expr: UntypedExpr,
-    ) -> IsaResult<(TypedPat, TypedExpr, Set)> {
+    ) -> IsaResult<(Pat<Ty>, Expr<Ty>, Set)> {
         self.ctx.push_scope();
 
         let mut pat = self.check_pat(pat)?;
@@ -944,7 +963,7 @@ impl Checker {
         expr: UntypedExpr,
         arms: Box<[UntypedMatchArm]>,
         span: Span,
-    ) -> IsaResult<(TypedExpr, Set)> {
+    ) -> IsaResult<(Expr<Ty>, Set)> {
         let (mut expr, mut set) = self.check(expr)?;
 
         let mut var = self.gen_type_var();
@@ -957,7 +976,7 @@ impl Checker {
             set.extend(arm_set);
             c.push(EqConstraint::new(var.clone(), aexpr.ty.clone(), aexpr.span));
             c.push(EqConstraint::new(expr.ty.clone(), pat.ty.clone(), pat.span));
-            typed_arms.push(TypedMatchArm::new(pat, aexpr));
+            typed_arms.push(MatchArm::new(pat, aexpr));
         }
 
         let (subs, set) = self.unify(c, set).map_err(|err| {
@@ -995,12 +1014,12 @@ impl Checker {
         }
         var.substitute_many(&subs);
 
-        let kind = TypedExprKind::Match {
+        let kind = ExprKind::Match {
             expr: Box::new(expr),
             arms: typed_arms.into_boxed_slice(),
         };
 
-        Ok((TypedExpr::new(kind, span, var), set))
+        Ok((Expr::new(kind, span, var), set))
     }
 
     fn check_path_simple(
@@ -1095,7 +1114,7 @@ impl Checker {
         lhs: UntypedExpr,
         rhs: UntypedExpr,
         span: Span,
-    ) -> IsaResult<(TypedExpr, Set)> {
+    ) -> IsaResult<(Expr<Ty>, Set)> {
         let (lhs, lhs_set) = self.check(lhs)?;
         let (rhs, rhs_set) = self.check(rhs)?;
 
@@ -1121,21 +1140,16 @@ impl Checker {
         let (subs, set) = self.unify([c1, c2], set)?;
         ret.substitute_many(&subs);
 
-        let kind = TypedExprKind::Bin {
+        let kind = ExprKind::Bin {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
         };
 
-        Ok((TypedExpr::new(kind, span, ret), set))
+        Ok((Expr::new(kind, span, ret), set))
     }
 
-    fn check_un(
-        &mut self,
-        op: Ident,
-        expr: UntypedExpr,
-        span: Span,
-    ) -> IsaResult<(TypedExpr, Set)> {
+    fn check_un(&mut self, op: Ident, expr: UntypedExpr, span: Span) -> IsaResult<(Expr<Ty>, Set)> {
         let (expr, expr_set) = self.check(expr)?;
         let data = self.ctx.get_prefix(op)?;
         let mut set = data.set().clone();
@@ -1149,22 +1163,43 @@ impl Checker {
         let c = EqConstraint::new(ty.into(), expr.ty.clone(), expr.span);
         let (subs, set) = self.unify(c, set)?;
         ret.substitute_many(&subs);
-        let kind = TypedExprKind::Un {
+        let kind = ExprKind::Un {
             op,
             expr: Box::new(expr),
         };
 
-        Ok((TypedExpr::new(kind, span, ret), set))
+        Ok((Expr::new(kind, span, ret), set))
     }
 
-    fn check_tuple(
-        &mut self,
-        exprs: Box<[UntypedExpr]>,
-        span: Span,
-    ) -> IsaResult<(TypedExpr, Set)> {
+    fn check_list(&mut self, exprs: Box<[UntypedExpr]>, span: Span) -> IsaResult<(Expr<Ty>, Set)> {
+        let mut typed_exprs = Vec::new();
+        let id = self.gen_id();
+
+        let mut set = Set::new();
+        let mut constrs = Vec::new();
+
+        for expr in exprs {
+            let (expr, expr_set) = self.check(expr)?;
+            set.extend(expr_set);
+            constrs.push(EqConstraint::new(Ty::Var(id), expr.ty.clone(), expr.span));
+            typed_exprs.push(expr);
+        }
+
+        let (subs, set) = self.unify(constrs, set)?;
+        let mut ty = Ty::Var(id);
+        ty.substitute_many(&subs);
+
+        let ty = Ty::list(ty);
+
+        let kind = ExprKind::List(typed_exprs.into_boxed_slice());
+
+        Ok((Expr::new(kind, span, ty), set))
+    }
+
+    fn check_tuple(&mut self, exprs: Box<[UntypedExpr]>, span: Span) -> IsaResult<(Expr<Ty>, Set)> {
         if exprs.is_empty() {
             return Ok((
-                TypedExpr::new(TypedExprKind::Tuple(Box::new([])), span, Ty::Unit),
+                Expr::new(ExprKind::Tuple(Box::new([])), span, Ty::Unit),
                 Set::new(),
             ));
         }
@@ -1181,10 +1216,10 @@ impl Checker {
             typed_exprs.push(expr);
         }
 
-        let kind = TypedExprKind::Tuple(typed_exprs.into_boxed_slice());
+        let kind = ExprKind::Tuple(typed_exprs.into_boxed_slice());
         let ty = Ty::Tuple(types.into());
 
-        Ok((TypedExpr::new(kind, span, ty), set))
+        Ok((Expr::new(kind, span, ty), set))
     }
 
     fn instantiate(&mut self, ty: Ty) -> (Ty, Vec<Subs>) {
@@ -1200,18 +1235,6 @@ impl Checker {
         let mut declared = FxHashMap::default();
         for expr in &mut module.exprs {
             self.check_type_declaration(expr, &mut declared)?;
-        }
-
-        for expr in &mut module.exprs {
-            expr.substitute(&mut |ty| match ty {
-                Ty::Named { name, args } => name.as_ident().map(|name| Ty::Named {
-                    name: Path {
-                        segments: smallvec![module_name, name],
-                    },
-                    args: args.clone(),
-                }),
-                _ => None,
-            });
         }
 
         if declared.is_empty() {
@@ -1231,8 +1254,8 @@ impl Checker {
         declared: &mut FxHashMap<Ident, Span>,
     ) -> IsaResult<()> {
         let (name, span) = match &mut expr.kind {
-            UntypedExprKind::Semi(e) => return self.check_type_declaration(e, declared),
-            UntypedExprKind::Type {
+            ExprKind::Semi(e) => return self.check_type_declaration(e, declared),
+            ExprKind::Type {
                 name,
                 parameters,
                 constructors,
@@ -1258,7 +1281,7 @@ impl Checker {
                 (*name, expr.span)
             }
 
-            UntypedExprKind::Val(val) => {
+            ExprKind::Val(val) => {
                 let mut subs = Vec::new();
 
                 for param in &mut val.params {
@@ -1274,7 +1297,7 @@ impl Checker {
                 return Ok(());
             }
 
-            UntypedExprKind::Alias {
+            ExprKind::Alias {
                 name,
                 parameters,
                 ty,
@@ -1298,7 +1321,7 @@ impl Checker {
                 (*name, expr.span)
             }
 
-            UntypedExprKind::Class {
+            ExprKind::Class {
                 set,
                 name,
                 instance,
@@ -1346,7 +1369,7 @@ impl Checker {
                 (*name, expr.span)
             }
 
-            UntypedExprKind::Operator {
+            ExprKind::Operator {
                 params, set, ops, ..
             } => {
                 let mut subs = Vec::new();
@@ -1367,7 +1390,7 @@ impl Checker {
                 return Ok(());
             }
 
-            UntypedExprKind::Instance {
+            ExprKind::Instance {
                 params,
                 set,
                 instance,
@@ -1401,8 +1424,8 @@ impl Checker {
 
     fn check_alias_declaration(&self, expr: &UntypedExpr) -> Option<IsaResult<(Path, AliasData)>> {
         match &expr.kind {
-            UntypedExprKind::Semi(e) => self.check_alias_declaration(e),
-            UntypedExprKind::Alias {
+            ExprKind::Semi(e) => self.check_alias_declaration(e),
+            ExprKind::Alias {
                 name,
                 parameters,
                 ty,
@@ -1476,13 +1499,13 @@ impl Checker {
 
     fn check_expr_for_class_signatures(&mut self, expr: &mut UntypedExpr) -> IsaResult<()> {
         match &mut expr.kind {
-            UntypedExprKind::Class {
+            ExprKind::Class {
                 name,
                 signatures,
                 defaults,
                 ..
             } => self.check_class_signatures(*name, signatures, defaults),
-            UntypedExprKind::Instance {
+            ExprKind::Instance {
                 set,
                 class,
                 instance,
@@ -1494,7 +1517,7 @@ impl Checker {
                 self.ctx.insert_instance(instance, class, data)?;
                 Ok(())
             }
-            UntypedExprKind::Semi(expr) => self.check_expr_for_class_signatures(expr),
+            ExprKind::Semi(expr) => self.check_expr_for_class_signatures(expr),
             _ => Ok(()),
         }
     }
@@ -1502,7 +1525,7 @@ impl Checker {
     pub fn check_many_modules(
         &mut self,
         mut modules: Vec<UntypedModule>,
-    ) -> IsaResult<(Vec<TypedModule>, Set)> {
+    ) -> IsaResult<(Vec<Module<Ty>>, Set)> {
         let mut aliases = Vec::new();
 
         for types in modules
@@ -1527,18 +1550,30 @@ impl Checker {
 
             self.ctx.push_scope();
 
+            let extracted = module
+                .exprs
+                .extract_if(.., |e| {
+                    e.substitute(&mut |ty| match ty {
+                        Ty::Named { name, args } => {
+                            let name = self.ctx.resolve_type_name(name).ok()?;
+                            Some(Ty::Named {
+                                name,
+                                args: args.clone(),
+                            })
+                        }
+                        _ => None,
+                    });
+                    e.kind.is_type_or_val_or_op()
+                })
+                .collect::<Vec<_>>();
+
             for expr in &mut module.exprs {
                 self.check_expr_for_class_signatures(expr)?;
             }
 
             let mut exprs = Vec::new();
-
-            for res in module
-                .exprs
-                .extract_if(.., |e| e.kind.is_type_or_val_or_op())
-                .map(|e| self.check(e))
-            {
-                let (expr, expr_set) = res?;
+            for expr in extracted {
+                let (expr, expr_set) = self.check(expr)?;
                 exprs.push(expr);
                 set.extend(expr_set);
             }
@@ -1547,6 +1582,14 @@ impl Checker {
             self.ctx.extend_module(module.name.ident, scope);
 
             decl.push(exprs);
+        }
+
+        for module in &mut modules {
+            self.ctx.set_current_module(module.name);
+            let _ = self.ctx.import_clause(module.imports.clone());
+            if !module.no_prelude {
+                let _ = self.ctx.import_prelude();
+            }
         }
 
         // for c in set.iter() {
@@ -1568,7 +1611,7 @@ impl Checker {
         Ok((modules, set))
     }
 
-    fn check_module(&mut self, module: UntypedModule) -> IsaResult<(TypedModule, Set)> {
+    fn check_module(&mut self, module: UntypedModule) -> IsaResult<(Module<Ty>, Set)> {
         self.ctx.push_scope();
 
         self.ctx.set_current_module(module.name);
@@ -1588,7 +1631,7 @@ impl Checker {
 
         let scope = self.ctx.pop_scope().unwrap();
         self.ctx.extend_module(module.name.ident, scope);
-        let typed = TypedModule::new(
+        let typed = Module::new(
             module.no_prelude,
             module.name,
             module.imports,
@@ -1599,57 +1642,48 @@ impl Checker {
         Ok((typed, set))
     }
 
-    fn check(&mut self, expr: UntypedExpr) -> IsaResult<(TypedExpr, Set)> {
+    fn check(&mut self, expr: UntypedExpr) -> IsaResult<(Expr<Ty>, Set)> {
         let span = expr.span;
         match expr.kind {
-            UntypedExprKind::Int(i) => Ok((
-                TypedExpr::new(TypedExprKind::Int(i), span, Ty::Int),
-                Set::new(),
-            )),
+            ExprKind::Int(i) => Ok((Expr::new(ExprKind::Int(i), span, Ty::Int), Set::new())),
 
-            UntypedExprKind::Bool(b) => Ok((
-                TypedExpr::new(TypedExprKind::Bool(b), span, Ty::Bool),
-                Set::new(),
-            )),
+            ExprKind::Bool(b) => Ok((Expr::new(ExprKind::Bool(b), span, Ty::Bool), Set::new())),
 
-            UntypedExprKind::Char(c) => Ok((
-                TypedExpr::new(TypedExprKind::Char(c), span, Ty::Char),
-                Set::new(),
-            )),
+            ExprKind::Char(c) => Ok((Expr::new(ExprKind::Char(c), span, Ty::Char), Set::new())),
 
-            UntypedExprKind::Path(path) => {
+            ExprKind::Path(path) => {
                 let (path, ty, set) =
                     Self::check_path(&self.ctx, &path.segments, &mut self.generator, span)?;
-                Ok((TypedExpr::new(TypedExprKind::Path(path), span, ty), set))
+                Ok((Expr::new(ExprKind::Path(path), span, ty), set))
             }
 
-            UntypedExprKind::Tuple(exprs) => self.check_tuple(exprs, span),
+            ExprKind::Tuple(exprs) => self.check_tuple(exprs, span),
 
-            UntypedExprKind::Bin { op, lhs, rhs } => self.check_bin(op, *lhs, *rhs, span),
+            ExprKind::List(exprs) => self.check_list(exprs, span),
 
-            UntypedExprKind::Un { op, expr } => self.check_un(op, *expr, span),
+            ExprKind::Bin { op, lhs, rhs } => self.check_bin(op, *lhs, *rhs, span),
 
-            UntypedExprKind::If {
+            ExprKind::Un { op, expr } => self.check_un(op, *expr, span),
+
+            ExprKind::If {
                 cond,
                 then,
                 otherwise,
             } => self.check_if(*cond, *then, *otherwise, span),
 
-            UntypedExprKind::Fn { param, expr } => self.check_fn(param, *expr, span),
+            ExprKind::Fn { param, expr } => self.check_fn(param, *expr, span),
 
-            UntypedExprKind::Call { callee, arg } => self.check_call(*callee, *arg, span),
+            ExprKind::Call { callee, arg } => self.check_call(*callee, *arg, span),
 
-            UntypedExprKind::Let { bind, body } => {
-                self.check_let(bind, body.map(|body| *body), span)
-            }
+            ExprKind::Let { bind, body } => self.check_let(bind, body.map(|body| *body), span),
 
-            UntypedExprKind::Semi(expr) => {
+            ExprKind::Semi(expr) => {
                 let (mut expr, constr) = self.check(*expr)?;
                 expr.ty = Ty::Unit;
                 Ok((expr, constr))
             }
 
-            UntypedExprKind::Type {
+            ExprKind::Type {
                 name,
                 parameters,
                 constructors,
@@ -1658,13 +1692,13 @@ impl Checker {
                 Set::new(),
             )),
 
-            UntypedExprKind::Alias {
+            ExprKind::Alias {
                 name,
                 parameters,
                 ty,
             } => Ok((
-                TypedExpr::new(
-                    TypedExprKind::Alias {
+                Expr::new(
+                    ExprKind::Alias {
                         name,
                         parameters,
                         ty,
@@ -1675,14 +1709,14 @@ impl Checker {
                 Set::new(),
             )),
 
-            UntypedExprKind::Val(val) => {
+            ExprKind::Val(val) => {
                 let val = self.check_val_expr(val, span)?;
                 Ok((val, Set::new()))
             }
 
-            UntypedExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
+            ExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
 
-            UntypedExprKind::Class {
+            ExprKind::Class {
                 set,
                 name,
                 instance,
@@ -1690,7 +1724,7 @@ impl Checker {
                 defaults,
             } => self.check_class(set, name, instance, signatures, defaults, span),
 
-            UntypedExprKind::Instance {
+            ExprKind::Instance {
                 params,
                 set,
                 class: name,
@@ -1698,7 +1732,7 @@ impl Checker {
                 impls,
             } => self.check_instance(params, set, name, instance, impls, span),
 
-            UntypedExprKind::Operator { params, set, ops } => {
+            ExprKind::Operator { params, set, ops } => {
                 let operator = self.check_operator(params, set, ops, span)?;
                 Ok((operator, Set::new()))
             }

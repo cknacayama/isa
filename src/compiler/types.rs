@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
-use super::ast::Path;
+use super::ast::{Path, mod_path};
 use super::ctx::Generator;
 use super::infer::{Subs, Substitute};
 use super::token::Ident;
@@ -62,7 +62,14 @@ impl Ty {
         (ty, subs)
     }
 
-    pub fn function_type<I>(params: I, ret: Self) -> Self
+    pub fn list(ty: Self) -> Self {
+        Self::Named {
+            name: mod_path!(list::List),
+            args: Rc::new([ty]),
+        }
+    }
+
+    pub fn function<I>(params: I, ret: Self) -> Self
     where
         I: IntoIterator<Item = Self>,
         I::IntoIter: DoubleEndedIterator,

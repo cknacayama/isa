@@ -5,12 +5,12 @@ use std::{fmt, vec};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::smallvec;
 
-use super::ast::{Import, ImportClause, ImportWildcard, Path, TypedConstructor, mod_path};
+use super::ast::{Constructor, Import, ImportClause, ImportWildcard, Path, mod_path};
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::token::Ident;
 use super::types::Ty;
-use crate::global::Symbol;
+use crate::global::{Symbol, symbol};
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
@@ -179,14 +179,14 @@ pub trait CtxFmt {
 #[derive(Debug, Clone, Default)]
 pub struct TyData {
     params:       Rc<[u64]>,
-    constructors: Vec<TypedConstructor>,
+    constructors: Vec<Constructor<Ty>>,
     imported:     Option<Ident>,
     span:         Span,
 }
 
 impl TyData {
     #[must_use]
-    const fn new(params: Rc<[u64]>, constructors: Vec<TypedConstructor>, span: Span) -> Self {
+    const fn new(params: Rc<[u64]>, constructors: Vec<Constructor<Ty>>, span: Span) -> Self {
         Self {
             params,
             constructors,
@@ -202,11 +202,11 @@ impl TyData {
         }
     }
 
-    fn constructors(&self) -> &[TypedConstructor] {
+    fn constructors(&self) -> &[Constructor<Ty>] {
         &self.constructors
     }
 
-    fn find_constructor(&self, ctor: Ident) -> CheckResult<&TypedConstructor> {
+    fn find_constructor(&self, ctor: Ident) -> CheckResult<&Constructor<Ty>> {
         self.constructors
             .iter()
             .find(|c| c.name == ctor)
@@ -548,7 +548,7 @@ impl Ctx {
     pub fn insert_constructor_for_ty(
         &mut self,
         name: Ident,
-        ctor: &TypedConstructor,
+        ctor: &Constructor<Ty>,
     ) -> CheckResult<()> {
         let module = self.current_mut()?;
 
@@ -641,7 +641,7 @@ impl Ctx {
     }
 
     #[must_use]
-    pub fn get_constructors_for_ty(&self, name: &Path) -> &[TypedConstructor] {
+    pub fn get_constructors_for_ty(&self, name: &Path) -> &[Constructor<Ty>] {
         self.get_ty(name)
             .map_or(&[], |data| data.constructors.as_slice())
     }
@@ -666,6 +666,16 @@ impl Ctx {
         }
     }
 
+    pub fn resolve_type_name(&self, name: &Path) -> CheckResult<Path> {
+        let (module, ty) = self.get_module_and_ident(name)?;
+        let data = self.get_ty(name)?;
+        if let Some(import) = data.imported {
+            Ok(Path::new(smallvec![import, ty]))
+        } else {
+            Ok(Path::new(smallvec![module, ty]))
+        }
+    }
+
     pub fn same_type_name(&self, lhs: &Path, rhs: &Path) -> CheckResult<bool> {
         let (lhs_module, lhs_ty) = self.get_module_and_ident(lhs)?;
         let (rhs_module, rhs_ty) = self.get_module_and_ident(rhs)?;
@@ -673,6 +683,10 @@ impl Ctx {
         if lhs_ty != rhs_ty {
             return Ok(false);
         }
+
+        println!("{lhs}");
+        println!("{rhs}");
+
         if lhs_module == rhs_module {
             return Ok(true);
         }
@@ -954,7 +968,7 @@ impl Ctx {
     pub fn equivalent(&self, lhs: &Ty, rhs: &Ty) -> bool {
         match (lhs, rhs) {
             (Ty::Named { name: n1, args: a1 }, Ty::Named { name: n2, args: a2 }) => {
-                self.same_type_name(n1, n2).unwrap()
+                n1 == n2
                     && a1.len() == a2.len()
                     && a1
                         .iter()
@@ -1032,7 +1046,7 @@ impl Ctx {
     fn zip_args(&self, lhs: &Ty, rhs: &Ty) -> Option<Vec<(Ty, Ty)>> {
         match (lhs, rhs) {
             (Ty::Named { name: n1, args: a1 }, Ty::Named { name: n2, args: a2 })
-                if self.same_type_name(n1, n2).unwrap() && a1.len() == a2.len() =>
+                if n1 == n2 && a1.len() == a2.len() =>
             {
                 Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
             }

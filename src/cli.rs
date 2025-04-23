@@ -91,15 +91,15 @@ impl Config {
                 .expect("Should have input path as second argument"),
         );
 
-        let input = std::fs::read_to_string(&input_path).expect("Should have valid path as input");
-
         let mut files = FilesDatabase::default();
+        Self::add_prelude(&mut files);
+
+        let input = std::fs::read_to_string(&input_path).expect("Should have valid path as input");
         let input_file_name = input_path
             .file_name()
             .and_then(OsStr::to_str)
             .unwrap_or_default()
             .to_owned();
-        Self::add_prelude(&mut files);
         files.add(input_file_name, input);
 
         let opt = env

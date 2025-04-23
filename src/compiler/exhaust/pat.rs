@@ -143,12 +143,12 @@ impl WitnessMatrix {
 }
 
 #[derive(Debug, Clone)]
-pub struct Pat {
+pub struct Pattern {
     ctor:   Ctor,
-    fields: Vec<(usize, Pat)>,
+    fields: Vec<(usize, Pattern)>,
 }
 
-impl Pat {
+impl Pattern {
     #[must_use]
     pub(super) const fn new(ctor: Ctor, fields: Vec<(usize, Self)>) -> Self {
         Self { ctor, fields }
@@ -181,7 +181,7 @@ impl Pat {
 #[derive(Debug, Clone, Copy)]
 pub enum PatOrWild<'a> {
     Wild,
-    Pat(&'a Pat),
+    Pat(&'a Pattern),
 }
 
 impl<'a> PatOrWild<'a> {

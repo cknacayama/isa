@@ -188,6 +188,8 @@ impl<'a> Lexer<'a> {
             '@' => token!(At),
             '(' => token!(LParen),
             ')' => token!(RParen),
+            '[' => token!(LBracket),
+            ']' => token!(RBracket),
             '{' => token!(LBrace),
             '}' => token!(RBrace),
             ',' => token!(Comma),

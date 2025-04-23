@@ -59,3 +59,27 @@ class {Eq a} => Cmp a =
 class {Cmp a, Add a, Sub a, Mul a, Div a, Neg a} => 
     Number a = val from_int: int -> a;
 
+
+operator {a, Add a} => (+): a -> a -> a; 
+operator {a, Sub a} => (-): a -> a -> a; 
+operator {a, Mul a} => (*): a -> a -> a; 
+operator {a, Div a} => 
+    (/): a -> a -> a,
+    (%): a -> a -> a
+; 
+operator {a, And a} => (&&): a -> a -> a; 
+operator {a, Or a} => (||): a -> a -> a; 
+operator {a, Eq a} => 
+    (==): a -> a -> bool,
+    (!=): a -> a -> bool
+;
+operator {a, Cmp a} => 
+    (>): a -> a -> bool,
+    (<): a -> a -> bool,
+    (>=): a -> a -> bool, 
+    (<=): a -> a -> bool,
+; 
+operator {a, b} => ($): (a -> b) -> a -> b;
+operator {a, b, c} => (.): (b -> c) -> (a -> b) -> a -> c;
+operator {a, Neg a} => {-}: a -> a;
+operator {a, Not a} => {!}: a -> bool;

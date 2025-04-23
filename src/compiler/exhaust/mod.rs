@@ -4,12 +4,15 @@ pub mod pat;
 use std::num::NonZeroUsize;
 
 use ctor::{Ctor, CtorSet, IntRange, MaybeInfinite};
-use pat::{Pat, PatMatrix, PatMatrixRow, PatOrWild, PatVector, WitnessPat};
+use pat::{PatMatrix, PatMatrixRow, PatOrWild, PatVector, Pattern, WitnessPat};
 
-use super::ast::{ExprKind, LetBind, MatchArm, RangePat, TypedExpr, TypedPat, TypedPatKind};
+use super::ast::{Expr, ExprKind, LetBind, ListPat, MatchArm, Pat, PatKind, RangePat, mod_path};
 use super::ctx::Ctx as TypeCtx;
 use super::error::MatchNonExhaustive;
+use super::token::Ident;
 use super::types::Ty;
+use crate::global::symbol;
+use crate::span::Span;
 
 #[derive(Debug)]
 pub struct Ctx<'a> {
@@ -82,11 +85,35 @@ impl<'a> Ctx<'a> {
     }
 }
 
-impl Pat {
-    fn from_ast_pat(pat: &TypedPat, ctx: &TypeCtx) -> Self {
+impl Pattern {
+    fn from_ast_pat(pat: &Pat<Ty>, ctx: &TypeCtx) -> Self {
         match &pat.kind {
-            TypedPatKind::Wild | TypedPatKind::Ident(_) => Self::new(Ctor::Wildcard, Vec::new()),
-            TypedPatKind::Or(pats) => {
+            PatKind::List(list) => {
+                let list_ty = ctx.get_constructors_for_ty(&mod_path!(list::List));
+                let nil = symbol!("Nil");
+                let nil_idx = list_ty.iter().position(|c| c.name.ident == nil).unwrap();
+                match list {
+                    ListPat::Nil => Self::new(Ctor::Type(nil_idx), Vec::new()),
+                    ListPat::Single(pat) => {
+                        let pat = Self::from_ast_pat(pat, ctx);
+                        let cons = symbol!("Cons");
+                        let cons_idx = list_ty.iter().position(|c| c.name.ident == cons).unwrap();
+                        let fields =
+                            vec![(0, pat), (1, Self::new(Ctor::Type(nil_idx), Vec::new()))];
+                        Self::new(Ctor::Type(cons_idx), fields)
+                    }
+                    ListPat::Cons(pat, pat1) => {
+                        let pat = Self::from_ast_pat(pat, ctx);
+                        let pat1 = Self::from_ast_pat(pat1, ctx);
+                        let cons = symbol!("Cons");
+                        let cons_idx = list_ty.iter().position(|c| c.name.ident == cons).unwrap();
+                        let fields = vec![(0, pat), (1, pat1)];
+                        Self::new(Ctor::Type(cons_idx), fields)
+                    }
+                }
+            }
+            PatKind::Wild | PatKind::Ident(_) => Self::new(Ctor::Wildcard, Vec::new()),
+            PatKind::Or(pats) => {
                 let fields = pats
                     .iter()
                     .map(|pat| Self::from_ast_pat(pat, ctx))
@@ -94,7 +121,7 @@ impl Pat {
                     .collect();
                 Self::new(Ctor::Or, fields)
             }
-            TypedPatKind::Tuple(pats) => {
+            PatKind::Tuple(pats) => {
                 let fields = pats
                     .iter()
                     .map(|pat| Self::from_ast_pat(pat, ctx))
@@ -102,18 +129,18 @@ impl Pat {
                     .collect();
                 Self::new(Ctor::Single, fields)
             }
-            TypedPatKind::Int(i) => Self::new(
+            PatKind::Int(i) => Self::new(
                 Ctor::IntRange(IntRange::from_singleton(MaybeInfinite::Finite(*i))),
                 Vec::new(),
             ),
-            TypedPatKind::Char(c) => Self::new(
+            PatKind::Char(c) => Self::new(
                 Ctor::IntRange(IntRange::from_singleton(MaybeInfinite::Finite(i64::from(
                     *c,
                 )))),
                 Vec::new(),
             ),
-            TypedPatKind::Bool(b) => Self::new(Ctor::Bool(*b), Vec::new()),
-            TypedPatKind::Constructor { name, args } => {
+            PatKind::Bool(b) => Self::new(Ctor::Bool(*b), Vec::new()),
+            PatKind::Constructor { name, args } => {
                 let fields = args
                     .iter()
                     .map(|pat| Self::from_ast_pat(pat, ctx))
@@ -133,11 +160,11 @@ impl Pat {
                     .unwrap();
                 Self::new(Ctor::Type(idx), fields)
             }
-            TypedPatKind::IntRange(int_range_pat) => Self::new(
+            PatKind::IntRange(int_range_pat) => Self::new(
                 Ctor::IntRange(IntRange::from_int_range_pat(*int_range_pat)),
                 Vec::new(),
             ),
-            TypedPatKind::CharRange(char_range_pat) => Self::new(
+            PatKind::CharRange(char_range_pat) => Self::new(
                 Ctor::IntRange(IntRange::from_char_range_pat(*char_range_pat)),
                 Vec::new(),
             ),
@@ -198,7 +225,7 @@ impl IntRange {
 }
 
 impl TypeCtx {
-    fn check_single_match(&self, expr: &TypedExpr) -> Result<(), MatchNonExhaustive> {
+    fn check_single_match(&self, expr: &Expr<Ty>) -> Result<(), MatchNonExhaustive> {
         let span = expr.span;
         match &expr.kind {
             ExprKind::Bin { lhs, rhs, .. } => {
@@ -258,12 +285,16 @@ impl TypeCtx {
                     self.check_single_match(&bind.expr)?;
                 }
             }
+            ExprKind::List(exprs) | ExprKind::Tuple(exprs) => {
+                for expr in exprs {
+                    self.check_single_match(expr)?;
+                }
+            }
 
             ExprKind::Int(_)
             | ExprKind::Bool(_)
             | ExprKind::Char(_)
             | ExprKind::Path(_)
-            | ExprKind::Tuple(_)
             | ExprKind::Val(_)
             | ExprKind::Alias { .. }
             | ExprKind::Type { .. }
@@ -274,7 +305,7 @@ impl TypeCtx {
     }
 }
 
-pub fn check_matches(exprs: &[TypedExpr], ctx: &TypeCtx) -> Result<(), MatchNonExhaustive> {
+pub fn check_matches(exprs: &[Expr<Ty>], ctx: &TypeCtx) -> Result<(), MatchNonExhaustive> {
     for expr in exprs {
         ctx.check_single_match(expr)?;
     }
@@ -282,12 +313,12 @@ pub fn check_matches(exprs: &[TypedExpr], ctx: &TypeCtx) -> Result<(), MatchNonE
 }
 
 fn check_match_pats<'a>(
-    typed_pats: impl Iterator<Item = &'a TypedPat>,
+    typed_pats: impl Iterator<Item = &'a Pat<Ty>>,
     ty: Ty,
     ctx: &TypeCtx,
 ) -> Vec<WitnessPat> {
     let pats = typed_pats
-        .map(|p| Pat::from_ast_pat(p, ctx))
+        .map(|p| Pattern::from_ast_pat(p, ctx))
         .collect::<Vec<_>>();
 
     let mut matrix = PatMatrix::default();
