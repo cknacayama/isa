@@ -206,7 +206,7 @@ impl TyData {
         &self.constructors
     }
 
-    fn find_constructor(&self, ctor: Ident) -> CheckResult<&Constructor<Ty>> {
+    pub fn find_constructor(&self, ctor: Ident) -> CheckResult<&Constructor<Ty>> {
         self.constructors
             .iter()
             .find(|c| c.name == ctor)
@@ -579,7 +579,12 @@ impl Ctx {
                 data.find_constructor(id).map(|c| &c.ty)
             }
 
-            [_, _, _] => todo!(),
+            [module, ty, id] => {
+                let module = self.get_module(module)?;
+                let data = module.get_type(ty)?;
+
+                data.find_constructor(id).map(|c| &c.ty)
+            }
 
             _ => Err(CheckError::new(
                 CheckErrorKind::InvalidPath(id.clone()),

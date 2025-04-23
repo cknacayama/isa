@@ -173,7 +173,7 @@ impl Config {
         let (modules, set) = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
             Err(err) => {
-                self.report(&err, &Ctx::default());
+                self.report(&err, checker.ctx());
                 return true;
             }
         };
@@ -181,8 +181,8 @@ impl Config {
         let end_check = Instant::now();
 
         for module in modules {
-            if let Err(err) = check_matches(&module.exprs, checker.ctx()) {
-                self.report(&err, &Ctx::default());
+            if let Err(err) = check_matches(&module.stmts, checker.ctx()) {
+                self.report(&err, checker.ctx());
                 return true;
             }
         }

@@ -5,9 +5,9 @@ use smallvec::smallvec;
 
 use super::ast::{
     Associativity, Constructor, Expr, ExprKind, Import, ImportClause, ImportWildcard, ListPat,
-    OpDeclaration, Operator, OperatorTable, PatKind, Path, RangePat, UntypedConstructor,
+    OpDeclaration, Operator, OperatorTable, PatKind, Path, RangePat, StmtKind, UntypedConstructor,
     UntypedExpr, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat,
-    ValDeclaration,
+    UntypedStmt, ValDeclaration,
 };
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};
@@ -203,7 +203,7 @@ impl<'a> Parser<'a> {
             ImportClause::default()
         };
 
-        let mut exprs = vec![self.parse_semi_expr()?];
+        let mut exprs = vec![self.parse_stmt()?];
 
         while !self.check(TokenKind::KwModule) {
             let Some(expr) = self.parse() else { break };
@@ -221,19 +221,18 @@ impl<'a> Parser<'a> {
         std::iter::from_fn(|| self.try_parse_module()).collect()
     }
 
-    /// parses zero or one expression (can have semicolon)
-    pub fn parse(&mut self) -> Option<ParseResult<UntypedExpr>> {
+    pub fn parse(&mut self) -> Option<ParseResult<UntypedStmt>> {
         if self.peek().is_some() {
-            Some(self.parse_semi_expr())
+            Some(self.parse_stmt())
         } else {
             None
         }
     }
 
-    fn parse_semi_expr(&mut self) -> ParseResult<UntypedExpr> {
+    fn parse_stmt(&mut self) -> ParseResult<UntypedStmt> {
         let span = self.last_span;
 
-        let expr = match self
+        let stmt = match self
             .peek()
             .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, span))??
             .data
@@ -244,19 +243,22 @@ impl<'a> Parser<'a> {
             TokenKind::KwClass => self.parse_class(),
             TokenKind::KwOperator => self.parse_operator(),
             TokenKind::KwInstance => self.parse_instance(),
-            _ => self.parse_expr(),
+            _ => self.parse_expr_stmt(),
         }?;
 
-        if self.next_if_match(TokenKind::Semicolon).is_some() {
-            let span = expr.span;
-            let kind = ExprKind::Semi(Box::new(expr));
-            Ok(UntypedExpr::untyped(kind, span))
-        } else {
-            Ok(expr)
-        }
+        self.expect(TokenKind::Semicolon)?;
+
+        Ok(stmt)
     }
 
-    fn parse_operator(&mut self) -> ParseResult<UntypedExpr> {
+    fn parse_expr_stmt(&mut self) -> ParseResult<UntypedStmt> {
+        let expr = self.parse_expr()?;
+        let span = expr.span;
+
+        Ok(UntypedStmt::new(StmtKind::Semi(expr), span))
+    }
+
+    fn parse_operator(&mut self) -> ParseResult<UntypedStmt> {
         let mut span = self.expect(TokenKind::KwOperator)?;
         let (set, params) = self.parse_constraint_set()?;
         let mut signatures = Vec::new();
@@ -294,16 +296,16 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let kind = ExprKind::Operator {
+        let kind = StmtKind::Operator {
             params,
             set,
             ops: signatures.into_boxed_slice(),
         };
 
-        Ok(UntypedExpr::untyped(kind, span))
+        Ok(UntypedStmt::new(kind, span))
     }
 
-    fn parse_class(&mut self) -> ParseResult<UntypedExpr> {
+    fn parse_class(&mut self) -> ParseResult<UntypedStmt> {
         let mut span = self.expect(TokenKind::KwClass)?;
         let (set, _) = self.parse_constraint_set()?;
         let name = self.expect_id()?;
@@ -343,8 +345,8 @@ impl<'a> Parser<'a> {
             Default::default()
         };
 
-        Ok(UntypedExpr::untyped(
-            ExprKind::Class {
+        Ok(UntypedStmt::new(
+            StmtKind::Class {
                 set,
                 name,
                 instance,
@@ -355,7 +357,7 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_instance(&mut self) -> ParseResult<UntypedExpr> {
+    fn parse_instance(&mut self) -> ParseResult<UntypedStmt> {
         let mut span = self.expect(TokenKind::KwInstance)?;
         let (set, params) = self.parse_constraint_set()?;
         let (name, _) = self.parse_path()?;
@@ -388,8 +390,8 @@ impl<'a> Parser<'a> {
             Box::default()
         };
 
-        Ok(UntypedExpr::untyped(
-            ExprKind::Instance {
+        Ok(UntypedStmt::new(
+            StmtKind::Instance {
                 params,
                 set,
                 class: name,
@@ -400,7 +402,7 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_alias(&mut self) -> ParseResult<UntypedExpr> {
+    fn parse_alias(&mut self) -> ParseResult<UntypedStmt> {
         let span = self.expect(TokenKind::KwAlias)?;
         let name = self.expect_id()?;
         let mut params = Vec::new();
@@ -419,8 +421,8 @@ impl<'a> Parser<'a> {
         } = self.parse_type()?;
         let span = span.union(ty_span);
 
-        Ok(UntypedExpr::untyped(
-            ExprKind::Alias {
+        Ok(UntypedStmt::new(
+            StmtKind::Alias {
                 name,
                 parameters,
                 ty,
@@ -495,10 +497,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_val_expr(&mut self) -> ParseResult<UntypedExpr> {
+    fn parse_val_expr(&mut self) -> ParseResult<UntypedStmt> {
         let val = self.parse_val()?;
         let span = val.span;
-        Ok(UntypedExpr::untyped(ExprKind::Val(val), span))
+        Ok(UntypedStmt::new(StmtKind::Val(val), span))
     }
 
     fn parse_expr(&mut self) -> ParseResult<UntypedExpr> {
@@ -814,7 +816,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_type_definition(&mut self) -> ParseResult<UntypedExpr> {
+    fn parse_type_definition(&mut self) -> ParseResult<UntypedStmt> {
         let span = self.expect(TokenKind::KwType)?;
         let name = self.expect_id()?;
 
@@ -841,8 +843,8 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(UntypedExpr::untyped(
-            ExprKind::Type {
+        Ok(UntypedStmt::new(
+            StmtKind::Type {
                 name,
                 parameters: params.into_boxed_slice(),
                 constructors: constructors.into_boxed_slice(),
@@ -1189,7 +1191,7 @@ impl<'a> Parser<'a> {
         span = span.union(expr.span);
 
         Ok(Spanned::new(
-            UntypedLetBind::new(name, parametes.into_boxed_slice(), Box::new(expr)),
+            UntypedLetBind::new(name, parametes.into_boxed_slice(), expr),
             span,
         ))
     }
@@ -1209,7 +1211,7 @@ impl<'a> Parser<'a> {
 
         Ok(UntypedExpr::untyped(
             ExprKind::Let {
-                bind,
+                bind: Box::new(bind),
                 body: body.map(Box::new),
             },
             span,
@@ -1235,13 +1237,5 @@ impl<'a> Parser<'a> {
             },
             span,
         ))
-    }
-}
-
-impl Iterator for Parser<'_> {
-    type Item = ParseResult<UntypedExpr>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.parse()
     }
 }

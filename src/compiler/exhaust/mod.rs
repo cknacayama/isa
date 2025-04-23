@@ -6,7 +6,9 @@ use std::num::NonZeroUsize;
 use ctor::{Ctor, CtorSet, IntRange, MaybeInfinite};
 use pat::{PatMatrix, PatMatrixRow, PatOrWild, PatVector, Pattern, WitnessPat};
 
-use super::ast::{Expr, ExprKind, LetBind, ListPat, MatchArm, Pat, PatKind, RangePat, mod_path};
+use super::ast::{
+    Expr, ExprKind, ListPat, MatchArm, Pat, PatKind, RangePat, Stmt, StmtKind, mod_path,
+};
 use super::ctx::Ctx as TypeCtx;
 use super::error::MatchNonExhaustive;
 use super::types::Ty;
@@ -223,33 +225,48 @@ impl IntRange {
 }
 
 impl TypeCtx {
-    fn check_single_match(&self, expr: &Expr<Ty>) -> Result<(), MatchNonExhaustive> {
+    fn check_single_match_stmt(&self, stmt: &Stmt<Ty>) -> Result<(), MatchNonExhaustive> {
+        let span = stmt.span;
+        match &stmt.kind {
+            StmtKind::Semi(expr) => {
+                self.check_single_match_expr(expr)?;
+            }
+            StmtKind::Instance { impls, .. }
+            | StmtKind::Class {
+                defaults: impls, ..
+            } => {
+                for bind in impls {
+                    self.check_single_match_expr(&bind.expr)?;
+                }
+            }
+
+            StmtKind::Val(_)
+            | StmtKind::Alias { .. }
+            | StmtKind::Type { .. }
+            | StmtKind::Operator { .. } => (),
+        }
+
+        Ok(())
+    }
+    fn check_single_match_expr(&self, expr: &Expr<Ty>) -> Result<(), MatchNonExhaustive> {
         let span = expr.span;
         match &expr.kind {
             ExprKind::Bin { lhs, rhs, .. } => {
-                self.check_single_match(lhs)?;
-                self.check_single_match(rhs)?;
+                self.check_single_match_expr(lhs)?;
+                self.check_single_match_expr(rhs)?;
             }
-            ExprKind::Fn { expr, .. }
-            | ExprKind::Un { expr, .. }
-            | ExprKind::Semi(expr)
-            | ExprKind::Let {
-                bind: LetBind { expr, .. },
-                body: None,
-                ..
-            } => {
-                self.check_single_match(expr)?;
+            ExprKind::Fn { expr, .. } | ExprKind::Un { expr, .. } => {
+                self.check_single_match_expr(expr)?;
             }
-            ExprKind::Let {
-                bind: LetBind { expr, .. },
-                body: Some(body),
-                ..
-            } => {
-                self.check_single_match(expr)?;
-                self.check_single_match(body)?;
+            ExprKind::Let { bind, body, .. } => {
+                let expr = &bind.expr;
+                self.check_single_match_expr(expr)?;
+                if let Some(body) = body {
+                    self.check_single_match_expr(body)?;
+                }
             }
             ExprKind::Match { expr, arms } => {
-                self.check_single_match(expr)?;
+                self.check_single_match_expr(expr)?;
 
                 let ty = expr.ty.clone();
                 let typed_pats = arms.iter().map(MatchArm::pat);
@@ -259,7 +276,7 @@ impl TypeCtx {
                 }
 
                 for arm in arms.iter().map(MatchArm::expr) {
-                    self.check_single_match(arm)?;
+                    self.check_single_match_expr(arm)?;
                 }
             }
             ExprKind::If {
@@ -267,45 +284,30 @@ impl TypeCtx {
                 then,
                 otherwise,
             } => {
-                self.check_single_match(cond)?;
-                self.check_single_match(then)?;
-                self.check_single_match(otherwise)?;
+                self.check_single_match_expr(cond)?;
+                self.check_single_match_expr(then)?;
+                self.check_single_match_expr(otherwise)?;
             }
             ExprKind::Call { callee, arg } => {
-                self.check_single_match(callee)?;
-                self.check_single_match(arg)?;
-            }
-            ExprKind::Instance { impls, .. }
-            | ExprKind::Class {
-                defaults: impls, ..
-            } => {
-                for bind in impls {
-                    self.check_single_match(&bind.expr)?;
-                }
+                self.check_single_match_expr(callee)?;
+                self.check_single_match_expr(arg)?;
             }
             ExprKind::List(exprs) | ExprKind::Tuple(exprs) => {
                 for expr in exprs {
-                    self.check_single_match(expr)?;
+                    self.check_single_match_expr(expr)?;
                 }
             }
 
-            ExprKind::Int(_)
-            | ExprKind::Bool(_)
-            | ExprKind::Char(_)
-            | ExprKind::Path(_)
-            | ExprKind::Val(_)
-            | ExprKind::Alias { .. }
-            | ExprKind::Type { .. }
-            | ExprKind::Operator { .. } => (),
+            ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Char(_) | ExprKind::Path(_) => (),
         }
 
         Ok(())
     }
 }
 
-pub fn check_matches(exprs: &[Expr<Ty>], ctx: &TypeCtx) -> Result<(), MatchNonExhaustive> {
-    for expr in exprs {
-        ctx.check_single_match(expr)?;
+pub fn check_matches(stmts: &[Stmt<Ty>], ctx: &TypeCtx) -> Result<(), MatchNonExhaustive> {
+    for stmt in stmts {
+        ctx.check_single_match_stmt(stmt)?;
     }
     Ok(())
 }

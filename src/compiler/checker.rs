@@ -5,8 +5,8 @@ use smallvec::smallvec;
 
 use super::ast::{
     Constructor, Expr, ExprKind, LetBind, ListPat, MatchArm, Module, OpDeclaration, Param, Pat,
-    PatKind, Path, UntypedConstructor, UntypedExpr, UntypedLetBind, UntypedMatchArm, UntypedModule,
-    UntypedParam, UntypedPat, ValDeclaration,
+    PatKind, Path, Stmt, StmtKind, UntypedConstructor, UntypedExpr, UntypedLetBind,
+    UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat, UntypedStmt, ValDeclaration,
 };
 use super::ctx::{
     AliasData, ClassData, Ctx, Generator, IdGenerator, InstanceData, MemberData, ModuleData,
@@ -292,10 +292,10 @@ impl Checker {
             .collect::<IsaResult<Box<_>>>()?;
 
         let (mut expr, set) = if typed_params.is_empty() {
-            self.check(*bind.expr)?
+            self.check(bind.expr)?
         } else {
             self.ctx.assume_constraints(&val_set);
-            let (mut expr, set) = self.check(*bind.expr)?;
+            let (mut expr, set) = self.check(bind.expr)?;
 
             for p in &mut typed_params {
                 p.ty = self.get_var_ty(p.name).unwrap();
@@ -390,13 +390,13 @@ impl Checker {
             .collect::<Box<_>>();
 
         let (expr, set) = if typed_params.is_empty() {
-            self.check(*bind.expr)?
+            self.check(bind.expr)?
         } else {
             let var_id = self.gen_id();
             let var = Ty::Var(var_id);
             self.insert_let(bind.name, var, []);
 
-            let (mut expr, set) = self.check(*bind.expr)?;
+            let (mut expr, set) = self.check(bind.expr)?;
 
             for p in &mut typed_params {
                 p.ty = self.get_var_ty(p.name).unwrap();
@@ -441,10 +441,10 @@ impl Checker {
             None => (None, Ty::Unit, set),
         };
 
-        let bind = LetBind::new(name, params, Box::new(expr));
+        let bind = LetBind::new(name, params, expr);
 
         let kind = ExprKind::Let {
-            bind,
+            bind: Box::new(bind),
             body: body.map(Box::new),
         };
 
@@ -484,7 +484,7 @@ impl Checker {
         parameters: Box<[Ty]>,
         constructors: Box<[UntypedConstructor]>,
         span: Span,
-    ) -> IsaResult<Expr<Ty>> {
+    ) -> IsaResult<Stmt<Ty>> {
         let mut quant = Vec::new();
 
         for param in &parameters {
@@ -508,13 +508,13 @@ impl Checker {
 
         let constructors = typed_constructors.into_boxed_slice();
 
-        let kind = ExprKind::Type {
+        let kind = StmtKind::Type {
             name,
             parameters,
             constructors,
         };
 
-        Ok(Expr::new(kind, span, Ty::Unit))
+        Ok(Stmt::new(kind, span))
     }
 
     fn check_operator(
@@ -523,7 +523,7 @@ impl Checker {
         set: Set,
         ops: Box<[OpDeclaration]>,
         span: Span,
-    ) -> IsaResult<Expr<Ty>> {
+    ) -> IsaResult<Stmt<Ty>> {
         let mut quant = Vec::new();
 
         for param in &params {
@@ -548,13 +548,13 @@ impl Checker {
             new_ops.push(OpDeclaration::new(prefix, op, ty));
         }
 
-        let kind = ExprKind::Operator {
+        let kind = StmtKind::Operator {
             params,
             set,
             ops: new_ops.into_boxed_slice(),
         };
 
-        Ok(Expr::new(kind, span, Ty::Unit))
+        Ok(Stmt::new(kind, span))
     }
 
     fn check_val(&self, val: &mut ValDeclaration) -> IsaResult<()> {
@@ -570,14 +570,14 @@ impl Checker {
         self.check_valid_type(&val.ty)
     }
 
-    fn check_val_expr(&mut self, mut val: ValDeclaration, span: Span) -> IsaResult<Expr<Ty>> {
+    fn check_val_stmt(&mut self, mut val: ValDeclaration, span: Span) -> IsaResult<Stmt<Ty>> {
         self.check_val(&mut val)?;
 
         self.insert_val(val.name.ident, val.ty.clone(), val.set.clone(), val.span);
 
-        let kind = ExprKind::Val(val);
+        let kind = StmtKind::Val(val);
 
-        Ok(Expr::new(kind, span, Ty::Unit))
+        Ok(Stmt::new(kind, span))
     }
 
     fn check_constructor_pat(
@@ -676,7 +676,7 @@ impl Checker {
         signatures: Box<[ValDeclaration]>,
         defaults: Box<[UntypedLetBind]>,
         span: Span,
-    ) -> IsaResult<(Expr<Ty>, Set)> {
+    ) -> IsaResult<(Stmt<Ty>, Set)> {
         let path = Path::from_ident(name);
         let data = self.ctx.get_class(&path).unwrap().instance_var();
 
@@ -685,7 +685,7 @@ impl Checker {
         let (defaults, def_set) =
             self.check_instance_impls(&path, Set::new(), defaults, |_| None)?;
 
-        let kind = ExprKind::Class {
+        let kind = StmtKind::Class {
             set,
             name,
             instance,
@@ -693,7 +693,7 @@ impl Checker {
             defaults: defaults.into_boxed_slice(),
         };
 
-        Ok((Expr::new(kind, span, Ty::Unit), def_set))
+        Ok((Stmt::new(kind, span), def_set))
     }
 
     fn check_instance_impls<F>(
@@ -734,7 +734,7 @@ impl Checker {
                 let (_, expr, params, bind_set) =
                     self.check_let_bind_with_val(bind, &ty, member_set, ty_span)?;
                 set.extend(bind_set);
-                Ok(LetBind::new(name, params, Box::new(expr)))
+                Ok(LetBind::new(name, params, expr))
             })
             .collect::<IsaResult<_>>()?;
         Ok((impls, set))
@@ -748,7 +748,7 @@ impl Checker {
         instance: Ty,
         impls: Box<[UntypedLetBind]>,
         span: Span,
-    ) -> IsaResult<(Expr<Ty>, Set)> {
+    ) -> IsaResult<(Stmt<Ty>, Set)> {
         let class_data = self.ctx.get_class(&class)?;
 
         let scheme = self.ctx.generalize(instance.clone());
@@ -823,7 +823,7 @@ impl Checker {
             })
         }?;
 
-        let kind = ExprKind::Instance {
+        let kind = StmtKind::Instance {
             params,
             set: set.clone(),
             class,
@@ -831,7 +831,7 @@ impl Checker {
             impls: impls.into(),
         };
 
-        Ok((Expr::new(kind, span, Ty::Unit), set))
+        Ok((Stmt::new(kind, span), set))
     }
 
     fn check_list_pat(&mut self, list: ListPat<()>, span: Span) -> IsaResult<Pat<Ty>> {
@@ -1031,6 +1031,7 @@ impl Checker {
     ) -> IsaResult<(Path, Ty, Set)> {
         match path {
             [] => unreachable!(),
+
             &[id] => {
                 let VarData {
                     ty, mut constrs, ..
@@ -1040,9 +1041,7 @@ impl Checker {
 
                 Ok((Path::from_ident(id), ty, constrs))
             }
-            &[first, id] => {
-                todo!()
-            }
+
             _ => {
                 let mut invalid = Path::from_ident(module_name);
                 invalid.segments.extend_from_slice(path);
@@ -1095,15 +1094,34 @@ impl Checker {
                 Self::check_path_simple(first, module, &[id], generator, span)
             }
 
-            &[first, ref rest @ ..] => {
-                let mut path = Path {
-                    segments: smallvec![first],
+            &[fst, snd, trd] => {
+                let path = Path {
+                    segments: smallvec![fst, snd, trd],
                 };
-                path.segments.extend_from_slice(rest);
 
-                let module = ctx.get_module(first)?;
+                if let Ok(ty) = ctx.get_constructor(&path) {
+                    let (ty, _) = ty.clone().instantiate(generator);
+                    return Ok((path, ty, Set::new()));
+                }
 
-                Self::check_path_simple(first, module, rest, generator, span)
+                let class_path = Path {
+                    segments: smallvec![fst, snd],
+                };
+
+                let data = ctx.get_class(&class_path)?;
+
+                let (ty, set) = Self::check_class_member(class_path, data, trd, generator, span)?;
+
+                Ok((path, ty, set))
+            }
+
+            _ => {
+                let invalid = Path::new(path.into());
+
+                Err(IsaError::from(CheckError::new(
+                    CheckErrorKind::InvalidPath(invalid),
+                    span,
+                )))
             }
         }
     }
@@ -1231,9 +1249,8 @@ impl Checker {
         module: &mut UntypedModule,
     ) -> IsaResult<Vec<(Path, AliasData)>> {
         self.ctx.create_module(module.name);
-        let module_name = module.name;
         let mut declared = FxHashMap::default();
-        for expr in &mut module.exprs {
+        for expr in &mut module.stmts {
             self.check_type_declaration(expr, &mut declared)?;
         }
 
@@ -1242,7 +1259,7 @@ impl Checker {
         }
 
         module
-            .exprs
+            .stmts
             .iter()
             .filter_map(|expr| self.check_alias_declaration(expr))
             .collect()
@@ -1250,12 +1267,11 @@ impl Checker {
 
     fn check_type_declaration(
         &mut self,
-        expr: &mut UntypedExpr,
+        stmt: &mut UntypedStmt,
         declared: &mut FxHashMap<Ident, Span>,
     ) -> IsaResult<()> {
-        let (name, span) = match &mut expr.kind {
-            ExprKind::Semi(e) => return self.check_type_declaration(e, declared),
-            ExprKind::Type {
+        let (name, span) = match &mut stmt.kind {
+            StmtKind::Type {
                 name,
                 parameters,
                 constructors,
@@ -1278,10 +1294,9 @@ impl Checker {
 
                 self.ctx.insert_ty(*name, params.into())?;
 
-                (*name, expr.span)
+                (*name, stmt.span)
             }
-
-            ExprKind::Val(val) => {
+            StmtKind::Val(val) => {
                 let mut subs = Vec::new();
 
                 for param in &mut val.params {
@@ -1296,8 +1311,7 @@ impl Checker {
 
                 return Ok(());
             }
-
-            ExprKind::Alias {
+            StmtKind::Alias {
                 name,
                 parameters,
                 ty,
@@ -1318,10 +1332,9 @@ impl Checker {
 
                 self.ctx.insert_ty(*name, params.into())?;
 
-                (*name, expr.span)
+                (*name, stmt.span)
             }
-
-            ExprKind::Class {
+            StmtKind::Class {
                 set,
                 name,
                 instance,
@@ -1357,19 +1370,18 @@ impl Checker {
                     sig.substitute_param(&subs);
                 }
 
-                let class = ClassData::new(set.clone(), var, expr.span);
+                let class = ClassData::new(set.clone(), var, stmt.span);
                 let _ = self.ctx.insert_class(name.ident, class);
                 let _ = self.ctx.insert_instance_at_env(
                     Ty::Var(var),
                     *name,
-                    InstanceData::new(Set::new(), expr.span),
+                    InstanceData::new(Set::new(), stmt.span),
                 );
                 self.ctx.assume_constraints(set);
 
-                (*name, expr.span)
+                (*name, stmt.span)
             }
-
-            ExprKind::Operator {
+            StmtKind::Operator {
                 params, set, ops, ..
             } => {
                 let mut subs = Vec::new();
@@ -1389,8 +1401,7 @@ impl Checker {
 
                 return Ok(());
             }
-
-            ExprKind::Instance {
+            StmtKind::Instance {
                 params,
                 set,
                 instance,
@@ -1412,7 +1423,7 @@ impl Checker {
                 return Ok(());
             }
 
-            _ => return Ok(()),
+            StmtKind::Semi(_) => return Ok(()),
         };
 
         declared.insert(name, span).map_or(Ok(()), |previous| {
@@ -1422,10 +1433,9 @@ impl Checker {
         })
     }
 
-    fn check_alias_declaration(&self, expr: &UntypedExpr) -> Option<IsaResult<(Path, AliasData)>> {
+    fn check_alias_declaration(&self, expr: &UntypedStmt) -> Option<IsaResult<(Path, AliasData)>> {
         match &expr.kind {
-            ExprKind::Semi(e) => self.check_alias_declaration(e),
-            ExprKind::Alias {
+            StmtKind::Alias {
                 name,
                 parameters,
                 ty,
@@ -1497,15 +1507,15 @@ impl Checker {
         Ok((sig, constraints))
     }
 
-    fn check_expr_for_class_signatures(&mut self, expr: &mut UntypedExpr) -> IsaResult<()> {
+    fn check_for_class_signatures(&mut self, expr: &mut UntypedStmt) -> IsaResult<()> {
         match &mut expr.kind {
-            ExprKind::Class {
+            StmtKind::Class {
                 name,
                 signatures,
                 defaults,
                 ..
             } => self.check_class_signatures(*name, signatures, defaults),
-            ExprKind::Instance {
+            StmtKind::Instance {
                 set,
                 class,
                 instance,
@@ -1517,7 +1527,6 @@ impl Checker {
                 self.ctx.insert_instance(instance, class, data)?;
                 Ok(())
             }
-            ExprKind::Semi(expr) => self.check_expr_for_class_signatures(expr),
             _ => Ok(()),
         }
     }
@@ -1551,7 +1560,7 @@ impl Checker {
             self.ctx.push_scope();
 
             let extracted = module
-                .exprs
+                .stmts
                 .extract_if(.., |e| {
                     e.substitute(&mut |ty| match ty {
                         Ty::Named { name, args } => {
@@ -1567,21 +1576,21 @@ impl Checker {
                 })
                 .collect::<Vec<_>>();
 
-            for expr in &mut module.exprs {
-                self.check_expr_for_class_signatures(expr)?;
+            for stmt in &mut module.stmts {
+                self.check_for_class_signatures(stmt)?;
             }
 
-            let mut exprs = Vec::new();
-            for expr in extracted {
-                let (expr, expr_set) = self.check(expr)?;
-                exprs.push(expr);
-                set.extend(expr_set);
+            let mut stmts = Vec::new();
+            for stmt in extracted {
+                let (stmt, stmt_set) = self.check_stmt(stmt)?;
+                stmts.push(stmt);
+                set.extend(stmt_set);
             }
 
             let scope = self.ctx.pop_scope().unwrap();
             self.ctx.extend_module(module.name.ident, scope);
 
-            decl.push(exprs);
+            decl.push(stmts);
         }
 
         for module in &mut modules {
@@ -1592,17 +1601,13 @@ impl Checker {
             }
         }
 
-        // for c in set.iter() {
-        //     println!("{} {:?}", c.class(), c.constrained());
-        // }
-
         let modules = modules
             .into_iter()
             .zip(decl)
             .map(|(module, mut decl)| {
                 let (mut module, module_set) = self.check_module(module)?;
-                decl.extend(module.exprs);
-                module.exprs = decl;
+                decl.extend(module.stmts);
+                module.stmts = decl;
                 set.extend(module_set);
                 Ok(module)
             })
@@ -1620,13 +1625,13 @@ impl Checker {
             let _ = self.ctx.import_prelude();
         }
 
-        let mut exprs = Vec::new();
+        let mut stmts = Vec::new();
         let mut set = Set::new();
 
-        for res in module.exprs.into_iter().map(|expr| self.check(expr)) {
-            let (expr, expr_set) = res?;
-            exprs.push(expr);
-            set.extend(expr_set);
+        for res in module.stmts.into_iter().map(|stmt| self.check_stmt(stmt)) {
+            let (stmt, stmt_set) = res?;
+            stmts.push(stmt);
+            set.extend(stmt_set);
         }
 
         let scope = self.ctx.pop_scope().unwrap();
@@ -1635,11 +1640,71 @@ impl Checker {
             module.no_prelude,
             module.name,
             module.imports,
-            exprs,
+            stmts,
             module.span,
         );
 
         Ok((typed, set))
+    }
+
+    fn check_stmt(&mut self, stmt: UntypedStmt) -> IsaResult<(Stmt<Ty>, Set)> {
+        let span = stmt.span;
+        match stmt.kind {
+            StmtKind::Semi(expr) => {
+                let (expr, set) = self.check(expr)?;
+                Ok((Stmt::new(StmtKind::Semi(expr), span), set))
+            }
+
+            StmtKind::Type {
+                name,
+                parameters,
+                constructors,
+            } => Ok((
+                self.check_type_definition(name, parameters, constructors, span)?,
+                Set::new(),
+            )),
+
+            StmtKind::Alias {
+                name,
+                parameters,
+                ty,
+            } => Ok((
+                Stmt::new(
+                    StmtKind::Alias {
+                        name,
+                        parameters,
+                        ty,
+                    },
+                    span,
+                ),
+                Set::new(),
+            )),
+
+            StmtKind::Val(val) => {
+                let val = self.check_val_stmt(val, span)?;
+                Ok((val, Set::new()))
+            }
+            StmtKind::Class {
+                set,
+                name,
+                instance,
+                signatures,
+                defaults,
+            } => self.check_class(set, name, instance, signatures, defaults, span),
+
+            StmtKind::Instance {
+                params,
+                set,
+                class: name,
+                instance,
+                impls,
+            } => self.check_instance(params, set, name, instance, impls, span),
+
+            StmtKind::Operator { params, set, ops } => {
+                let operator = self.check_operator(params, set, ops, span)?;
+                Ok((operator, Set::new()))
+            }
+        }
     }
 
     fn check(&mut self, expr: UntypedExpr) -> IsaResult<(Expr<Ty>, Set)> {
@@ -1675,67 +1740,9 @@ impl Checker {
 
             ExprKind::Call { callee, arg } => self.check_call(*callee, *arg, span),
 
-            ExprKind::Let { bind, body } => self.check_let(bind, body.map(|body| *body), span),
-
-            ExprKind::Semi(expr) => {
-                let (mut expr, constr) = self.check(*expr)?;
-                expr.ty = Ty::Unit;
-                Ok((expr, constr))
-            }
-
-            ExprKind::Type {
-                name,
-                parameters,
-                constructors,
-            } => Ok((
-                self.check_type_definition(name, parameters, constructors, span)?,
-                Set::new(),
-            )),
-
-            ExprKind::Alias {
-                name,
-                parameters,
-                ty,
-            } => Ok((
-                Expr::new(
-                    ExprKind::Alias {
-                        name,
-                        parameters,
-                        ty,
-                    },
-                    span,
-                    Ty::Unit,
-                ),
-                Set::new(),
-            )),
-
-            ExprKind::Val(val) => {
-                let val = self.check_val_expr(val, span)?;
-                Ok((val, Set::new()))
-            }
+            ExprKind::Let { bind, body } => self.check_let(*bind, body.map(|body| *body), span),
 
             ExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
-
-            ExprKind::Class {
-                set,
-                name,
-                instance,
-                signatures,
-                defaults,
-            } => self.check_class(set, name, instance, signatures, defaults, span),
-
-            ExprKind::Instance {
-                params,
-                set,
-                class: name,
-                instance,
-                impls,
-            } => self.check_instance(params, set, name, instance, impls, span),
-
-            ExprKind::Operator { params, set, ops } => {
-                let operator = self.check_operator(params, set, ops, span)?;
-                Ok((operator, Set::new()))
-            }
         }
     }
 }

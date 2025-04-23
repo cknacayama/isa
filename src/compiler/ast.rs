@@ -254,7 +254,7 @@ pub struct Module<T> {
     pub no_prelude: bool,
     pub name:       Ident,
     pub imports:    ImportClause,
-    pub exprs:      Vec<Expr<T>>,
+    pub stmts:      Vec<Stmt<T>>,
     pub span:       Span,
 }
 
@@ -264,14 +264,14 @@ impl<T> Module<T> {
         no_prelude: bool,
         name: Ident,
         imports: ImportClause,
-        exprs: Vec<Expr<T>>,
+        stmts: Vec<Stmt<T>>,
         span: Span,
     ) -> Self {
         Self {
             no_prelude,
             name,
             imports,
-            exprs,
+            stmts,
             span,
         }
     }
@@ -281,7 +281,7 @@ impl<T: Debug> Debug for Module<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Module")
             .field("name", &self.name)
-            .field("exprs", &self.exprs)
+            .field("exprs", &self.stmts)
             .finish_non_exhaustive()
     }
 }
@@ -460,6 +460,26 @@ impl<T: Debug> Debug for Expr<T> {
     }
 }
 
+#[derive(Clone)]
+pub struct Stmt<T> {
+    pub kind: StmtKind<T>,
+    pub span: Span,
+}
+
+impl<T> Stmt<T> {
+    pub const fn new(kind: StmtKind<T>, span: Span) -> Self {
+        Self { kind, span }
+    }
+}
+
+impl<T: Debug> Debug for Stmt<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Stmt")
+            .field("kind", &self.kind)
+            .finish_non_exhaustive()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MatchArm<T> {
     pub pat:  Pat<T>,
@@ -518,11 +538,11 @@ impl<T: Display> Display for Param<T> {
 pub struct LetBind<T> {
     pub name:   Ident,
     pub params: Box<[Param<T>]>,
-    pub expr:   Box<Expr<T>>,
+    pub expr:   Expr<T>,
 }
 
 impl<T> LetBind<T> {
-    pub const fn new(name: Ident, params: Box<[Param<T>]>, expr: Box<Expr<T>>) -> Self {
+    pub const fn new(name: Ident, params: Box<[Param<T>]>, expr: Expr<T>) -> Self {
         Self { name, params, expr }
     }
 }
@@ -573,36 +593,8 @@ impl Display for OpDeclaration {
 }
 
 #[derive(Debug, Clone)]
-pub enum ExprKind<T> {
-    Int(i64),
-
-    Bool(bool),
-
-    Char(u8),
-
-    Path(Path),
-
-    Tuple(Box<[Expr<T>]>),
-
-    List(Box<[Expr<T>]>),
-
-    Bin {
-        op:  Ident,
-        lhs: Box<Expr<T>>,
-        rhs: Box<Expr<T>>,
-    },
-
-    Un {
-        op:   Ident,
-        expr: Box<Expr<T>>,
-    },
-
-    Semi(Box<Expr<T>>),
-
-    Let {
-        bind: LetBind<T>,
-        body: Option<Box<Expr<T>>>,
-    },
+pub enum StmtKind<T> {
+    Semi(Expr<T>),
 
     Operator {
         params: Box<[Ty]>,
@@ -639,6 +631,37 @@ pub enum ExprKind<T> {
         parameters: Box<[Ty]>,
         ty:         Ty,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum ExprKind<T> {
+    Int(i64),
+
+    Bool(bool),
+
+    Char(u8),
+
+    Path(Path),
+
+    Tuple(Box<[Expr<T>]>),
+
+    List(Box<[Expr<T>]>),
+
+    Let {
+        bind: Box<LetBind<T>>,
+        body: Option<Box<Expr<T>>>,
+    },
+
+    Bin {
+        op:  Ident,
+        lhs: Box<Expr<T>>,
+        rhs: Box<Expr<T>>,
+    },
+
+    Un {
+        op:   Ident,
+        expr: Box<Expr<T>>,
+    },
 
     Fn {
         param: Param<T>,
@@ -662,14 +685,13 @@ pub enum ExprKind<T> {
     },
 }
 
-impl<T> ExprKind<T> {
+impl<T> StmtKind<T> {
     #[must_use]
     pub const fn is_type_or_val_or_op(&self) -> bool {
-        match self {
-            Self::Type { .. } | Self::Val { .. } | Self::Operator { .. } => true,
-            Self::Semi(e) => e.kind.is_type_or_val_or_op(),
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::Type { .. } | Self::Val { .. } | Self::Operator { .. }
+        )
     }
 }
 
@@ -731,42 +753,39 @@ impl Substitute for ValDeclaration {
     }
 }
 
-impl Substitute for Expr<()> {
+impl Substitute for Stmt<()> {
     fn substitute<S>(&mut self, subs: &mut S)
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
         match &mut self.kind {
-            ExprKind::Semi(semi) => {
-                semi.substitute(subs);
-            }
-            ExprKind::Type { constructors, .. } => {
+            StmtKind::Type { constructors, .. } => {
                 for c in constructors {
                     for t in &mut c.params {
                         t.substitute(subs);
                     }
                 }
             }
-            ExprKind::Alias { ty, .. } => {
+            StmtKind::Alias { ty, .. } => {
                 ty.substitute(subs);
             }
-            ExprKind::Val(val) => {
+            StmtKind::Val(val) => {
                 val.substitute(subs);
             }
-            ExprKind::Class { signatures, .. } => {
+            StmtKind::Class { signatures, .. } => {
                 for sig in signatures {
                     sig.substitute(subs);
                 }
             }
-            ExprKind::Instance { instance, .. } => {
+            StmtKind::Instance { instance, .. } => {
                 instance.substitute(subs);
             }
-            ExprKind::Operator { ops, .. } => {
+            StmtKind::Operator { ops, .. } => {
                 for op in ops {
                     op.ty.substitute(subs);
                 }
             }
-            _ => (),
+            StmtKind::Semi(_) => (),
         }
     }
 }
@@ -780,6 +799,81 @@ impl Substitute for LetBind<Ty> {
             p.substitute(subs);
         }
         self.expr.substitute(subs);
+    }
+}
+
+impl Substitute for StmtKind<Ty> {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        match self {
+            Self::Semi(semi) => {
+                semi.substitute(subs);
+            }
+            Self::Type { constructors, .. } => {
+                for c in constructors {
+                    for t in &mut c.params {
+                        t.substitute(subs);
+                    }
+                }
+            }
+            Self::Alias { ty, .. } => {
+                ty.substitute(subs);
+            }
+            Self::Val(val) => {
+                val.substitute(subs);
+            }
+            Self::Class {
+                set,
+                signatures,
+                defaults,
+                ..
+            } => {
+                set.substitute(subs);
+                for sig in signatures {
+                    sig.substitute(subs);
+                }
+                for bind in defaults {
+                    bind.substitute(subs);
+                }
+            }
+            Self::Instance {
+                params,
+                set,
+                instance,
+                impls,
+                ..
+            } => {
+                set.substitute(subs);
+                instance.substitute(subs);
+                for i in impls {
+                    i.substitute(subs);
+                }
+                for p in params {
+                    p.substitute(subs);
+                }
+            }
+            Self::Operator { params, set, ops } => {
+                set.substitute(subs);
+                for p in params {
+                    p.substitute(subs);
+                }
+                for op in ops {
+                    op.ty.substitute(subs);
+                }
+            }
+        }
+    }
+}
+
+impl Substitute for Stmt<Ty> {
+    #[inline]
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.kind.substitute(subs);
     }
 }
 
@@ -819,22 +913,6 @@ impl Substitute for Expr<Ty> {
                     arm.expr.substitute(subs);
                 }
             }
-            ExprKind::Semi(semi) => {
-                semi.substitute(subs);
-            }
-            ExprKind::Type { constructors, .. } => {
-                for c in constructors {
-                    for t in &mut c.params {
-                        t.substitute(subs);
-                    }
-                }
-            }
-            ExprKind::Alias { ty, .. } => {
-                ty.substitute(subs);
-            }
-            ExprKind::Val(val) => {
-                val.substitute(subs);
-            }
             ExprKind::List(exprs) | ExprKind::Tuple(exprs) => {
                 for expr in exprs {
                     expr.substitute(subs);
@@ -848,46 +926,6 @@ impl Substitute for Expr<Ty> {
                 expr.substitute(subs);
             }
 
-            ExprKind::Class {
-                set,
-                signatures,
-                defaults,
-                ..
-            } => {
-                set.substitute(subs);
-                for sig in signatures {
-                    sig.substitute(subs);
-                }
-                for bind in defaults {
-                    bind.substitute(subs);
-                }
-            }
-            ExprKind::Instance {
-                params,
-                set,
-                instance,
-                impls,
-                ..
-            } => {
-                set.substitute(subs);
-                instance.substitute(subs);
-                for i in impls {
-                    i.substitute(subs);
-                }
-                for p in params {
-                    p.substitute(subs);
-                }
-            }
-            ExprKind::Operator { params, set, ops } => {
-                set.substitute(subs);
-                for p in params {
-                    p.substitute(subs);
-                }
-                for op in ops {
-                    op.ty.substitute(subs);
-                }
-            }
-
             ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Char(_) | ExprKind::Path(_) => (),
         }
 
@@ -897,13 +935,13 @@ impl Substitute for Expr<Ty> {
 
 impl<T> Substitute for Module<T>
 where
-    Expr<T>: Substitute,
+    Stmt<T>: Substitute,
 {
     fn substitute<S>(&mut self, subs: &mut S)
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
-        for e in &mut self.exprs {
+        for e in &mut self.stmts {
             e.substitute(subs);
         }
     }
@@ -980,14 +1018,19 @@ impl<T: Display> Expr<T> {
     fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
         let tab = String::from_utf8(vec![b' '; indentation * 2]).unwrap();
         match &self.kind {
-            ExprKind::Semi(expr) => {
-                expr.format_helper(f, indentation)?;
-                write!(f, ";")
-            }
             ExprKind::Int(i) => write!(f, "{i}"),
             ExprKind::Bool(b) => write!(f, "{b}"),
             ExprKind::Char(c) => write!(f, "{:?}", *c as char),
             ExprKind::Path(id) => write!(f, "{id}"),
+            ExprKind::Let { bind, body } => {
+                write!(f, "(")?;
+                bind.format_helper(f, indentation)?;
+                if let Some(body) = body {
+                    write!(f, " in ")?;
+                    body.format_helper(f, indentation + 1)?;
+                }
+                write!(f, ")")
+            }
             ExprKind::List(exprs) | ExprKind::Tuple(exprs) => {
                 write!(f, "(")?;
                 let mut first = true;
@@ -1011,43 +1054,6 @@ impl<T: Display> Expr<T> {
             ExprKind::Un { op, expr } => {
                 write!(f, "({op} ")?;
                 expr.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-            ExprKind::Let { bind, body } => {
-                write!(f, "(")?;
-                bind.format_helper(f, indentation)?;
-                if let Some(body) = body {
-                    writeln!(f, " in")?;
-                    write!(f, "{tab}")?;
-                    body.format_helper(f, indentation + 1)?;
-                }
-                write!(f, ")")
-            }
-            ExprKind::Val(val) => write!(f, "({val})"),
-            ExprKind::Alias {
-                name,
-                parameters,
-                ty,
-            } => {
-                write!(f, "(alias {name}")?;
-                for t in parameters {
-                    write!(f, " {t}")?;
-                }
-                write!(f, "= {ty})")
-            }
-            ExprKind::Type {
-                name: id,
-                parameters: params,
-                constructors,
-            } => {
-                write!(f, "(type {id}")?;
-                for p in params {
-                    write!(f, " {p}")?;
-                }
-                writeln!(f, " =")?;
-                for c in constructors {
-                    writeln!(f, "{tab}| {c}")?;
-                }
                 write!(f, ")")
             }
             ExprKind::Fn { param, expr } => {
@@ -1087,35 +1093,6 @@ impl<T: Display> Expr<T> {
                 arg.format_helper(f, indentation + 1)?;
                 write!(f, ")")
             }
-            ExprKind::Class {
-                set,
-                name,
-                instance,
-                signatures,
-                ..
-            } => {
-                writeln!(f, "(class {set} {name} {instance} =")?;
-                for val in signatures {
-                    writeln!(f, "{tab}{val}")?;
-                }
-                write!(f, ")")
-            }
-            ExprKind::Instance {
-                set,
-                class: name,
-                instance,
-                impls,
-                ..
-            } => {
-                writeln!(f, "(instance {set} {name} {instance} =")?;
-                for i in impls {
-                    write!(f, "{tab}")?;
-                    i.format_helper(f, indentation + 1)?;
-                }
-                write!(f, ")")
-            }
-
-            ExprKind::Operator { .. } => write!(f, ""),
         }
         .and_then(|()| write!(f, ": {}", self.ty))
     }
@@ -1125,6 +1102,7 @@ pub type UntypedModule = Module<()>;
 pub type UntypedExpr = Expr<()>;
 pub type UntypedLetBind = LetBind<()>;
 pub type UntypedPat = Pat<()>;
+pub type UntypedStmt = Stmt<()>;
 pub type UntypedMatchArm = MatchArm<()>;
 pub type UntypedParam = Param<()>;
 pub type UntypedConstructor = Constructor<()>;
