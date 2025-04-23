@@ -69,6 +69,33 @@ impl Ty {
         }
     }
 
+    pub fn equivalent(&self, rhs: &Self) -> bool {
+        match (self, rhs) {
+            (Self::Named { name: n1, args: a1 }, Self::Named { name: n2, args: a2 }) => {
+                n1 == n2
+                    && a1.len() == a2.len()
+                    && a1.iter().zip(a2.iter()).all(|(t1, t2)| t1.equivalent(t2))
+            }
+
+            (Self::Generic { args: a1, .. }, Self::Generic { args: a2, .. })
+            | (Self::Tuple(a1), Self::Tuple(a2)) => {
+                a1.len() == a2.len() && a1.iter().zip(a2.iter()).all(|(t1, t2)| t1.equivalent(t2))
+            }
+
+            (Self::Fn { param: p1, ret: r1 }, Self::Fn { param: p2, ret: r2 }) => {
+                p1.equivalent(p2) && r1.equivalent(r2)
+            }
+
+            (Self::Scheme { quant: q1, ty: t1 }, Self::Scheme { quant: q2, ty: t2 }) => {
+                q1.len() == q2.len() && t1.equivalent(t2)
+            }
+
+            (Self::Var(_), Self::Var(_)) => true,
+
+            (lhs, rhs) => lhs == rhs,
+        }
+    }
+
     pub fn function<I>(params: I, ret: Self) -> Self
     where
         I: IntoIterator<Item = Self>,

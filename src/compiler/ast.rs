@@ -915,11 +915,11 @@ impl Substitute for ListPat<Ty> {
         S: FnMut(&Ty) -> Option<Ty>,
     {
         match self {
-            ListPat::Nil => (),
-            ListPat::Single(pat) => {
+            Self::Nil => (),
+            Self::Single(pat) => {
                 pat.substitute(subs);
             }
-            ListPat::Cons(pat, pat1) => {
+            Self::Cons(pat, pat1) => {
                 pat.substitute(subs);
                 pat1.substitute(subs);
             }

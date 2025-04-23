@@ -669,35 +669,8 @@ impl Ctx {
     pub fn resolve_type_name(&self, name: &Path) -> CheckResult<Path> {
         let (module, ty) = self.get_module_and_ident(name)?;
         let data = self.get_ty(name)?;
-        if let Some(import) = data.imported {
-            Ok(Path::new(smallvec![import, ty]))
-        } else {
-            Ok(Path::new(smallvec![module, ty]))
-        }
-    }
-
-    pub fn same_type_name(&self, lhs: &Path, rhs: &Path) -> CheckResult<bool> {
-        let (lhs_module, lhs_ty) = self.get_module_and_ident(lhs)?;
-        let (rhs_module, rhs_ty) = self.get_module_and_ident(rhs)?;
-
-        if lhs_ty != rhs_ty {
-            return Ok(false);
-        }
-
-        println!("{lhs}");
-        println!("{rhs}");
-
-        if lhs_module == rhs_module {
-            return Ok(true);
-        }
-
-        let lhs = self.get_ty(lhs)?;
-        let rhs = self.get_ty(rhs)?;
-
-        let lhs = lhs.imported.unwrap_or(lhs_module);
-        let rhs = rhs.imported.unwrap_or(rhs_module);
-
-        Ok(lhs == rhs)
+        let module = data.imported.unwrap_or(module);
+        Ok(Path::new(smallvec![module, ty]))
     }
 
     fn import_from_module(&mut self, from: Ident, id: Ident) -> CheckResult<()> {
@@ -965,46 +938,12 @@ impl Ctx {
         write!(f, "{ctor}")
     }
 
-    pub fn equivalent(&self, lhs: &Ty, rhs: &Ty) -> bool {
-        match (lhs, rhs) {
-            (Ty::Named { name: n1, args: a1 }, Ty::Named { name: n2, args: a2 }) => {
-                n1 == n2
-                    && a1.len() == a2.len()
-                    && a1
-                        .iter()
-                        .zip(a2.iter())
-                        .all(|(t1, t2)| self.equivalent(t1, t2))
-            }
-
-            (Ty::Generic { args: a1, .. }, Ty::Generic { args: a2, .. })
-            | (Ty::Tuple(a1), Ty::Tuple(a2)) => {
-                a1.len() == a2.len()
-                    && a1
-                        .iter()
-                        .zip(a2.iter())
-                        .all(|(t1, t2)| self.equivalent(t1, t2))
-            }
-
-            (Ty::Fn { param: p1, ret: r1 }, Ty::Fn { param: p2, ret: r2 }) => {
-                self.equivalent(p1, p2) && self.equivalent(r1, r2)
-            }
-
-            (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 }) => {
-                q1.len() == q2.len() && self.equivalent(t1, t2)
-            }
-
-            (Ty::Var(_), Ty::Var(_)) => true,
-
-            (lhs, rhs) => lhs == rhs,
-        }
-    }
-
     pub fn implementation(&self, ty: &Ty, class: &Path) -> CheckResult<&InstanceData> {
         let class_data = self.get_class(class)?;
 
         let instance = if ty.is_scheme() {
             class_data.instances.iter().find_map(|(instance, data)| {
-                if self.equivalent(ty, instance) {
+                if ty.equivalent(instance) {
                     Some(data)
                 } else {
                     None
@@ -1028,7 +967,7 @@ impl Ctx {
             let instance = class_data
                 .instances
                 .keys()
-                .find(|instance| self.equivalent(&ty, instance));
+                .find(|instance| ty.equivalent(instance));
             if let Some(instance) = instance {
                 ty = instance.clone();
             }
@@ -1043,7 +982,7 @@ impl Ctx {
         })
     }
 
-    fn zip_args(&self, lhs: &Ty, rhs: &Ty) -> Option<Vec<(Ty, Ty)>> {
+    fn zip_args(lhs: &Ty, rhs: &Ty) -> Option<Vec<(Ty, Ty)>> {
         match (lhs, rhs) {
             (Ty::Named { name: n1, args: a1 }, Ty::Named { name: n2, args: a2 })
                 if n1 == n2 && a1.len() == a2.len() =>
@@ -1062,7 +1001,7 @@ impl Ctx {
             (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 })
                 if q1.len() == q2.len() =>
             {
-                self.zip_args(t1, t2)
+                Self::zip_args(t1, t2)
             }
 
             (Ty::Var(_), Ty::Var(_)) => Some(Vec::new()),
@@ -1092,8 +1031,7 @@ impl Ctx {
             else {
                 return None;
             };
-            self.zip_args(instance_ty, ty)
-                .map(|args| (args, data.constraints().iter()))
+            Self::zip_args(instance_ty, ty).map(|args| (args, data.constraints().iter()))
         }) else {
             return Ok(vec![ClassConstraint::new(class.clone(), ty.clone(), span)]);
         };

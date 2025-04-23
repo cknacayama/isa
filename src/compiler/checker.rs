@@ -22,7 +22,7 @@ use super::infer::{
 use super::token::Ident;
 use super::types::Ty;
 use crate::compiler::ctx::OperatorData;
-use crate::global::{Symbol, symbol};
+use crate::global::Symbol;
 use crate::span::Span;
 
 #[derive(Debug, Default)]

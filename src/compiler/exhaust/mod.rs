@@ -9,10 +9,8 @@ use pat::{PatMatrix, PatMatrixRow, PatOrWild, PatVector, Pattern, WitnessPat};
 use super::ast::{Expr, ExprKind, LetBind, ListPat, MatchArm, Pat, PatKind, RangePat, mod_path};
 use super::ctx::Ctx as TypeCtx;
 use super::error::MatchNonExhaustive;
-use super::token::Ident;
 use super::types::Ty;
 use crate::global::symbol;
-use crate::span::Span;
 
 #[derive(Debug)]
 pub struct Ctx<'a> {

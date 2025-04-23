@@ -310,138 +310,136 @@ impl From<ClassConstraint> for ClassConstraintSet {
     }
 }
 
-impl Ctx {
-    fn unify_eq(
-        &self,
-        c: EqConstraint,
-        cset: &mut EqConstraintSet,
-        subs: &mut Vec<Subs>,
-    ) -> Result<(), Uninferable> {
-        let span = c.span;
-        match (&c.lhs, &c.rhs) {
-            (
-                lhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
-                rhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
-            ) if lhs == rhs => {}
-            (new, Ty::Var(old)) | (Ty::Var(old), new) if !new.occurs(*old) => {
-                let s = Subs::new(*old, new.clone());
+fn unify_eq(
+    c: EqConstraint,
+    cset: &mut EqConstraintSet,
+    subs: &mut Vec<Subs>,
+) -> Result<(), Uninferable> {
+    let span = c.span;
+    match (&c.lhs, &c.rhs) {
+        (
+            lhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
+            rhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Var(_)),
+        ) if lhs == rhs => {}
+        (new, Ty::Var(old)) | (Ty::Var(old), new) if !new.occurs(*old) => {
+            let s = Subs::new(*old, new.clone());
 
+            cset.substitute_eq(&s);
+
+            subs.push(s);
+        }
+        (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
+            let c1 = EqConstraint::new(i1.into(), i2.into(), c.span);
+            let c2 = EqConstraint::new(o1.into(), o2.into(), c.span);
+            let parent = Rc::new(c);
+
+            cset.push(c1.with_parent(parent.clone()));
+            cset.push(c2.with_parent(parent));
+        }
+        (
+            Ty::Generic {
+                var: v1,
+                args: args1,
+            },
+            Ty::Generic {
+                var: v2,
+                args: args2,
+            },
+        ) if args1.len() == args2.len() => {
+            let args1 = args1.clone();
+            let args2 = args2.clone();
+            let v1 = *v1;
+            let v2 = *v2;
+            let parent = Rc::new(c);
+            for (a1, a2) in args1.iter().zip(args2.iter()) {
+                cset.push(
+                    EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
+                );
+            }
+            if v1 != v2 {
+                let s = Subs::new(v2, Ty::Var(v1));
                 cset.substitute_eq(&s);
-
                 subs.push(s);
-            }
-            (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
-                let c1 = EqConstraint::new(i1.into(), i2.into(), c.span);
-                let c2 = EqConstraint::new(o1.into(), o2.into(), c.span);
-                let parent = Rc::new(c);
-
-                cset.push(c1.with_parent(parent.clone()));
-                cset.push(c2.with_parent(parent));
-            }
-            (
-                Ty::Generic {
-                    var: v1,
-                    args: args1,
-                },
-                Ty::Generic {
-                    var: v2,
-                    args: args2,
-                },
-            ) if args1.len() == args2.len() => {
-                let args1 = args1.clone();
-                let args2 = args2.clone();
-                let v1 = *v1;
-                let v2 = *v2;
-                let parent = Rc::new(c);
-                for (a1, a2) in args1.iter().zip(args2.iter()) {
-                    cset.push(
-                        EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
-                    );
-                }
-                if v1 != v2 {
-                    let s = Subs::new(v2, Ty::Var(v1));
-                    cset.substitute_eq(&s);
-                    subs.push(s);
-                }
-            }
-            (Ty::Generic { var, args: vars }, Ty::Named { name, args: named })
-            | (Ty::Named { name, args: named }, Ty::Generic { var, args: vars })
-                if vars.len() <= named.len() =>
-            {
-                let var = *var;
-                let name = name.clone();
-                let vars = vars.clone();
-                let named = named.clone();
-                let parent = Rc::new(c);
-                let mut named_iter = named.iter().rev();
-                for arg in vars.iter().rev() {
-                    let named = named_iter.next().unwrap();
-                    cset.push(
-                        EqConstraint::new(arg.clone(), named.clone(), span)
-                            .with_parent(parent.clone()),
-                    );
-                }
-                let args = named_iter.cloned().rev().collect();
-                let s = Subs::new(var, Ty::Named { name, args });
-                cset.substitute_eq(&s);
-
-                subs.push(s);
-            }
-            (
-                Ty::Named {
-                    name: n1,
-                    args: args1,
-                },
-                Ty::Named {
-                    name: n2,
-                    args: args2,
-                },
-            ) if n1 == n2 && args1.len() == args2.len() => {
-                let args1 = args1.clone();
-                let args2 = args2.clone();
-                let parent = Rc::new(c);
-                for (a1, a2) in args1.iter().zip(args2.iter()) {
-                    cset.push(
-                        EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
-                    );
-                }
-            }
-            (Ty::Tuple(t1), Ty::Tuple(t2)) if t1.len() == t2.len() => {
-                let args1 = t1.clone();
-                let args2 = t2.clone();
-                let parent = Rc::new(c);
-                for (a1, a2) in args1.iter().zip(args2.iter()) {
-                    cset.push(
-                        EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
-                    );
-                }
-            }
-            (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 })
-                if q1.len() == q2.len() =>
-            {
-                let constr = EqConstraint::new(t1.into(), t2.into(), span);
-                let parent = Rc::new(c);
-                cset.push(constr.with_parent(parent));
-            }
-
-            _ => {
-                let c = if let Some(parent) = c.parent {
-                    let mut parent = parent.as_ref().clone();
-                    parent.substitute_many(subs.as_slice());
-                    parent
-                } else {
-                    c
-                };
-                return Err(Uninferable::new(
-                    Constraint::Eq(Box::new(c)),
-                    std::mem::take(subs),
-                ));
             }
         }
+        (Ty::Generic { var, args: vars }, Ty::Named { name, args: named })
+        | (Ty::Named { name, args: named }, Ty::Generic { var, args: vars })
+            if vars.len() <= named.len() =>
+        {
+            let var = *var;
+            let name = name.clone();
+            let vars = vars.clone();
+            let named = named.clone();
+            let parent = Rc::new(c);
+            let mut named_iter = named.iter().rev();
+            for arg in vars.iter().rev() {
+                let named = named_iter.next().unwrap();
+                cset.push(
+                    EqConstraint::new(arg.clone(), named.clone(), span).with_parent(parent.clone()),
+                );
+            }
+            let args = named_iter.cloned().rev().collect();
+            let s = Subs::new(var, Ty::Named { name, args });
+            cset.substitute_eq(&s);
 
-        Ok(())
+            subs.push(s);
+        }
+        (
+            Ty::Named {
+                name: n1,
+                args: args1,
+            },
+            Ty::Named {
+                name: n2,
+                args: args2,
+            },
+        ) if n1 == n2 && args1.len() == args2.len() => {
+            let args1 = args1.clone();
+            let args2 = args2.clone();
+            let parent = Rc::new(c);
+            for (a1, a2) in args1.iter().zip(args2.iter()) {
+                cset.push(
+                    EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
+                );
+            }
+        }
+        (Ty::Tuple(t1), Ty::Tuple(t2)) if t1.len() == t2.len() => {
+            let args1 = t1.clone();
+            let args2 = t2.clone();
+            let parent = Rc::new(c);
+            for (a1, a2) in args1.iter().zip(args2.iter()) {
+                cset.push(
+                    EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
+                );
+            }
+        }
+        (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 })
+            if q1.len() == q2.len() =>
+        {
+            let constr = EqConstraint::new(t1.into(), t2.into(), span);
+            let parent = Rc::new(c);
+            cset.push(constr.with_parent(parent));
+        }
+
+        _ => {
+            let c = if let Some(parent) = c.parent {
+                let mut parent = parent.as_ref().clone();
+                parent.substitute_many(subs.as_slice());
+                parent
+            } else {
+                c
+            };
+            return Err(Uninferable::new(
+                Constraint::Eq(Box::new(c)),
+                std::mem::take(subs),
+            ));
+        }
     }
 
+    Ok(())
+}
+
+impl Ctx {
     fn unify_class(
         &self,
         classes: ClassConstraintSet,
@@ -470,7 +468,7 @@ impl Ctx {
         let mut subs = Vec::new();
 
         while let Some(c) = cset.constrs.pop_front() {
-            self.unify_eq(c, &mut cset, &mut subs)?;
+            unify_eq(c, &mut cset, &mut subs)?;
         }
 
         classes.substitute_many(&subs);
