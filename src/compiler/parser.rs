@@ -4,9 +4,10 @@ use std::rc::Rc;
 use smallvec::smallvec;
 
 use super::ast::{
-    BinOp, Constructor, Import, ImportClause, ImportWildcard, Path, RangePat, UnOp,
-    UntypedConstructor, UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm,
-    UntypedModule, UntypedParam, UntypedPat, UntypedPatKind, ValDeclaration,
+    Associativity, Constructor, Expr, Import, ImportClause, ImportWildcard, OpDeclaration,
+    Operator, OperatorTable, Path, RangePat, UntypedConstructor, UntypedExpr, UntypedExprKind,
+    UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat, UntypedPatKind,
+    ValDeclaration,
 };
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};
@@ -21,6 +22,7 @@ pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
 pub struct Parser<'a> {
     lexer:     Peekable<Lexer<'a>>,
     last_span: Span,
+    operators: OperatorTable,
 }
 
 impl<'a> Parser<'a> {
@@ -34,6 +36,7 @@ impl<'a> Parser<'a> {
         Self {
             lexer:     lexer.peekable(),
             last_span: Span::default(),
+            operators: OperatorTable::default(),
         }
     }
 
@@ -42,11 +45,11 @@ impl<'a> Parser<'a> {
             .is_some_and(|tk| tk.map(|tk| tk.data == t).unwrap_or(false))
     }
 
-    fn peek(&mut self) -> Option<ParseResult<&Token>> {
+    fn peek(&mut self) -> Option<ParseResult<Token>> {
         self.lexer.peek().map(|res| match res {
             Ok(t) => {
                 self.last_span = t.span;
-                Ok(t)
+                Ok(*t)
             }
             Err(e) => {
                 self.last_span = e.span;
@@ -57,9 +60,13 @@ impl<'a> Parser<'a> {
 
     fn peek_and<P>(&mut self, p: P) -> ParseResult<bool>
     where
-        P: FnOnce(&TokenKind) -> bool,
+        P: FnOnce(TokenKind) -> bool,
     {
-        Ok(self.peek().transpose()?.map(Spanned::data).is_some_and(p))
+        Ok(self.peek_kind()?.is_some_and(p))
+    }
+
+    fn peek_kind(&mut self) -> ParseResult<Option<TokenKind>> {
+        Ok(self.peek().transpose()?.map(|tk| tk.data))
     }
 
     fn next(&mut self) -> Option<ParseResult<Token>> {
@@ -90,7 +97,7 @@ impl<'a> Parser<'a> {
 
     fn next_if_map<F, T>(&mut self, f: F) -> Option<T>
     where
-        F: FnOnce(&Token) -> Option<T>,
+        F: FnOnce(Token) -> Option<T>,
     {
         let token = self.peek()?.ok()?;
 
@@ -112,12 +119,16 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn expect_op(&mut self) -> ParseResult<Ident> {
+        self.next_or_eof().and_then(|t| match t.data {
+            TokenKind::Operator(ident) => Ok(Ident::new(ident, t.span)),
+            _ => Err(t.map(ParseError::ExpectedId)),
+        })
+    }
+
     fn expect_id(&mut self) -> ParseResult<Ident> {
         self.next_or_eof().and_then(|t| match t.data {
-            TokenKind::Ident(ident) => Ok(Ident {
-                ident,
-                span: t.span,
-            }),
+            TokenKind::Ident(ident) => Ok(Ident::new(ident, t.span)),
             _ => Err(t.map(ParseError::ExpectedId)),
         })
     }
@@ -152,13 +163,10 @@ impl<'a> Parser<'a> {
                 };
                 match tk.data {
                     TokenKind::Ident(ident) => {
-                        segments.push(Ident {
-                            ident,
-                            span: tk.span,
-                        });
                         self.next();
+                        segments.push(Ident::new(ident, tk.span));
                     }
-                    TokenKind::Star => {
+                    TokenKind::Underscore => {
                         self.next();
                         wildcard = ImportWildcard::Wildcard;
                         break;
@@ -186,7 +194,7 @@ impl<'a> Parser<'a> {
     /// parses one module
     fn parse_module(&mut self) -> ParseResult<UntypedModule> {
         let mut span = self.expect(TokenKind::KwModule)?;
-        let no_prelude = self.next_if_match(TokenKind::Bang).is_some();
+        let no_prelude = self.next_if_match(TokenKind::At).is_some();
         let name = self.expect_id()?;
 
         let imports = if self.next_if_match(TokenKind::KwWith).is_some() {
@@ -234,6 +242,7 @@ impl<'a> Parser<'a> {
             TokenKind::KwVal => self.parse_val_expr(),
             TokenKind::KwAlias => self.parse_alias(),
             TokenKind::KwClass => self.parse_class(),
+            TokenKind::KwOperator => self.parse_operator(),
             TokenKind::KwInstance => self.parse_instance(),
             _ => self.parse_expr(),
         }?;
@@ -247,6 +256,53 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn parse_operator(&mut self) -> ParseResult<UntypedExpr> {
+        let mut span = self.expect(TokenKind::KwOperator)?;
+        let (set, params) = self.parse_constraint_set()?;
+        let mut signatures = Vec::new();
+        loop {
+            let (prefix, op) = match self.peek_kind()? {
+                Some(TokenKind::LParen) => {
+                    self.next();
+                    let op = self.expect_op()?;
+                    self.expect(TokenKind::RParen)?;
+                    (false, op)
+                }
+                Some(TokenKind::LBrace) => {
+                    self.next();
+                    let op = self.expect_op()?;
+                    self.expect(TokenKind::RBrace)?;
+                    (true, op)
+                }
+                _ => break,
+            };
+            self.expect(TokenKind::Colon)?;
+            let ty = self.parse_type()?;
+            span = span.union(ty.span);
+            signatures.push(OpDeclaration::new(prefix, op.ident, ty.data));
+            if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
+                span = span.union(c_span);
+            }
+        }
+        if signatures.is_empty() {
+            return Err(Spanned::new(
+                ParseError::ExpectedToken {
+                    expected: TokenKind::LParen,
+                    got:      self.peek().transpose()?.map(|tk| tk.data),
+                },
+                span,
+            ));
+        }
+
+        let kind = UntypedExprKind::Operator {
+            params,
+            set,
+            ops: signatures.into_boxed_slice(),
+        };
+
+        Ok(UntypedExpr::untyped(kind, span))
+    }
+
     fn parse_class(&mut self) -> ParseResult<UntypedExpr> {
         let mut span = self.expect(TokenKind::KwClass)?;
         let (set, _) = self.parse_constraint_set()?;
@@ -256,7 +312,7 @@ impl<'a> Parser<'a> {
             let mut signatures = Vec::new();
             let mut defaults = Vec::new();
             loop {
-                match self.peek().transpose()?.map(Token::data) {
+                match self.peek_kind()? {
                     Some(TokenKind::KwVal) => {
                         let val = self.parse_val()?;
                         span = span.union(val.span);
@@ -386,7 +442,7 @@ impl<'a> Parser<'a> {
             if let Some(Token {
                 data: TokenKind::Ident(ident),
                 span: ident_span,
-            }) = self.peek().transpose()?.copied()
+            }) = self.peek().transpose()?
             {
                 self.next();
                 let name = Path::from_ident(Ident { ident, span });
@@ -446,204 +502,94 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> ParseResult<UntypedExpr> {
-        self.parse_apply()
+        let lhs = self.parse_prefix()?;
+        self.parse_precedence(lhs, 0)
     }
 
-    fn parse_apply(&mut self) -> ParseResult<UntypedExpr> {
-        let mut lhs = self.parse_monad()?;
+    fn check_op(&self, token: Token, min_prec: u8) -> Option<(Ident, Operator)> {
+        let symbol = token.data.as_operator()?;
+        let op = self.operators.get_infix(symbol)?;
+        let symbol = Ident::new(symbol, token.span);
 
-        while self.next_if_match(TokenKind::Dollar).is_some() {
-            let rhs = self.parse_monad()?;
-            let span = lhs.span.union(rhs.span);
-            lhs = UntypedExpr::untyped(
-                UntypedExprKind::Bin {
-                    op:  BinOp::Apply,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                },
-                span,
-            );
+        if op.precedence > min_prec || (op.associativity.is_right() && op.precedence == min_prec) {
+            Some((symbol, op))
+        } else {
+            None
         }
-
-        Ok(lhs)
     }
 
-    fn parse_monad(&mut self) -> ParseResult<UntypedExpr> {
-        let mut lhs = self.parse_or()?;
-
-        while let Some(op) = self.next_if_map(|tk| match tk.data {
-            TokenKind::GtGt => Some(BinOp::Action),
-            TokenKind::GtGtEq => Some(BinOp::Bind),
-            _ => None,
-        }) {
-            let rhs = self.parse_or()?;
-            let span = lhs.span.union(rhs.span);
-            lhs = UntypedExpr::untyped(
-                UntypedExprKind::Bin {
-                    op,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                },
-                span,
-            );
-        }
-
-        Ok(lhs)
-    }
-
-    fn parse_or(&mut self) -> ParseResult<UntypedExpr> {
-        let mut lhs = self.parse_and()?;
-
-        while self.next_if_match(TokenKind::BarBar).is_some() {
-            let rhs = self.parse_and()?;
-            let span = lhs.span.union(rhs.span);
-            lhs = UntypedExpr::untyped(
-                UntypedExprKind::Bin {
-                    op:  BinOp::Or,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                },
-                span,
-            );
-        }
-
-        Ok(lhs)
-    }
-
-    fn parse_and(&mut self) -> ParseResult<UntypedExpr> {
-        let mut lhs = self.parse_cmp()?;
-
-        while self.next_if_match(TokenKind::AmpAmp).is_some() {
-            let rhs = self.parse_cmp()?;
-            let span = lhs.span.union(rhs.span);
-            lhs = UntypedExpr::untyped(
-                UntypedExprKind::Bin {
-                    op:  BinOp::And,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                },
-                span,
-            );
-        }
-
-        Ok(lhs)
-    }
-
-    fn parse_cmp(&mut self) -> ParseResult<UntypedExpr> {
-        let mut lhs = self.parse_add()?;
-
-        while let Some(op) = self.next_if_map(|tk| match tk.data {
-            TokenKind::Eq => Some(BinOp::Eq),
-            TokenKind::BangEq => Some(BinOp::Ne),
-            TokenKind::Lt => Some(BinOp::Lt),
-            TokenKind::Le => Some(BinOp::Le),
-            TokenKind::Gt => Some(BinOp::Gt),
-            TokenKind::Ge => Some(BinOp::Ge),
-            _ => None,
-        }) {
-            let rhs = self.parse_add()?;
-            let span = lhs.span.union(rhs.span);
-            lhs = UntypedExpr::untyped(
-                UntypedExprKind::Bin {
-                    op,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                },
-                span,
-            );
-        }
-
-        Ok(lhs)
-    }
-
-    fn parse_add(&mut self) -> ParseResult<UntypedExpr> {
-        let mut lhs = self.parse_mul()?;
-
-        while let Some(op) = self.next_if_map(|tk| match tk.data {
-            TokenKind::Plus => Some(BinOp::Add),
-            TokenKind::Minus => Some(BinOp::Sub),
-            _ => None,
-        }) {
-            let rhs = self.parse_mul()?;
-            let span = lhs.span.union(rhs.span);
-            lhs = UntypedExpr::untyped(
-                UntypedExprKind::Bin {
-                    op,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                },
-                span,
-            );
-        }
-
-        Ok(lhs)
-    }
-
-    fn parse_mul(&mut self) -> ParseResult<UntypedExpr> {
-        let mut lhs = self.parse_unary()?;
-
-        while let Some(op) = self.next_if_map(|tk| match tk.data {
-            TokenKind::Star => Some(BinOp::Mul),
-            TokenKind::Slash => Some(BinOp::Div),
-            TokenKind::Percent => Some(BinOp::Rem),
-            _ => None,
-        }) {
-            let rhs = self.parse_unary()?;
-            let span = lhs.span.union(rhs.span);
-            lhs = UntypedExpr::untyped(
-                UntypedExprKind::Bin {
-                    op,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                },
-                span,
-            );
-        }
-
-        Ok(lhs)
-    }
-
-    fn parse_unary(&mut self) -> ParseResult<UntypedExpr> {
-        if let Some(op) =
-            self.next_if_map(|tk| UnOp::from_token(tk.data).map(|op| Spanned::new(op, tk.span)))
+    fn parse_precedence(
+        &mut self,
+        mut lhs: UntypedExpr,
+        precedence: u8,
+    ) -> ParseResult<UntypedExpr> {
+        while let Some((op, curr_op)) = self
+            .peek()
+            .transpose()?
+            .and_then(|tk| self.check_op(tk, precedence))
         {
-            let expr = self.parse_unary()?;
-            let span = op.span.union(expr.span);
+            self.lexer.next();
+            let mut rhs = self.parse_prefix()?;
+            while let Some((_, next_op)) = self
+                .peek()
+                .transpose()?
+                .and_then(|tk| self.check_op(tk, precedence))
+            {
+                let next_prec =
+                    curr_op.precedence + u8::from(next_op.precedence > curr_op.precedence);
+                rhs = self.parse_precedence(rhs, next_prec)?;
+            }
 
-            let kind = UntypedExprKind::Un {
-                op:   op.data,
-                expr: Box::new(expr),
-            };
-
-            Ok(UntypedExpr::untyped(kind, span))
-        } else {
-            self.parse_compose()
+            let span = lhs.span.union(rhs.span);
+            lhs = Expr::untyped(
+                UntypedExprKind::Bin {
+                    op,
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                },
+                span,
+            );
         }
+        Ok(lhs)
     }
 
-    fn parse_compose(&mut self) -> ParseResult<UntypedExpr> {
-        let expr = self.parse_call()?;
+    fn parse_prefix(&mut self) -> ParseResult<UntypedExpr> {
+        match self.peek().transpose()? {
+            Some(Token {
+                data: TokenKind::Operator(op),
+                span,
+            }) => {
+                self.next();
 
-        if self.next_if_match(TokenKind::Dot).is_some() {
-            let rhs = self.parse_compose()?;
-            let span = expr.span.union(rhs.span);
+                let operator = self
+                    .operators
+                    .get_prefix(op)
+                    .ok_or_else(|| Spanned::new(ParseError::InvalidOperator(op), span))?;
 
-            let kind = UntypedExprKind::Bin {
-                op:  BinOp::Compose,
-                lhs: Box::new(expr),
-                rhs: Box::new(rhs),
-            };
+                let expr = match operator.associativity {
+                    Associativity::Non => self.parse_call()?,
+                    Associativity::Right => self.parse_prefix()?,
+                    Associativity::Left => unreachable!(),
+                };
 
-            Ok(UntypedExpr::untyped(kind, span))
-        } else {
-            Ok(expr)
+                let op = Ident::new(op, span);
+                let span = span.union(expr.span);
+                let kind = UntypedExprKind::Un {
+                    op,
+                    expr: Box::new(expr),
+                };
+
+                Ok(UntypedExpr::untyped(kind, span))
+            }
+
+            _ => self.parse_call(),
         }
     }
 
     fn parse_call(&mut self) -> ParseResult<UntypedExpr> {
         let mut expr = self.parse_prim()?;
 
-        while self.peek_and(TokenKind::can_start_expr)? {
+        while self.peek_and(|tk| tk.can_start_expr())? {
             let arg = self.parse_prim()?;
             let span = expr.span.union(arg.span);
             expr = UntypedExpr::untyped(
@@ -659,7 +605,7 @@ impl<'a> Parser<'a> {
 
     fn parse_prim(&mut self) -> ParseResult<UntypedExpr> {
         let last_span = self.last_span;
-        let Token { data, span } = *self
+        let Token { data, span } = self
             .peek()
             .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, last_span))??;
 
@@ -785,7 +731,7 @@ impl<'a> Parser<'a> {
             Ty::Named { name, args } if args.is_empty() => {
                 let mut span = simple.span;
                 let mut params = Vec::new();
-                while self.peek_and(TokenKind::can_start_type)? {
+                while self.peek_and(|tk| tk.can_start_type())? {
                     let ty = self.parse_simple_type()?;
                     span = span.union(ty.span);
                     params.push(ty.data);
@@ -822,7 +768,7 @@ impl<'a> Parser<'a> {
 
         let mut params = Vec::new();
 
-        while self.peek_and(TokenKind::can_start_type)? {
+        while self.peek_and(|tk| tk.can_start_type())? {
             let ty = self.parse_simple_type()?;
             span = span.union(ty.span);
             params.push(ty.data);
@@ -840,24 +786,19 @@ impl<'a> Parser<'a> {
         let span = self.expect(TokenKind::KwType)?;
         let name = self.expect_id()?;
 
-        let mut params = Vec::new();
-
-        while !self.check(TokenKind::Eq) {
-            let name = self.expect_id()?;
-            let span = name.span;
-            params.push(Ty::Named {
-                name: Path::from_ident(Ident {
-                    ident: name.ident,
-                    span,
-                }),
-                args: Rc::from([]),
-            });
-        }
-
-        self.expect(TokenKind::Eq)?;
+        let params = std::iter::from_fn(|| {
+            self.next_if_map(|tk| {
+                tk.data.as_ident().map(|ident| Ty::Named {
+                    name: Path::from_ident(Ident::new(ident, tk.span)),
+                    args: Rc::from([]),
+                })
+            })
+        })
+        .collect::<Vec<_>>();
 
         let mut constructors = Vec::new();
         let mut span = span;
+        self.expect(TokenKind::Eq)?;
         self.next_if_match(TokenKind::Bar);
         loop {
             let c = self.parse_constructor()?;
@@ -894,7 +835,7 @@ impl<'a> Parser<'a> {
 
         let mut arms = Vec::new();
 
-        while self.peek_and(TokenKind::can_start_pat)? {
+        while self.peek_and(|tk| tk.can_start_pat())? {
             let arm = self.parse_match_arm()?;
             arms.push(arm.data);
             span = span.union(arm.span);
@@ -936,7 +877,7 @@ impl<'a> Parser<'a> {
     }
 
     fn try_parse_char(&mut self) -> Option<ParseResult<Spanned<u8>>> {
-        match self.peek()?.copied() {
+        match self.peek()? {
             Ok(Token {
                 data: TokenKind::Char(c),
                 span,
@@ -950,7 +891,15 @@ impl<'a> Parser<'a> {
     }
 
     fn try_parse_integer(&mut self) -> Option<ParseResult<Spanned<i64>>> {
-        if let Some(span) = self.next_if_match(TokenKind::Minus) {
+        if let Some(span) = self.next_if_map(|tk| {
+            tk.data.as_operator().and_then(|op| {
+                if op == crate::global::intern_symbol("-") {
+                    Some(tk.span)
+                } else {
+                    None
+                }
+            })
+        }) {
             let mut int = match self.expect_integer() {
                 Ok(int) => int,
                 Err(err) => return Some(Err(err)),
@@ -959,7 +908,7 @@ impl<'a> Parser<'a> {
             return Some(Ok(int.map(|int| -int)));
         }
 
-        match self.peek()?.copied() {
+        match self.peek()? {
             Ok(Token {
                 data: TokenKind::Integer(int),
                 span,
@@ -1135,7 +1084,7 @@ impl<'a> Parser<'a> {
 
         let mut span = simple.span;
         let mut args = Vec::new();
-        while self.peek_and(TokenKind::can_start_pat)? {
+        while self.peek_and(|tk| tk.can_start_pat())? {
             let pat = self.parse_simple_pat()?;
             span = span.union(pat.span);
             args.push(pat);

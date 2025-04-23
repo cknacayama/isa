@@ -3,11 +3,11 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use codespan_reporting::files::{Files, SimpleFile, SimpleFiles};
+use codespan_reporting::files::{Files, SimpleFile};
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use codespan_reporting::{files, term};
 
-use crate::compiler::checker::{self, Checker};
+use crate::compiler::checker::Checker;
 use crate::compiler::ctx::Ctx;
 use crate::compiler::exhaust::check_matches;
 use crate::compiler::parser::Parser;

@@ -1,4 +1,4 @@
-module !ops
+module @ops
 
 type Ordering = Less | Equal | Greater;
 
@@ -15,7 +15,7 @@ class Div a =
 
 class Neg a = val neg: a -> a;
 
-class Not a = val not: a -> a;
+class Not a = val not: a -> bool;
 
 class And a = val and: a -> a -> bool;
 

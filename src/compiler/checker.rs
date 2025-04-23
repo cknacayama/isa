@@ -4,8 +4,8 @@ use rustc_hash::FxHashMap;
 use smallvec::smallvec;
 
 use super::ast::{
-    BinOp, Constructor, Path, TypedConstructor, TypedExpr, TypedExprKind, TypedLetBind,
-    TypedMatchArm, TypedModule, TypedParam, TypedPat, TypedPatKind, UnOp, UntypedConstructor,
+    Constructor, OpDeclaration, Path, TypedConstructor, TypedExpr, TypedExprKind, TypedLetBind,
+    TypedMatchArm, TypedModule, TypedParam, TypedPat, TypedPatKind, UntypedConstructor,
     UntypedExpr, UntypedExprKind, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
     UntypedPat, UntypedPatKind, ValDeclaration,
 };
@@ -22,7 +22,8 @@ use super::infer::{
 };
 use super::token::Ident;
 use super::types::Ty;
-use crate::global::{self, Symbol};
+use crate::compiler::ctx::OperatorData;
+use crate::global::Symbol;
 use crate::span::Span;
 
 #[derive(Debug, Default)]
@@ -512,6 +513,46 @@ impl Checker {
             name,
             parameters,
             constructors,
+        };
+
+        Ok(TypedExpr::new(kind, span, Ty::Unit))
+    }
+
+    fn check_operator(
+        &mut self,
+        params: Box<[Ty]>,
+        set: Set,
+        ops: Box<[OpDeclaration]>,
+        span: Span,
+    ) -> IsaResult<TypedExpr> {
+        let mut quant = Vec::new();
+
+        for param in &params {
+            let new = param.as_var().unwrap();
+            quant.push(new);
+        }
+
+        let quant = Rc::<[u64]>::from(quant);
+        let mut new_ops = Vec::new();
+
+        for OpDeclaration { prefix, op, ty } in ops {
+            let ty = Ty::Scheme {
+                quant: quant.clone(),
+                ty:    Rc::new(ty),
+            };
+            let data = OperatorData::new(ty.clone(), set.clone());
+            if prefix {
+                self.ctx.insert_prefix(op, data);
+            } else {
+                self.ctx.insert_infix(op, data);
+            }
+            new_ops.push(OpDeclaration::new(prefix, op, ty));
+        }
+
+        let kind = TypedExprKind::Operator {
+            params,
+            set,
+            ops: new_ops.into_boxed_slice(),
         };
 
         Ok(TypedExpr::new(kind, span, Ty::Unit))
@@ -1050,141 +1091,70 @@ impl Checker {
 
     fn check_bin(
         &mut self,
-        op: BinOp,
+        op: Ident,
         lhs: UntypedExpr,
         rhs: UntypedExpr,
         span: Span,
     ) -> IsaResult<(TypedExpr, Set)> {
-        if op.is_apply() {
-            return self.check_call(lhs, rhs, span);
-        }
+        let (lhs, lhs_set) = self.check(lhs)?;
+        let (rhs, rhs_set) = self.check(rhs)?;
 
-        let (mut lhs, lhs_set) = self.check(lhs)?;
-        let (mut rhs, rhs_set) = self.check(rhs)?;
+        let data = self.ctx.get_infix(op)?;
+        let mut set = data.set().clone();
+        let (ty, subs) = self.instantiate(data.ty().clone());
+        set.substitute_many(&subs);
+        set.extend(lhs_set);
+        set.extend(rhs_set);
+        let Ty::Fn { param: lhs_ty, ret } = &ty else {
+            return Err(CheckError::new(CheckErrorKind::NotConstructor(ty), span).into());
+        };
+        let Ty::Fn { param: rhs_ty, ret } = ret.as_ref() else {
+            return Err(CheckError::new(
+                CheckErrorKind::NotConstructor(ret.as_ref().clone()),
+                span,
+            )
+            .into());
+        };
+        let mut ret = Ty::from(ret);
+        let c1 = EqConstraint::new(lhs_ty.into(), lhs.ty.clone(), lhs.span);
+        let c2 = EqConstraint::new(rhs_ty.into(), rhs.ty.clone(), lhs.span);
+        let (subs, set) = self.unify([c1, c2], set)?;
+        ret.substitute_many(&subs);
 
-        let mut set = lhs_set.concat(rhs_set);
+        let kind = TypedExprKind::Bin {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        };
 
-        match op {
-            BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem => {
-                let c = EqConstraint::new(lhs.ty.clone(), rhs.ty.clone(), rhs.span);
-
-                set.push(ClassConstraint::new(
-                    Path::from_ident(Ident {
-                        ident: global::intern_symbol(op.class()),
-                        span,
-                    }),
-                    lhs.ty.clone(),
-                    span,
-                ));
-                let (subs, set) = self.unify(c, set)?;
-                lhs.substitute_many(&subs);
-                rhs.substitute_many(&subs);
-
-                let ty = lhs.ty.clone();
-
-                let kind = TypedExprKind::Bin {
-                    op,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                };
-
-                Ok((TypedExpr::new(kind, span, ty), set))
-            }
-            BinOp::Gt
-            | BinOp::Ge
-            | BinOp::Lt
-            | BinOp::Le
-            | BinOp::Eq
-            | BinOp::Ne
-            | BinOp::And
-            | BinOp::Or => {
-                let c = EqConstraint::new(lhs.ty.clone(), rhs.ty.clone(), rhs.span);
-
-                set.push(ClassConstraint::new(
-                    Path::from_ident(Ident {
-                        ident: global::intern_symbol(op.class()),
-                        span,
-                    }),
-                    lhs.ty.clone(),
-                    span,
-                ));
-                let (subs, set) = self.unify(c, set)?;
-
-                lhs.substitute_many(&subs);
-                rhs.substitute_many(&subs);
-
-                let kind = TypedExprKind::Bin {
-                    op,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                };
-
-                Ok((TypedExpr::new(kind, span, Ty::Bool), set))
-            }
-
-            BinOp::Bind => todo!(),
-            BinOp::Action => todo!(),
-            BinOp::Compose => {
-                let id_a = self.gen_id();
-                let id_b = self.gen_id();
-                let id_c = self.gen_id();
-
-                let a = Rc::new(Ty::Var(id_a));
-                let b = Rc::new(Ty::Var(id_b));
-                let c = Rc::new(Ty::Var(id_c));
-
-                let first = Ty::Fn {
-                    param: b.clone(),
-                    ret:   c.clone(),
-                };
-                let second = Ty::Fn {
-                    param: a.clone(),
-                    ret:   b,
-                };
-                let mut ty = Ty::Fn { param: a, ret: c };
-
-                let c1 = EqConstraint::new(first, lhs.ty.clone(), lhs.span);
-                let c2 = EqConstraint::new(second, rhs.ty.clone(), rhs.span);
-
-                let (subs, set) = self.unify([c1, c2], set)?;
-
-                ty.substitute_many(&subs);
-
-                let kind = TypedExprKind::Bin {
-                    op,
-                    lhs: Box::new(lhs),
-                    rhs: Box::new(rhs),
-                };
-
-                Ok((TypedExpr::new(kind, span, ty), set))
-            }
-            BinOp::Apply => unreachable!(),
-        }
+        Ok((TypedExpr::new(kind, span, ret), set))
     }
 
-    fn check_un(&mut self, op: UnOp, expr: UntypedExpr, span: Span) -> IsaResult<(TypedExpr, Set)> {
-        let (mut expr, mut set) = self.check(expr)?;
-
-        let class = match op {
-            UnOp::Not => global::intern_symbol("Not"),
-            UnOp::Neg => global::intern_symbol("Neg"),
+    fn check_un(
+        &mut self,
+        op: Ident,
+        expr: UntypedExpr,
+        span: Span,
+    ) -> IsaResult<(TypedExpr, Set)> {
+        let (expr, expr_set) = self.check(expr)?;
+        let data = self.ctx.get_prefix(op)?;
+        let mut set = data.set().clone();
+        let (op_ty, subs) = self.instantiate(data.ty().clone());
+        set.substitute_many(&subs);
+        set.extend(expr_set);
+        let Ty::Fn { param: ty, ret } = &op_ty else {
+            return Err(CheckError::new(CheckErrorKind::NotConstructor(op_ty), span).into());
         };
-        let class = Ident { ident: class, span };
-        let class = Path::from_ident(class);
-        let constr = ClassConstraint::new(class, expr.ty.clone(), expr.span);
-        set.push(constr);
-
-        let (subs, set) = self.unify([], set)?;
-
-        expr.substitute_many(&subs);
-        let ty = expr.ty.clone();
-
+        let mut ret = Ty::from(ret);
+        let c = EqConstraint::new(ty.into(), expr.ty.clone(), expr.span);
+        let (subs, set) = self.unify(c, set)?;
+        ret.substitute_many(&subs);
         let kind = TypedExprKind::Un {
             op,
             expr: Box::new(expr),
         };
 
-        Ok((TypedExpr::new(kind, span, ty), set))
+        Ok((TypedExpr::new(kind, span, ret), set))
     }
 
     fn check_tuple(
@@ -1224,8 +1194,8 @@ impl Checker {
     fn check_module_types(
         &mut self,
         module: &mut UntypedModule,
-    ) -> IsaResult<Vec<(Ident, AliasData)>> {
-        let _ = self.ctx.create_module(module.name);
+    ) -> IsaResult<Vec<(Path, AliasData)>> {
+        self.ctx.create_module(module.name);
         let module_name = module.name;
         let mut declared = FxHashMap::default();
         for expr in &mut module.exprs {
@@ -1376,6 +1346,27 @@ impl Checker {
                 (*name, expr.span)
             }
 
+            UntypedExprKind::Operator {
+                params, set, ops, ..
+            } => {
+                let mut subs = Vec::new();
+
+                for param in params {
+                    let id = self.gen_id();
+                    let mut new = Ty::Var(id);
+                    std::mem::swap(param, &mut new);
+                    let old = new.get_ident().unwrap();
+                    subs.push((old, id));
+                }
+
+                set.substitute_param(&subs);
+                for op in ops {
+                    op.ty.substitute_param(&subs);
+                }
+
+                return Ok(());
+            }
+
             UntypedExprKind::Instance {
                 params,
                 set,
@@ -1408,7 +1399,7 @@ impl Checker {
         })
     }
 
-    fn check_alias_declaration(&self, expr: &UntypedExpr) -> Option<IsaResult<(Ident, AliasData)>> {
+    fn check_alias_declaration(&self, expr: &UntypedExpr) -> Option<IsaResult<(Path, AliasData)>> {
         match &expr.kind {
             UntypedExprKind::Semi(e) => self.check_alias_declaration(e),
             UntypedExprKind::Alias {
@@ -1423,10 +1414,14 @@ impl Checker {
                     vars.push(id);
                 }
 
-                Some(
-                    self.check_valid_type(ty)
-                        .map(|()| (*name, AliasData::new(vars.into(), ty.clone()))),
-                )
+                let module = self.ctx.current_module();
+
+                Some(self.check_valid_type(ty).map(|()| {
+                    (
+                        Path::new(smallvec![module, *name]),
+                        AliasData::new(vars.into(), ty.clone()),
+                    )
+                }))
             }
 
             _ => None,
@@ -1508,7 +1503,7 @@ impl Checker {
         &mut self,
         mut modules: Vec<UntypedModule>,
     ) -> IsaResult<(Vec<TypedModule>, Set)> {
-        let mut aliases = FxHashMap::default();
+        let mut aliases = Vec::new();
 
         for types in modules
             .iter_mut()
@@ -1522,14 +1517,7 @@ impl Checker {
 
         for module in &mut modules {
             if !aliases.is_empty() {
-                module.substitute(&mut |ty| {
-                    let Ty::Named { name, args } = ty else {
-                        return None;
-                    };
-                    let name = name.as_ident()?;
-
-                    aliases.get(&name).map(|alias| alias.subs(args))
-                });
+                todo!()
             }
             self.ctx.set_current_module(module.name);
             let _ = self.ctx.import_clause(module.imports.clone());
@@ -1547,7 +1535,7 @@ impl Checker {
 
             for res in module
                 .exprs
-                .extract_if(.., |e| e.kind.is_type_or_val())
+                .extract_if(.., |e| e.kind.is_type_or_val_or_op())
                 .map(|e| self.check(e))
             {
                 let (expr, expr_set) = res?;
@@ -1556,7 +1544,7 @@ impl Checker {
             }
 
             let scope = self.ctx.pop_scope().unwrap();
-            self.ctx.extend_module(module.name, scope);
+            self.ctx.extend_module(module.name.ident, scope);
 
             decl.push(exprs);
         }
@@ -1599,7 +1587,7 @@ impl Checker {
         }
 
         let scope = self.ctx.pop_scope().unwrap();
-        self.ctx.extend_module(module.name, scope);
+        self.ctx.extend_module(module.name.ident, scope);
         let typed = TypedModule::new(
             module.no_prelude,
             module.name,
@@ -1709,6 +1697,11 @@ impl Checker {
                 instance,
                 impls,
             } => self.check_instance(params, set, name, instance, impls, span),
+
+            UntypedExprKind::Operator { params, set, ops } => {
+                let operator = self.check_operator(params, set, ops, span)?;
+                Ok((operator, Set::new()))
+            }
         }
     }
 }

@@ -1,10 +1,12 @@
 use std::fmt::{Debug, Display, Write};
 
+use rustc_hash::FxHashMap;
 use smallvec::{SmallVec, smallvec};
 
 use super::infer::{ClassConstraintSet, Substitute};
 use super::token::{Ident, TokenKind};
 use super::types::Ty;
+use crate::global::Symbol;
 use crate::span::Span;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -53,100 +55,117 @@ impl Path {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum BinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    Eq,
-    Ne,
-    Gt,
-    Ge,
-    Lt,
-    Le,
-    And,
-    Or,
+macro_rules! mod_path {
+    ($($seg:ident)::+) => {{
+        use crate::global::symbol;
+        let segments = smallvec![Ident { ident: $(symbol!(stringify!($seg))),+, span: Span::default() }];
+        Path::new(segments)
+    }};
+}
+pub(crate) use mod_path;
 
-    Bind,
-    Action,
-    Compose,
-    Apply,
+#[derive(Debug, Clone, Copy)]
+pub struct Operator {
+    pub precedence:    u8,
+    pub associativity: Associativity,
 }
 
-impl BinOp {
-    pub const fn class(self) -> &'static str {
-        match self {
-            Self::Add => "Add",
-            Self::Sub => "Sub",
-            Self::Mul => "Mul",
-            Self::Rem | Self::Div => "Div",
-
-            Self::Eq | Self::Ne => "Eq",
-            Self::Gt | Self::Ge | Self::Lt | Self::Le => "Cmp",
-            Self::And => "And",
-            Self::Or => "Or",
-
-            Self::Bind | Self::Action => "Monad",
-
-            _ => "",
+impl Operator {
+    pub const fn new(precedence: u8, associativity: Associativity) -> Self {
+        Self {
+            precedence,
+            associativity,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Associativity {
+    Non,
+    Left,
+    Right,
+}
+
+impl Associativity {
+    #[must_use]
+    pub const fn is_non(self) -> bool {
+        matches!(self, Self::Non)
     }
 
     #[must_use]
-    pub const fn is_apply(self) -> bool {
-        matches!(self, Self::Apply)
+    pub const fn is_left(self) -> bool {
+        matches!(self, Self::Left)
     }
-}
 
-impl Display for BinOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Add => write!(f, "+"),
-            Self::Sub => write!(f, "-"),
-            Self::Mul => write!(f, "*"),
-            Self::Div => write!(f, "/"),
-            Self::Rem => write!(f, "%"),
-            Self::Eq => write!(f, "="),
-            Self::Ne => write!(f, "!="),
-            Self::Gt => write!(f, ">"),
-            Self::Ge => write!(f, ">="),
-            Self::Lt => write!(f, "<"),
-            Self::Le => write!(f, "<="),
-            Self::And => write!(f, "&&"),
-            Self::Or => write!(f, "||"),
-            Self::Bind => write!(f, ">>="),
-            Self::Action => write!(f, ">>"),
-            Self::Compose => write!(f, "."),
-            Self::Apply => write!(f, "$"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum UnOp {
-    Not,
-    Neg,
-}
-
-impl UnOp {
     #[must_use]
-    pub const fn from_token(tk: TokenKind) -> Option<Self> {
-        match tk {
-            TokenKind::Bang => Some(Self::Not),
-            TokenKind::Minus => Some(Self::Neg),
-            _ => None,
-        }
+    pub const fn is_right(self) -> bool {
+        matches!(self, Self::Right)
     }
 }
 
-impl Display for UnOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Not => write!(f, "!"),
-            Self::Neg => write!(f, "-"),
+#[derive(Debug, Clone)]
+pub struct OperatorTable {
+    infix:  FxHashMap<Symbol, Operator>,
+    prefix: FxHashMap<Symbol, Operator>,
+}
+
+impl OperatorTable {
+    pub fn get_infix(&self, op: Symbol) -> Option<Operator> {
+        self.infix.get(&op).copied()
+    }
+
+    pub fn get_prefix(&self, op: Symbol) -> Option<Operator> {
+        self.prefix.get(&op).copied()
+    }
+}
+
+impl Default for OperatorTable {
+    fn default() -> Self {
+        use crate::global::intern_symbol as intern;
+
+        macro_rules! operator {
+            ($prec:literal $op:literal) => {
+                (intern($op), Operator::new($prec, Associativity::Non))
+            };
+            (left $prec:literal $op:literal) => {
+                (intern($op), Operator::new($prec, Associativity::Left))
+            };
+            (right $prec:literal $op:literal) => {
+                (intern($op), Operator::new($prec, Associativity::Right))
+            };
         }
+
+        let mut infix = FxHashMap::default();
+        let mut prefix = FxHashMap::default();
+        prefix.extend([operator!(right 8 "!"), operator!(right 8 "-")]);
+        infix.extend([
+            operator!(right 0 "$"),
+            operator!(left 1 ">>"),
+            operator!(left 1 ">>="),
+            operator!(right 2 "||"),
+            operator!(right 3 "&&"),
+            operator!(left 4 "<*"),
+            operator!(left 4 "*>"),
+            operator!(left 4 "<*>"),
+            operator!(left 4 "<$>"),
+            operator!(left 4 "<$"),
+            operator!(4 "<"),
+            operator!(4 "<="),
+            operator!(4 ">"),
+            operator!(4 ">="),
+            operator!(4 "=="),
+            operator!(4 "!="),
+            operator!(left 5 "+"),
+            operator!(left 5 "-"),
+            operator!(left 5 "<>"),
+            operator!(right 5 "<>"),
+            operator!(left 6 "*"),
+            operator!(left 6 "/"),
+            operator!(left 6 "%"),
+            operator!(right 7 "."),
+        ]);
+
+        Self { infix, prefix }
     }
 }
 
@@ -156,7 +175,6 @@ impl TokenKind {
         matches!(
             self,
             Self::LParen
-                | Self::Bang
                 | Self::Integer(_)
                 | Self::Ident(_)
                 | Self::Char(_)
@@ -188,9 +206,9 @@ impl TokenKind {
                 | Self::Ident(_)
                 | Self::Integer(_)
                 | Self::Char(_)
+                | Self::Operator(_)
                 | Self::KwTrue
                 | Self::KwFalse
-                | Self::Minus
         )
     }
 }
@@ -517,6 +535,25 @@ impl Display for ValDeclaration {
 }
 
 #[derive(Debug, Clone)]
+pub struct OpDeclaration {
+    pub prefix: bool,
+    pub op:     Symbol,
+    pub ty:     Ty,
+}
+
+impl OpDeclaration {
+    pub const fn new(prefix: bool, op: Symbol, ty: Ty) -> Self {
+        Self { prefix, op, ty }
+    }
+}
+
+impl Display for OpDeclaration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}): {}", self.op, self.ty)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ExprKind<T> {
     Int(i64),
 
@@ -529,13 +566,13 @@ pub enum ExprKind<T> {
     Tuple(Box<[Expr<T>]>),
 
     Bin {
-        op:  BinOp,
+        op:  Ident,
         lhs: Box<Expr<T>>,
         rhs: Box<Expr<T>>,
     },
 
     Un {
-        op:   UnOp,
+        op:   Ident,
         expr: Box<Expr<T>>,
     },
 
@@ -544,6 +581,12 @@ pub enum ExprKind<T> {
     Let {
         bind: LetBind<T>,
         body: Option<Box<Expr<T>>>,
+    },
+
+    Operator {
+        params: Box<[Ty]>,
+        set:    ClassConstraintSet,
+        ops:    Box<[OpDeclaration]>,
     },
 
     Val(ValDeclaration),
@@ -600,10 +643,10 @@ pub enum ExprKind<T> {
 
 impl<T> ExprKind<T> {
     #[must_use]
-    pub const fn is_type_or_val(&self) -> bool {
+    pub const fn is_type_or_val_or_op(&self) -> bool {
         match self {
-            Self::Type { .. } | Self::Val { .. } => true,
-            Self::Semi(e) => e.kind.is_type_or_val(),
+            Self::Type { .. } | Self::Val { .. } | Self::Operator { .. } => true,
+            Self::Semi(e) => e.kind.is_type_or_val_or_op(),
             _ => false,
         }
     }
@@ -696,6 +739,11 @@ impl Substitute for Expr<()> {
             }
             ExprKind::Instance { instance, .. } => {
                 instance.substitute(subs);
+            }
+            ExprKind::Operator { ops, .. } => {
+                for op in ops {
+                    op.ty.substitute(subs);
+                }
             }
             _ => (),
         }
@@ -807,6 +855,15 @@ impl Substitute for Expr<Ty> {
                 }
                 for p in params {
                     p.substitute(subs);
+                }
+            }
+            ExprKind::Operator { params, set, ops } => {
+                set.substitute(subs);
+                for p in params {
+                    p.substitute(subs);
+                }
+                for op in ops {
+                    op.ty.substitute(subs);
                 }
             }
 
@@ -1014,6 +1071,8 @@ impl<T: Display> Expr<T> {
                 }
                 write!(f, ")")
             }
+
+            ExprKind::Operator { .. } => write!(f, ""),
         }
         .and_then(|()| write!(f, ": {}", self.ty))
     }

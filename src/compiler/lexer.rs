@@ -145,6 +145,15 @@ impl<'a> Lexer<'a> {
         )
     }
 
+    fn operator(&mut self) -> Token {
+        self.eat_while(TokenKind::operator_character);
+        let s = &self.input[self.start..self.cur];
+        TokenKind::operator(s).map_or_else(
+            || self.make_token(TokenKind::Operator(global::intern_symbol(s))),
+            |kw| self.make_token(kw),
+        )
+    }
+
     pub fn next_token(&mut self) -> Option<LexResult<Token>> {
         self.skip_whitespace();
 
@@ -176,53 +185,18 @@ impl<'a> Lexer<'a> {
         }
 
         match c {
+            '@' => token!(At),
             '(' => token!(LParen),
             ')' => token!(RParen),
             '{' => token!(LBrace),
             '}' => token!(RBrace),
             ',' => token!(Comma),
             ';' => token!(Semicolon),
-            '*' => token!(Star),
-            '/' => token!(Slash),
-            '%' => token!(Percent),
-            '+' => token!(Plus),
-            '$' => token!(Dollar),
             ':' => token!(Colon, ':' => ColonColon),
-            '=' => token!(Eq, '>' => Rocket),
-            '|' => token!(Bar, '|' => BarBar),
-            '&' => token!(Amp, '&' => AmpAmp),
-            '-' => token!(Minus, '>' => Arrow),
-            '!' => token!(Bang, '=' => BangEq),
-            '<' => token!(Lt, '=' => Le),
             '0'..='9' => Some(Ok(self.number())),
             '\'' => Some(self.character()),
             '_' | 'a'..='z' | 'A'..='Z' => Some(Ok(self.identifier_or_keyword())),
-            '>' => match (self.peek(), self.peek_next()) {
-                (Some('>'), Some('=')) => {
-                    self.bump_twice();
-                    Some(Ok(self.make_token(TokenKind::GtGtEq)))
-                }
-                (Some('>'), _) => {
-                    self.bump();
-                    Some(Ok(self.make_token(TokenKind::GtGt)))
-                }
-                (Some('='), _) => {
-                    self.bump();
-                    Some(Ok(self.make_token(TokenKind::Ge)))
-                }
-                _ => Some(Ok(self.make_token(TokenKind::Gt))),
-            },
-            '.' => match (self.peek(), self.peek_next()) {
-                (Some('.'), Some('=')) => {
-                    self.bump_twice();
-                    Some(Ok(self.make_token(TokenKind::DotDotEq)))
-                }
-                (Some('.'), _) => {
-                    self.bump();
-                    Some(Ok(self.make_token(TokenKind::DotDot)))
-                }
-                _ => Some(Ok(self.make_token(TokenKind::Dot))),
-            },
+            c if TokenKind::operator_character(c) => Some(Ok(self.operator())),
             _ => Some(Err(self.make_err(LexError::InvalidChar(c)))),
         }
     }

@@ -266,7 +266,8 @@ impl TypeCtx {
             | ExprKind::Tuple(_)
             | ExprKind::Val(_)
             | ExprKind::Alias { .. }
-            | ExprKind::Type { .. } => (),
+            | ExprKind::Type { .. }
+            | ExprKind::Operator { .. } => (),
         }
 
         Ok(())

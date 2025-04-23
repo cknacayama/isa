@@ -1,4 +1,4 @@
-module !option with {monad::*, option::Option::*}
+module @option with {monad::_, option::Option::_}
 
 type Option a = None | Some a;
 

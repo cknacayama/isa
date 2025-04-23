@@ -1,4 +1,4 @@
-module !monad with {prelude::{id, const}}
+module @monad with {prelude::{id, const}}
 
 class Functor f =
     val {a,b} => fmap: (a -> b) -> f a -> f b,
@@ -10,15 +10,34 @@ class Functor f =
 class {Functor f} => Applicative f =
     val {a} => pure: a -> f a,
     val {a,b} => apply: f (a -> b) -> f a -> f b,
+    val {a,b} => discardFst: f a -> f b -> f b,
+    val {a,b} => discardSnd: f a -> f b -> f a,
     val {a,b,c} => liftA2: (a -> b -> c) -> f a -> f b -> f c,
 
     let liftA2 f x = Applicative::apply (Functor::fmap f x),
+    let discardFst a1 a2 = (id <$ a1) <*> a2,
+    let discardSnd = Applicative::liftA2 const,
 ;
 
-class {Applicative f} => Monad f =
-    val {a} => return: a -> f a,
-    val {a,b} => bind: f a -> (a -> f b) -> f b,
+class {Applicative m} => Monad m =
+    val {a} => return: a -> m a,
+    val {a,b} => bind: m a -> (a -> m b) -> m b,
+    val {a,b} => action: m a -> m b -> m b,
 
     let return = Applicative::pure,
+    let action a b = a >>= fn c -> b,
 ;
 
+operator {a, b, f, Functor f} => 
+    (<$>): (a -> b) -> f a -> f b,
+    (<$):  a -> f b -> f a,
+;
+operator {a, b, f, Applicative f} => 
+    (<*>): f (a -> b) -> f a -> f b,
+    (*>):  f a -> f b -> f b,
+    (<*):  f a -> f b -> f a,
+;
+operator {a, b, m, Monad m} => 
+    (>>=): m a -> (a -> m b) -> m b,
+    (>>): m a -> m b -> m b,
+;

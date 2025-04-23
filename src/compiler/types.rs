@@ -39,9 +39,10 @@ impl Ty {
             Self::Fn { param, ret } => param.occurs(var) || ret.occurs(var),
             Self::Var(n) => *n == var,
             Self::Scheme { ty, .. } => ty.occurs(var),
-            Self::Named { args, .. } => args.iter().any(|t| t.occurs(var)),
+            Self::Tuple(args) | Self::Named { args, .. } => args.iter().any(|t| t.occurs(var)),
+            Self::Generic { var: n, args } => *n == var || args.iter().any(|t| t.occurs(var)),
 
-            _ => false,
+            Self::Unit | Self::Int | Self::Char | Self::Bool => false,
         }
     }
 

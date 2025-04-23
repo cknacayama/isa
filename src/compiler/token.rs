@@ -9,6 +9,20 @@ pub struct Ident {
     pub span:  Span,
 }
 
+impl Ident {
+    pub const fn new(ident: Symbol, span: Span) -> Self {
+        Self { ident, span }
+    }
+
+    pub const fn ident(self) -> Symbol {
+        self.ident
+    }
+
+    pub const fn span(self) -> Span {
+        self.span
+    }
+}
+
 impl PartialEq for Ident {
     fn eq(&self, other: &Self) -> bool {
         self.ident == other.ident
@@ -25,27 +39,6 @@ pub type Token = Spanned<TokenKind>;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TokenKind {
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Percent,
-    Eq,
-    Bang,
-    BangEq,
-    Gt,
-    Ge,
-    Lt,
-    Le,
-
-    Dollar,
-
-    /// compose action '>>'
-    GtGt,
-    /// bind operator '>>='
-    GtGtEq,
-    Dot,
-
     Underscore,
 
     LParen,
@@ -53,22 +46,21 @@ pub enum TokenKind {
     LBrace,
     RBrace,
 
+    At,
+    Eq,
     Bar,
-    BarBar,
-    Amp,
-    AmpAmp,
-
+    DotDot,
+    DotDotEq,
     Arrow,
     Rocket,
     Comma,
     Semicolon,
     Colon,
     ColonColon,
-    DotDot,
-    DotDotEq,
 
     Integer(i64),
     Ident(Symbol),
+    Operator(Symbol),
     Char(u8),
 
     KwTrue,
@@ -83,6 +75,7 @@ pub enum TokenKind {
     KwModule,
     KwClass,
     KwInstance,
+    KwOperator,
 
     KwInt,
     KwBool,
@@ -107,6 +100,7 @@ impl TokenKind {
             "val" => Some(Self::KwVal),
             "class" => Some(Self::KwClass),
             "instance" => Some(Self::KwInstance),
+            "operator" => Some(Self::KwOperator),
             "fn" => Some(Self::KwFn),
             "match" => Some(Self::KwMatch),
             "if" => Some(Self::KwIf),
@@ -122,46 +116,64 @@ impl TokenKind {
             _ => None,
         }
     }
+
+    pub const fn operator_character(c: char) -> bool {
+        matches!(
+            c,
+            '!' | '$' | '%' | '&' | '/' | '*' | '+' | '.' | '<' | '=' | '>' | '|' | '-'
+        )
+    }
+
+    pub fn operator(op: &str) -> Option<Self> {
+        match op {
+            "=" => Some(Self::Eq),
+            "|" => Some(Self::Bar),
+            ".." => Some(Self::DotDot),
+            "..=" => Some(Self::DotDotEq),
+            "->" => Some(Self::Arrow),
+            "=>" => Some(Self::Rocket),
+            _ => None,
+        }
+    }
+
+    pub const fn as_operator(&self) -> Option<Symbol> {
+        if let Self::Operator(v) = self {
+            Some(*v)
+        } else {
+            None
+        }
+    }
+
+    pub const fn as_ident(&self) -> Option<Symbol> {
+        if let Self::Ident(v) = self {
+            Some(*v)
+        } else {
+            None
+        }
+    }
 }
 
 impl Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Plus => write!(f, "+"),
-            Self::Minus => write!(f, "-"),
-            Self::Star => write!(f, "*"),
-            Self::Slash => write!(f, "/"),
-            Self::Percent => write!(f, "%"),
-            Self::Eq => write!(f, "="),
-            Self::Bang => write!(f, "!"),
-            Self::BangEq => write!(f, "!="),
-            Self::Gt => write!(f, ">"),
-            Self::Ge => write!(f, ">="),
-            Self::Lt => write!(f, "<"),
-            Self::Le => write!(f, "<="),
-            Self::GtGt => write!(f, ">>"),
-            Self::GtGtEq => write!(f, ">>="),
-            Self::Dollar => write!(f, "$"),
             Self::Underscore => write!(f, "_"),
             Self::LParen => write!(f, "("),
             Self::RParen => write!(f, ")"),
             Self::LBrace => write!(f, "{{"),
             Self::RBrace => write!(f, "}}"),
+            Self::At => write!(f, "@"),
             Self::Bar => write!(f, "|"),
-            Self::BarBar => write!(f, "||"),
-            Self::Amp => write!(f, "&"),
-            Self::AmpAmp => write!(f, "&&"),
             Self::Comma => write!(f, ","),
             Self::Semicolon => write!(f, ";"),
             Self::Colon => write!(f, ":"),
             Self::ColonColon => write!(f, "::"),
-            Self::Dot => write!(f, "."),
             Self::DotDot => write!(f, ".."),
             Self::DotDotEq => write!(f, "..="),
+            Self::Eq => write!(f, "="),
             Self::Arrow => write!(f, "->"),
             Self::Rocket => write!(f, "=>"),
             Self::Integer(v) => write!(f, "{v}"),
-            Self::Ident(v) => write!(f, "{v}"),
+            Self::Ident(v) | Self::Operator(v) => write!(f, "{v}"),
             Self::Char(v) => write!(f, "{:?}", *v as char),
             Self::KwTrue => write!(f, "true"),
             Self::KwFalse => write!(f, "false"),
@@ -170,8 +182,9 @@ impl Display for TokenKind {
             Self::KwLet => write!(f, "let"),
             Self::KwVal => write!(f, "val"),
             Self::KwIn => write!(f, "in"),
-            Self::KwClass => write!(f, "trait"),
-            Self::KwInstance => write!(f, "impl"),
+            Self::KwClass => write!(f, "class"),
+            Self::KwInstance => write!(f, "instance"),
+            Self::KwOperator => write!(f, "operator"),
             Self::KwFn => write!(f, "fn"),
             Self::KwModule => write!(f, "module"),
             Self::KwInt => write!(f, "int"),

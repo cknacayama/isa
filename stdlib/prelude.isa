@@ -1,8 +1,8 @@
-module !prelude with {
-    option::*,
-    result::*,
-    monad::*,
-    ops::*,
+module @prelude with {
+    option::_,
+    result::_,
+    monad::_,
+    ops::_,
 }
 
 val {a,b} => const: a -> b -> a;
@@ -19,10 +19,10 @@ instance Div int =
     let rem a b = a % b,
 ;
 instance Neg int = let neg a = -a;
-instance Eq int = let eq a b = a = b;
+instance Eq int = let eq a b = a == b;
 instance Cmp int = 
     let cmp a b = 
-        if a = b then 
+        if a == b then 
             Ordering::Equal
         else if a > b then
             Ordering::Greater 
@@ -34,3 +34,27 @@ instance Number int = let from_int a = a;
 instance And bool = let and a b = a && b;
 instance Or bool = let or a b = a || b;
 instance Not bool = let not a = !a;
+
+operator {a, Add a} => (+): a -> a -> a; 
+operator {a, Sub a} => (-): a -> a -> a; 
+operator {a, Mul a} => (*): a -> a -> a; 
+operator {a, Div a} => 
+    (/): a -> a -> a,
+    (%): a -> a -> a
+; 
+operator {a, And a} => (&&): a -> a -> a; 
+operator {a, Or a} => (||): a -> a -> a; 
+operator {a, Eq a} => 
+    (==): a -> a -> bool,
+    (!=): a -> a -> bool
+;
+operator {a, Cmp a} => 
+    (>): a -> a -> bool,
+    (<): a -> a -> bool,
+    (>=): a -> a -> bool, 
+    (<=): a -> a -> bool,
+; 
+operator {a, b} => ($): (a -> b) -> a -> b;
+operator {a, b, c} => (.): (b -> c) -> (a -> b) -> a -> c;
+operator {a, Neg a} => {-}: a -> a;
+operator {a, Not a} => {!}: a -> bool;

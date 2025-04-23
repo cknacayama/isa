@@ -1,4 +1,4 @@
-module !result with {monad::*, result::Result::*}
+module @result with {monad::_, result::Result::_}
 
 type Result e a = Err e | Ok a;
 

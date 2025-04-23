@@ -64,6 +64,13 @@ thread_local! {
     static GLOBAL_DATA: RefCell<GlobalEnv> = RefCell::new(GlobalEnv::new());
 }
 
+macro_rules! symbol {
+    ($sym:expr) => {
+        crate::global::intern_symbol($sym)
+    };
+}
+pub(crate) use symbol;
+
 #[must_use]
 pub fn intern_symbol(symbol: &str) -> Symbol {
     GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern(symbol))

@@ -5,12 +5,12 @@ use std::{fmt, vec};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::smallvec;
 
-use super::ast::{Import, ImportClause, ImportWildcard, Path, TypedConstructor};
+use super::ast::{Import, ImportClause, ImportWildcard, Path, TypedConstructor, mod_path};
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::token::Ident;
 use super::types::Ty;
-use crate::global::{self, Symbol};
+use crate::global::Symbol;
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
@@ -84,24 +84,6 @@ impl ModuleData {
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
-    pub fn get_val_mut(&mut self, id: Ident) -> CheckResult<&mut VarData> {
-        self.vals
-            .get_mut(&id.ident)
-            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
-    }
-
-    pub fn get_let_mut(&mut self, id: Ident) -> CheckResult<&mut VarData> {
-        self.lets
-            .get_mut(&id.ident)
-            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
-    }
-
-    pub fn get_constructor_mut(&mut self, id: Ident) -> CheckResult<&mut VarData> {
-        self.constructors
-            .get_mut(&id.ident)
-            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
-    }
-
     pub fn get_class_data_mut(&mut self, id: Ident) -> CheckResult<&mut ClassData> {
         self.classes
             .get_mut(&id.ident)
@@ -127,10 +109,6 @@ impl ModuleData {
         self.vals.insert(id, data)
     }
 
-    pub fn insert_let(&mut self, id: Symbol, data: VarData) -> Option<VarData> {
-        self.lets.insert(id, data)
-    }
-
     pub fn insert_constructor(&mut self, id: Symbol, data: VarData) -> Option<VarData> {
         self.constructors.insert(id, data)
     }
@@ -141,13 +119,6 @@ impl ModuleData {
 
     pub fn insert_class_import(&mut self, id: Symbol, data: Ident) -> Option<ClassDataImport> {
         self.classes.insert(id, ClassDataImport::Import(data))
-    }
-
-    fn exportable(&self, id: Symbol) -> bool {
-        self.classes.get(&id).is_some_and(ClassDataImport::is_class)
-            || self.types.contains_key(&id)
-            || self.lets.contains_key(&id)
-            || self.vals.contains_key(&id)
     }
 }
 
@@ -386,10 +357,38 @@ impl ClassDataImport {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct OperatorData {
+    ty:  Ty,
+    set: ClassConstraintSet,
+}
+
+impl OperatorData {
+    pub fn new<T>(ty: Ty, set: T) -> Self
+    where
+        ClassConstraintSet: From<T>,
+    {
+        Self {
+            ty,
+            set: ClassConstraintSet::from(set),
+        }
+    }
+
+    pub const fn ty(&self) -> &Ty {
+        &self.ty
+    }
+
+    pub const fn set(&self) -> &ClassConstraintSet {
+        &self.set
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct Ctx {
-    modules:        FxHashMap<Ident, ModuleData>,
+    modules:        FxHashMap<Symbol, ModuleData>,
     env:            Vec<FxHashMap<Symbol, VarData>>,
+    infix:          FxHashMap<Symbol, OperatorData>,
+    prefix:         FxHashMap<Symbol, OperatorData>,
     current_module: Ident,
 }
 
@@ -421,41 +420,60 @@ impl Ctx {
         self.env.last_mut().unwrap().insert(name, data)
     }
 
+    pub fn insert_infix(&mut self, op: Symbol, data: OperatorData) -> Option<OperatorData> {
+        self.infix.insert(op, data)
+    }
+
+    pub fn insert_prefix(&mut self, op: Symbol, data: OperatorData) -> Option<OperatorData> {
+        self.prefix.insert(op, data)
+    }
+
+    pub fn get_infix(&self, op: Ident) -> CheckResult<&OperatorData> {
+        self.infix
+            .get(&op.ident)
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, op))
+    }
+
+    pub fn get_prefix(&self, op: Ident) -> CheckResult<&OperatorData> {
+        self.prefix
+            .get(&op.ident)
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, op))
+    }
+
     pub fn current(&self) -> CheckResult<&ModuleData> {
         self.modules
-            .get(&self.current_module)
+            .get(&self.current_module.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, self.current_module))
     }
 
     pub fn current_mut(&mut self) -> CheckResult<&mut ModuleData> {
         self.modules
-            .get_mut(&self.current_module)
+            .get_mut(&self.current_module.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, self.current_module))
     }
 
     pub fn get_module(&self, id: Ident) -> CheckResult<&ModuleData> {
         self.modules
-            .get(&id)
+            .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotModule, id))
     }
 
     pub fn get_module_mut(&mut self, id: Ident) -> CheckResult<&mut ModuleData> {
         self.modules
-            .get_mut(&id)
+            .get_mut(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotModule, id))
     }
 
-    pub fn create_module(&mut self, id: Ident) -> CheckResult<()> {
+    pub fn create_module(&mut self, id: Ident) {
         self.current_module = id;
-        self.insert_module(id, ModuleData::default());
-        Ok(())
+        self.insert_module(id.ident, ModuleData::default());
     }
 
-    fn insert_module(&mut self, id: Ident, data: ModuleData) {
+    fn insert_module(&mut self, id: Symbol, data: ModuleData) {
         self.modules.insert(id, data);
     }
 
-    pub fn extend_module(&mut self, name: Ident, data: FxHashMap<Symbol, VarData>) {
+    pub fn extend_module(&mut self, name: Symbol, data: FxHashMap<Symbol, VarData>) {
         self.modules.entry(name).or_default().lets.extend(data);
     }
 
@@ -790,9 +808,11 @@ impl Ctx {
     }
 
     pub fn import_clause(&mut self, import_clause: ImportClause) -> CheckResult<()> {
-        import_clause
-            .into_iter()
-            .fold(Ok(()), |res, import| self.import(import).and(res))
+        let mut res = Ok(());
+        for import in import_clause {
+            res = self.import(import).and(res);
+        }
+        res
     }
 
     fn import_single(&mut self, path: &Path) -> CheckResult<()> {
@@ -822,11 +842,7 @@ impl Ctx {
     }
 
     pub fn import_prelude(&mut self) -> CheckResult<()> {
-        let prelude = Ident {
-            ident: global::intern_symbol("prelude"),
-            span:  Span::default(),
-        };
-        self.import_wildcard(&Path::from_ident(prelude))
+        self.import_wildcard(&mod_path!(prelude))
     }
 
     pub fn insert_instance_at_env(

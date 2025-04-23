@@ -46,6 +46,7 @@ pub enum ParseError {
     ExpectedInt(TokenKind),
     ExpectedType(TokenKind),
     ExpectedPattern(TokenKind),
+    InvalidOperator(Symbol),
 }
 
 impl From<LexError> for ParseError {
@@ -68,6 +69,7 @@ impl Display for ParseError {
             Self::ExpectedInt(got) => write!(f, "expected integer literal, got `{got}`"),
             Self::ExpectedType(got) => write!(f, "expected type, got `{got}`"),
             Self::ExpectedPattern(got) => write!(f, "expected pattern, got `{got}`"),
+            Self::InvalidOperator(got) => write!(f, "invalid operator `{got}`"),
         }
     }
 }
