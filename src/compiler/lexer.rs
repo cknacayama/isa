@@ -2,7 +2,7 @@ use std::str::Chars;
 
 use super::error::LexError;
 use super::token::{Token, TokenKind};
-use crate::global::{self, intern_span};
+use crate::global::intern_span;
 use crate::span::{SpanData, Spanned};
 
 #[derive(Debug)]
@@ -139,19 +139,15 @@ impl<'a> Lexer<'a> {
 
         self.eat_while(is_identifier_char);
         let s = &self.input[self.start..self.cur];
-        TokenKind::keyword(s).map_or_else(
-            || self.make_token(TokenKind::Ident(global::intern_symbol(s))),
-            |kw| self.make_token(kw),
-        )
+        let kind = TokenKind::keyword(s);
+        self.make_token(kind)
     }
 
     fn operator(&mut self) -> Token {
         self.eat_while(TokenKind::operator_character);
         let s = &self.input[self.start..self.cur];
-        TokenKind::operator(s).map_or_else(
-            || self.make_token(TokenKind::Operator(global::intern_symbol(s))),
-            |kw| self.make_token(kw),
-        )
+        let kind = TokenKind::operator(s);
+        self.make_token(kind)
     }
 
     pub fn next_token(&mut self) -> Option<LexResult<Token>> {

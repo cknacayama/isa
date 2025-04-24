@@ -251,8 +251,16 @@ impl Substitute for Rc<Ty> {
                 new_param.substitute(subs);
                 new_ret.substitute(subs);
 
-                let param = Self::new(new_param);
-                let ret = Self::new(new_ret);
+                let param = if param.as_ref() != &new_param {
+                    Self::new(new_param)
+                } else {
+                    param.clone()
+                };
+                let ret = if ret.as_ref() != &new_ret {
+                    Self::new(new_ret)
+                } else {
+                    ret.clone()
+                };
 
                 Ty::Fn { param, ret }
             }
@@ -260,7 +268,11 @@ impl Substitute for Rc<Ty> {
                 let mut new_ty = ty.as_ref().clone();
                 new_ty.substitute(subs);
 
-                let ty = Self::new(new_ty);
+                let ty = if ty.as_ref() != &new_ty {
+                    Self::new(new_ty)
+                } else {
+                    ty.clone()
+                };
 
                 Ty::Scheme {
                     quant: quant.clone(),
@@ -272,7 +284,11 @@ impl Substitute for Rc<Ty> {
                 for arg in &mut new_args {
                     arg.substitute(subs);
                 }
-                let args = Rc::from(new_args);
+                let args = if args.as_ref() != &new_args {
+                    Rc::from(new_args)
+                } else {
+                    args.clone()
+                };
                 Ty::Named {
                     name: name.clone(),
                     args,
@@ -283,7 +299,11 @@ impl Substitute for Rc<Ty> {
                 for arg in &mut new_args {
                     arg.substitute(subs);
                 }
-                let args = Rc::from(new_args);
+                let args = if args.as_ref() != &new_args {
+                    Rc::from(new_args)
+                } else {
+                    args.clone()
+                };
                 Ty::Generic { var: *var, args }
             }
             Ty::Tuple(args) => {
@@ -291,7 +311,11 @@ impl Substitute for Rc<Ty> {
                 for arg in &mut new_args {
                     arg.substitute(subs);
                 }
-                let args = Rc::from(new_args);
+                let args = if args.as_ref() != &new_args {
+                    Rc::from(new_args)
+                } else {
+                    args.clone()
+                };
                 Ty::Tuple(args)
             }
             Ty::Unit | Ty::Int | Ty::Bool | Ty::Char | Ty::Var(_) => {

@@ -3,11 +3,11 @@ use std::fmt::{Debug, Display, Write};
 use rustc_hash::FxHashMap;
 use smallvec::{SmallVec, smallvec};
 
+use super::super::span::Span;
 use super::infer::{ClassConstraintSet, Substitute};
 use super::token::{Ident, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
-use crate::span::Span;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Path {
@@ -29,7 +29,7 @@ impl Path {
         self.segments
             .iter()
             .map(|id| id.span)
-            .reduce(super::super::span::Span::union)
+            .reduce(Span::union)
             .unwrap()
     }
 

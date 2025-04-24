@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::global::Symbol;
+use crate::global::{Symbol, symbol};
 use crate::span::{Span, Spanned};
 
 #[derive(Clone, Copy, Debug, Eq, Default)]
@@ -84,30 +84,30 @@ pub enum TokenKind {
 
 impl TokenKind {
     #[must_use]
-    pub fn keyword(s: &str) -> Option<Self> {
+    pub fn keyword(s: &str) -> Self {
         match s {
-            "true" => Some(Self::KwTrue),
-            "false" => Some(Self::KwFalse),
-            "type" => Some(Self::KwType),
-            "alias" => Some(Self::KwAlias),
-            "let" => Some(Self::KwLet),
-            "val" => Some(Self::KwVal),
-            "class" => Some(Self::KwClass),
-            "instance" => Some(Self::KwInstance),
-            "operator" => Some(Self::KwOperator),
-            "fn" => Some(Self::KwFn),
-            "match" => Some(Self::KwMatch),
-            "if" => Some(Self::KwIf),
-            "then" => Some(Self::KwThen),
-            "else" => Some(Self::KwElse),
-            "in" => Some(Self::KwIn),
-            "with" => Some(Self::KwWith),
-            "module" => Some(Self::KwModule),
-            "int" => Some(Self::KwInt),
-            "bool" => Some(Self::KwBool),
-            "char" => Some(Self::KwChar),
-            "_" => Some(Self::Underscore),
-            _ => None,
+            "true" => Self::KwTrue,
+            "false" => Self::KwFalse,
+            "type" => Self::KwType,
+            "alias" => Self::KwAlias,
+            "let" => Self::KwLet,
+            "val" => Self::KwVal,
+            "class" => Self::KwClass,
+            "instance" => Self::KwInstance,
+            "operator" => Self::KwOperator,
+            "fn" => Self::KwFn,
+            "match" => Self::KwMatch,
+            "if" => Self::KwIf,
+            "then" => Self::KwThen,
+            "else" => Self::KwElse,
+            "in" => Self::KwIn,
+            "with" => Self::KwWith,
+            "module" => Self::KwModule,
+            "int" => Self::KwInt,
+            "bool" => Self::KwBool,
+            "char" => Self::KwChar,
+            "_" => Self::Underscore,
+            _ => Self::Ident(symbol!(s)),
         }
     }
 
@@ -118,15 +118,15 @@ impl TokenKind {
         )
     }
 
-    pub fn operator(op: &str) -> Option<Self> {
+    pub fn operator(op: &str) -> Self {
         match op {
-            "=" => Some(Self::Eq),
-            "|" => Some(Self::Bar),
-            ".." => Some(Self::DotDot),
-            "..=" => Some(Self::DotDotEq),
-            "->" => Some(Self::Arrow),
-            "=>" => Some(Self::Rocket),
-            _ => None,
+            "=" => Self::Eq,
+            "|" => Self::Bar,
+            ".." => Self::DotDot,
+            "..=" => Self::DotDotEq,
+            "->" => Self::Arrow,
+            "=>" => Self::Rocket,
+            _ => Self::Operator(symbol!(op)),
         }
     }
 

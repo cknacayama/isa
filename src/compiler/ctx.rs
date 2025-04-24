@@ -437,6 +437,10 @@ impl Ctx {
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, self.current_module))
     }
 
+    pub const fn current_depth(&self) -> usize {
+        self.env.len()
+    }
+
     pub fn current_mut(&mut self) -> CheckResult<&mut ModuleData> {
         self.modules
             .get_mut(&self.current_module.ident)
@@ -470,10 +474,6 @@ impl Ctx {
 
     pub fn push_scope(&mut self) {
         self.env.push(FxHashMap::default());
-    }
-
-    pub fn current_scope(&self) -> Option<&FxHashMap<Symbol, VarData>> {
-        self.env.last()
     }
 
     pub fn pop_scope(&mut self) -> Option<FxHashMap<Symbol, VarData>> {
@@ -1130,7 +1130,7 @@ impl Substitute for Ctx {
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
-        for env in &mut self.env {
+        for env in &mut self.env[1..] {
             for t in env.values_mut() {
                 t.substitute(subs);
             }

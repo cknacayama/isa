@@ -386,7 +386,9 @@ impl Checker {
         &mut self,
         bind: UntypedLetBind,
     ) -> IsaResult<(Ty, Expr<Ty>, Box<[Param<Ty>]>, Set)> {
-        if let Ok(val) = self.ctx.current()?.get_val(bind.name) {
+        if self.ctx.current_depth() == 1
+            && let Ok(val) = self.ctx.current()?.get_val(bind.name)
+        {
             let VarData {
                 ty, constrs, span, ..
             } = val.clone();
@@ -444,18 +446,19 @@ impl Checker {
 
         let (u1, expr, params, set) = self.check_let_bind(bind)?;
 
-        let mut env1 = self.ctx.clone();
-        std::mem::swap(&mut self.ctx, &mut env1);
-        self.insert_let(name, u1, set.clone());
-
         let (body, ty, set) = match body {
             Some(body) => {
+                self.ctx.push_scope();
+                self.insert_let(name, u1, set.clone());
                 let (body, body_set) = self.check(body)?;
-                std::mem::swap(&mut self.ctx, &mut env1);
+                self.ctx.pop_scope();
                 let ty = body.ty.clone();
                 (Some(body), ty, set.concat(body_set))
             }
-            None => (None, Ty::Unit, set),
+            None => {
+                self.insert_let(name, u1, set.clone());
+                (None, Ty::Unit, set)
+            }
         };
 
         let bind = LetBind::new(name, params, expr);
@@ -1597,8 +1600,6 @@ impl Checker {
                 let _ = self.ctx.import_prelude();
             }
 
-            self.ctx.push_scope();
-
             let extracted = module
                 .stmts
                 .extract_if(.., |e| {
@@ -1626,9 +1627,6 @@ impl Checker {
                 stmts.push(stmt);
                 set.extend(stmt_set);
             }
-
-            let scope = self.ctx.pop_scope().unwrap();
-            self.ctx.extend_module(module.name.ident, scope);
 
             decl.push(stmts);
         }
