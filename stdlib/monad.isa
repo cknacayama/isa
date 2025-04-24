@@ -4,7 +4,7 @@ class Functor f =
     val {a,b} => fmap: (a -> b) -> f a -> f b,
     val {a,b} => replace: a -> f b -> f a,
 
-    let replace = Functor::fmap . const,
+    let replace = (<$>) . const,
 ;
 
 class {Functor f} => Applicative f =

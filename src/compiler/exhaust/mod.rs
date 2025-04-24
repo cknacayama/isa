@@ -297,7 +297,11 @@ impl TypeCtx {
                 }
             }
 
-            ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Char(_) | ExprKind::Path(_) => (),
+            ExprKind::Operator(_)
+            | ExprKind::Int(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Char(_)
+            | ExprKind::Path(_) => (),
         }
 
         Ok(())

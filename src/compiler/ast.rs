@@ -643,6 +643,8 @@ pub enum ExprKind<T> {
 
     Path(Path),
 
+    Operator(Ident),
+
     Tuple(Box<[Expr<T>]>),
 
     List(Box<[Expr<T>]>),
@@ -926,7 +928,11 @@ impl Substitute for Expr<Ty> {
                 expr.substitute(subs);
             }
 
-            ExprKind::Int(_) | ExprKind::Bool(_) | ExprKind::Char(_) | ExprKind::Path(_) => (),
+            ExprKind::Operator(_)
+            | ExprKind::Int(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Char(_)
+            | ExprKind::Path(_) => (),
         }
 
         self.ty.substitute(subs);
@@ -1022,6 +1028,7 @@ impl<T: Display> Expr<T> {
             ExprKind::Bool(b) => write!(f, "{b}"),
             ExprKind::Char(c) => write!(f, "{:?}", *c as char),
             ExprKind::Path(id) => write!(f, "{id}"),
+            ExprKind::Operator(id) => write!(f, "{id}"),
             ExprKind::Let { bind, body } => {
                 write!(f, "(")?;
                 bind.format_helper(f, indentation)?;

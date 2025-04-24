@@ -1126,6 +1126,23 @@ impl Checker {
         }
     }
 
+    fn check_operator_expr(&mut self, op: Ident, span: Span) -> IsaResult<(Expr<Ty>, Set)> {
+        let data = self
+            .ctx
+            .get_infix(op)
+            .or_else(|_| self.ctx.get_prefix(op))?;
+        let mut set = data.set().clone();
+        for c in &mut set.constrs {
+            *c.span_mut() = span;
+        }
+        let (ty, subs) = self.instantiate(data.ty().clone());
+        set.substitute_many(&subs);
+
+        let kind = ExprKind::Operator(op);
+
+        Ok((Expr::new(kind, span, ty), set))
+    }
+
     fn check_bin(
         &mut self,
         op: Ident,
@@ -1727,6 +1744,8 @@ impl Checker {
             ExprKind::Bool(b) => Ok((Expr::new(ExprKind::Bool(b), span, Ty::Bool), Set::new())),
 
             ExprKind::Char(c) => Ok((Expr::new(ExprKind::Char(c), span, Ty::Char), Set::new())),
+
+            ExprKind::Operator(op) => self.check_operator_expr(op, span),
 
             ExprKind::Path(path) => {
                 let (path, ty, set) =
