@@ -1,6 +1,8 @@
 use std::fmt::Display;
 use std::rc::Rc;
 
+use rustc_hash::FxHashMap;
+
 use super::ast::{Path, mod_path};
 use super::ctx::Generator;
 use super::infer::{Subs, Substitute};
@@ -333,8 +335,33 @@ impl Iterator for ParamIter {
     }
 }
 
-impl Display for Ty {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+#[derive(Debug)]
+struct TyVarFormatter<T>
+where
+    T: Iterator<Item = char>,
+{
+    vars:  FxHashMap<u64, char>,
+    chars: T,
+}
+
+impl<T> TyVarFormatter<T>
+where
+    T: Iterator<Item = char>,
+{
+    fn get(&mut self, var: u64) -> char {
+        *self
+            .vars
+            .entry(var)
+            .or_insert_with(|| self.chars.next().unwrap())
+    }
+}
+
+impl Ty {
+    fn fmt_var<T: Iterator<Item = char>>(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        chars: &mut TyVarFormatter<T>,
+    ) -> std::fmt::Result {
         match self {
             Self::Unit => write!(f, "()"),
             Self::Int => write!(f, "int"),
@@ -342,13 +369,19 @@ impl Display for Ty {
             Self::Char => write!(f, "char"),
             Self::Fn { param, ret } => {
                 if param.is_simple_fmt() {
-                    write!(f, "{param}")?;
+                    param.fmt_var(f, chars)?;
                 } else {
-                    write!(f, "({param})")?;
+                    write!(f, "(")?;
+                    param.fmt_var(f, chars)?;
+                    write!(f, ")")?;
                 }
-                write!(f, " -> {ret}")
+                write!(f, " -> ")?;
+                ret.fmt_var(f, chars)
             }
-            Self::Var(var) => write!(f, "'{var}"),
+            Self::Var(var) => {
+                let c = chars.get(*var);
+                write!(f, "'{c}")
+            }
             Self::Scheme { quant, ty } => {
                 write!(f, "{{")?;
                 let mut first = true;
@@ -358,28 +391,37 @@ impl Display for Ty {
                     } else {
                         write!(f, ", ")?;
                     }
-                    write!(f, "'{n}")?;
+                    let c = chars.get(*n);
+                    write!(f, "'{c}")?;
                 }
-                write!(f, "}} => {ty}")
+                write!(f, "}} => ")?;
+                ty.fmt_var(f, chars)
             }
             Self::Named { name, args } => {
-                write!(f, "{name}")?;
+                write!(f, "{}", name.base_name())?;
                 for arg in args.iter() {
                     if arg.is_simple_fmt() {
-                        write!(f, " {arg}")?;
+                        write!(f, " ")?;
+                        arg.fmt_var(f, chars)?;
                     } else {
-                        write!(f, " ({arg})")?;
+                        write!(f, " (")?;
+                        arg.fmt_var(f, chars)?;
+                        write!(f, ")")?;
                     }
                 }
                 Ok(())
             }
             Self::Generic { var, args } => {
+                let var = chars.get(*var);
                 write!(f, "'{var}")?;
                 for arg in args.iter() {
                     if arg.is_simple_fmt() {
-                        write!(f, " {arg}")?;
+                        write!(f, " ")?;
+                        arg.fmt_var(f, chars)?;
                     } else {
-                        write!(f, " ({arg})")?;
+                        write!(f, " (")?;
+                        arg.fmt_var(f, chars)?;
+                        write!(f, ")")?;
                     }
                 }
                 Ok(())
@@ -393,10 +435,20 @@ impl Display for Ty {
                     } else {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{ty}")?;
+                    ty.fmt_var(f, chars)?;
                 }
                 write!(f, ")")
             }
         }
+    }
+}
+
+impl Display for Ty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut chars = TyVarFormatter {
+            vars:  FxHashMap::default(),
+            chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
+        };
+        self.fmt_var(f, &mut chars)
     }
 }

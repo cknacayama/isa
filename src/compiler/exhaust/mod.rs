@@ -226,7 +226,6 @@ impl IntRange {
 
 impl TypeCtx {
     fn check_single_match_stmt(&self, stmt: &Stmt<Ty>) -> Result<(), MatchNonExhaustive> {
-        let span = stmt.span;
         match &stmt.kind {
             StmtKind::Semi(expr) => {
                 self.check_single_match_expr(expr)?;

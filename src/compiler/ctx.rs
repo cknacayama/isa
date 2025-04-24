@@ -265,10 +265,6 @@ impl InstanceData {
     pub const fn constraints(&self) -> &ClassConstraintSet {
         &self.constraints
     }
-
-    pub const fn span(&self) -> Span {
-        self.span
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -349,11 +345,6 @@ impl ClassDataImport {
         } else {
             None
         }
-    }
-
-    #[must_use]
-    const fn is_class(&self) -> bool {
-        matches!(self, Self::Class(..))
     }
 }
 

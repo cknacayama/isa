@@ -1138,6 +1138,9 @@ impl Checker {
 
         let data = self.ctx.get_infix(op)?;
         let mut set = data.set().clone();
+        for c in &mut set.constrs {
+            *c.span_mut() = span;
+        }
         let (ty, subs) = self.instantiate(data.ty().clone());
         set.substitute_many(&subs);
         set.extend(lhs_set);
@@ -1154,8 +1157,11 @@ impl Checker {
         };
         let mut ret = Ty::from(ret);
         let c1 = EqConstraint::new(lhs_ty.into(), lhs.ty.clone(), lhs.span);
-        let c2 = EqConstraint::new(rhs_ty.into(), rhs.ty.clone(), lhs.span);
-        let (subs, set) = self.unify([c1, c2], set)?;
+        let c2 = EqConstraint::new(rhs_ty.into(), rhs.ty.clone(), rhs.span);
+        let (subs, set) = self.unify([c1, c2], set).map_err(|err| {
+            let label = DiagnosticLabel::new(format!("operator `{op}` has type `{ty}`"), op.span);
+            IsaError::from(err).with_label(label)
+        })?;
         ret.substitute_many(&subs);
 
         let kind = ExprKind::Bin {
@@ -1171,6 +1177,9 @@ impl Checker {
         let (expr, expr_set) = self.check(expr)?;
         let data = self.ctx.get_prefix(op)?;
         let mut set = data.set().clone();
+        for c in &mut set.constrs {
+            *c.span_mut() = op.span;
+        }
         let (op_ty, subs) = self.instantiate(data.ty().clone());
         set.substitute_many(&subs);
         set.extend(expr_set);
@@ -1470,6 +1479,9 @@ impl Checker {
     ) -> CheckResult<(Ty, Set)> {
         let instance_var = data.instance_var();
         let mut constraints = data.constraints().clone();
+        for c in &mut constraints.constrs {
+            *c.span_mut() = span;
+        }
         let MemberData {
             ty: sig,
             set: mut member_set,

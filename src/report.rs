@@ -31,7 +31,6 @@ impl Report for IsaError {
 
 impl MatchNonExhaustive {
     fn fmt_witnesses(&self, ctx: &Ctx) -> String {
-        dbg!(ctx);
         let mut out = String::new();
         if self.witnessess().len() > 1 {
             let _ = write!(out, "patterns");
