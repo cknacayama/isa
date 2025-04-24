@@ -28,6 +28,7 @@ use crate::span::Span;
 #[derive(Debug, Default)]
 pub struct Checker {
     ctx:       Ctx,
+    subs:      Vec<Subs>,
     generator: IdGenerator,
 }
 
@@ -45,11 +46,20 @@ impl Checker {
     {
         self.ctx
             .unify(EqConstraintSet::from(constr), Set::from(classes))
+            .inspect(|(subs, _)| self.subs.extend_from_slice(subs))
     }
 
     #[must_use]
     pub const fn ctx(&self) -> &Ctx {
         &self.ctx
+    }
+
+    const fn subs_count(&self) -> usize {
+        self.subs.len()
+    }
+
+    fn subs_from(&self, pos: usize) -> &[Subs] {
+        &self.subs[pos..]
     }
 
     fn insert_val<ClassSet>(
@@ -186,21 +196,21 @@ impl Checker {
     ) -> IsaResult<(Expr<Ty>, Set)> {
         self.ctx.push_scope();
 
-        let var = self.gen_type_var();
-        self.insert_let(param.name, var, []);
+        let mut pat = self.check_pat(param.pat)?;
+        let pos = self.subs_count();
 
         let (expr, set) = self.check(expr)?;
-        let var = self.get_var_ty(param.name).unwrap();
+        pat.ty.substitute_many(self.subs_from(pos));
 
         self.ctx.pop_scope();
 
         let ty = Ty::Fn {
-            param: Rc::new(var.clone()),
+            param: Rc::new(pat.ty.clone()),
             ret:   Rc::new(expr.ty.clone()),
         };
 
         let kind = ExprKind::Fn {
-            param: Param::new(param.name, var),
+            param: Param::new(pat),
             expr:  Box::new(expr),
         };
 
@@ -280,28 +290,34 @@ impl Checker {
                 let decl = param_iter.next().ok_or_else(|| {
                     let fst =
                         DiagnosticLabel::new(format!("expected `{val_decl}`"), bind.name.span);
-                    let snd = DiagnosticLabel::new("more parameters than expected", p.name.span);
+                    let snd = DiagnosticLabel::new("more parameters than expected", p.pat.span);
                     let trd = DiagnosticLabel::new("expected due to this", ty_span);
 
                     IsaError::new("type mismatch", fst, vec![snd, trd])
                         .with_note("let bind should have same type as val declaration")
                 })?;
-                self.insert_let(p.name, decl.clone(), []);
-                Ok(Param::new(p.name, decl))
+                let mut pat = self.check_pat(p.pat)?;
+                let c = EqConstraint::new(decl, pat.ty.clone(), pat.span);
+                let (subs, _) = self.unify(c, [])?;
+                pat.ty.substitute_many(&subs);
+
+                Ok(Param::new(pat))
             })
             .collect::<IsaResult<Box<_>>>()?;
 
         let (mut expr, set) = if typed_params.is_empty() {
             self.check(bind.expr)?
         } else {
+            let pos = self.subs_count();
             self.ctx.assume_constraints(&val_set);
             let (mut expr, set) = self.check(bind.expr)?;
 
+            let subs = self.subs_from(pos);
             for p in &mut typed_params {
-                p.ty = self.get_var_ty(p.name).unwrap();
+                p.pat.ty.substitute_many(subs);
             }
 
-            expr.ty = Ty::function(typed_params.iter().map(Param::ty).cloned(), expr.ty);
+            expr.ty = Ty::function(typed_params.iter().map(|p| p.pat.ty.clone()), expr.ty);
             (expr, set)
         };
 
@@ -358,7 +374,7 @@ impl Checker {
 
         expr.ty.substitute_many(&subs);
         for p in &mut typed_params {
-            p.ty.substitute_many(&subs);
+            p.pat.ty.substitute_many(&subs);
         }
 
         let ty = self.ctx.generalize(expr.ty.clone());
@@ -383,26 +399,27 @@ impl Checker {
             .params
             .into_iter()
             .map(|p| {
-                let var = self.gen_type_var();
-                self.insert_let(p.name, var.clone(), []);
-                Param::new(p.name, var)
+                let pat = self.check_pat(p.pat)?;
+                Ok(Param::new(pat))
             })
-            .collect::<Box<_>>();
+            .collect::<IsaResult<Box<_>>>()?;
 
         let (expr, set) = if typed_params.is_empty() {
             self.check(bind.expr)?
         } else {
+            let pos = self.subs_count();
             let var_id = self.gen_id();
             let var = Ty::Var(var_id);
             self.insert_let(bind.name, var, []);
 
             let (mut expr, set) = self.check(bind.expr)?;
 
+            let subs = self.subs_from(pos);
             for p in &mut typed_params {
-                p.ty = self.get_var_ty(p.name).unwrap();
+                p.pat.ty.substitute_many(subs);
             }
 
-            expr.ty = Ty::function(typed_params.iter().map(Param::ty).cloned(), expr.ty);
+            expr.ty = Ty::function(typed_params.iter().map(|p| p.pat.ty.clone()), expr.ty);
 
             let subs = Subs::new(var_id, expr.ty.clone());
 
@@ -941,19 +958,13 @@ impl Checker {
 
         let mut pat = self.check_pat(pat)?;
 
-        let scope = self.ctx.current_scope().unwrap().clone();
+        let count = self.subs_count();
 
         let (expr, set) = self.check(expr)?;
 
-        let new_scope = self.ctx.pop_scope().unwrap();
+        pat.ty.substitute_many(self.subs_from(count));
 
-        for (k, v) in scope {
-            let Some(old) = v.ty().as_var() else {
-                continue;
-            };
-            let new = new_scope.get(&k).unwrap().ty().clone();
-            pat.substitute_eq(&Subs::new(old, new));
-        }
+        self.ctx.pop_scope();
 
         Ok((pat, expr, set))
     }

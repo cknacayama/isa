@@ -1203,8 +1203,8 @@ impl<'a> Parser<'a> {
 
         let mut parametes = Vec::new();
         while !self.check(TokenKind::Eq) {
-            let param = self.expect_id()?;
-            let param = UntypedParam::untyped(param);
+            let param = self.parse_simple_pat()?;
+            let param = UntypedParam::new(param);
             parametes.push(param);
         }
         self.expect(TokenKind::Eq)?;
@@ -1241,7 +1241,7 @@ impl<'a> Parser<'a> {
 
     fn parse_fn(&mut self) -> ParseResult<UntypedExpr> {
         let span = self.expect(TokenKind::KwFn)?;
-        let name = self.expect_id()?;
+        let pat = self.parse_type_pat()?;
 
         self.expect(TokenKind::Arrow)?;
 
@@ -1249,7 +1249,7 @@ impl<'a> Parser<'a> {
 
         let span = span.union(expr.span);
 
-        let param = UntypedParam::untyped(name);
+        let param = UntypedParam::new(pat);
 
         Ok(UntypedExpr::untyped(
             ExprKind::Fn {

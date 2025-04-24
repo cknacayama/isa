@@ -7,7 +7,7 @@ module @prelude with {
 }
 
 val {a,b} => const: a -> b -> a;
-let const a b = a;
+let const a _ = a;
 
 val {a} => id: a -> a;
 let id a = a;

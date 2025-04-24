@@ -254,11 +254,27 @@ impl TypeCtx {
                 self.check_single_match_expr(lhs)?;
                 self.check_single_match_expr(rhs)?;
             }
-            ExprKind::Fn { expr, .. } | ExprKind::Un { expr, .. } => {
+            ExprKind::Un { expr, .. } => {
+                self.check_single_match_expr(expr)?;
+            }
+            ExprKind::Fn { param, expr } => {
+                let ty = param.pat.ty.clone();
+                let witnesses = check_match_pats(std::iter::once(&param.pat), ty, self);
+                if !witnesses.is_empty() {
+                    return Err(MatchNonExhaustive::new(witnesses, param.pat.span));
+                }
                 self.check_single_match_expr(expr)?;
             }
             ExprKind::Let { bind, body, .. } => {
+                for p in &bind.params {
+                    let ty = p.pat.ty.clone();
+                    let witnesses = check_match_pats(std::iter::once(&p.pat), ty, self);
+                    if !witnesses.is_empty() {
+                        return Err(MatchNonExhaustive::new(witnesses, p.pat.span));
+                    }
+                }
                 let expr = &bind.expr;
+
                 self.check_single_match_expr(expr)?;
                 if let Some(body) = body {
                     self.check_single_match_expr(body)?;

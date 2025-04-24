@@ -510,27 +510,22 @@ impl<T: Display> MatchArm<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Param<T> {
-    pub name: Ident,
-    pub ty:   T,
+    pub pat: Pat<T>,
 }
 
 impl<T> Param<T> {
     #[must_use]
-    pub const fn new(name: Ident, ty: T) -> Self {
-        Self { name, ty }
-    }
-
-    #[must_use]
-    pub const fn ty(&self) -> &T {
-        &self.ty
+    pub const fn new(pat: Pat<T>) -> Self {
+        Self { pat }
     }
 }
 
 impl<T: Display> Display for Param<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.name, self.ty)
+        self.pat.format_helper(f)?;
+        write!(f, ": {}", self.pat.ty)
     }
 }
 
@@ -715,7 +710,7 @@ impl Substitute for Param<Ty> {
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
-        self.ty.substitute(subs);
+        self.pat.substitute(subs);
     }
 }
 
@@ -797,10 +792,10 @@ impl Substitute for LetBind<Ty> {
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
+        self.expr.substitute(subs);
         for p in &mut self.params {
             p.substitute(subs);
         }
-        self.expr.substitute(subs);
     }
 }
 
@@ -1125,12 +1120,5 @@ impl UntypedPat {
     #[must_use]
     pub const fn untyped(kind: PatKind<()>, span: Span) -> Self {
         Self::new(kind, span, ())
-    }
-}
-
-impl UntypedParam {
-    #[must_use]
-    pub const fn untyped(name: Ident) -> Self {
-        Self::new(name, ())
     }
 }

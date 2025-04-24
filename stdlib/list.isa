@@ -42,7 +42,7 @@ instance Monad List =
 
 instance {a, Eq a} => Eq List a =
     let eq a b = match (a,b) with
-        ([],[]) -> true,
+        ([], []) -> true,
         ([a]resta, [b]restb) -> a == b && resta == restb,
         _ -> false,
 ;
