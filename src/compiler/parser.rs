@@ -141,7 +141,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    pub fn try_parse_module(&mut self) -> Option<ParseResult<UntypedModule>> {
+    fn try_parse_module(&mut self) -> Option<ParseResult<UntypedModule>> {
         if self.peek().is_some() {
             Some(self.parse_module())
         } else {
@@ -434,7 +434,7 @@ impl<'a> Parser<'a> {
 
     fn parse_constraint_set(&mut self) -> ParseResult<(ClassConstraintSet, Box<[Ty]>)> {
         if self.next_if_match(TokenKind::LBrace).is_none() {
-            return Ok(Default::default());
+            return Ok((ClassConstraintSet::new(), Box::new([])));
         }
 
         let mut constrs = Vec::new();

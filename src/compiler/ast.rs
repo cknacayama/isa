@@ -383,67 +383,6 @@ impl<T> Pat<T> {
     }
 }
 
-impl<T: Display> Pat<T> {
-    fn format_helper(&self, f: &mut impl Write) -> std::fmt::Result {
-        match &self.kind {
-            PatKind::Wild => write!(f, "_"),
-            PatKind::Ident(id) => write!(f, "{id}"),
-            PatKind::Or(typed_pats) => {
-                let mut iter = typed_pats.iter();
-                let first = iter.next().unwrap();
-                write!(f, "(")?;
-                first.format_helper(f)?;
-                for pat in iter {
-                    write!(f, " | ")?;
-                    pat.format_helper(f)?;
-                }
-                write!(f, ")")
-            }
-            PatKind::Tuple(pats) => {
-                write!(f, "(")?;
-                let mut first = true;
-                for pat in pats {
-                    if first {
-                        first = false;
-                    } else {
-                        write!(f, ", ")?;
-                    }
-                    pat.format_helper(f)?;
-                }
-                write!(f, ")")
-            }
-            PatKind::List(list) => match list {
-                ListPat::Nil => write!(f, "[]"),
-                ListPat::Single(pat) => {
-                    write!(f, "[")?;
-                    pat.format_helper(f)?;
-                    write!(f, "]")
-                }
-                ListPat::Cons(pat, pat1) => {
-                    write!(f, "[")?;
-                    pat.format_helper(f)?;
-                    write!(f, "]")?;
-                    pat1.format_helper(f)
-                }
-            },
-            PatKind::Int(i) => write!(f, "{i}"),
-            PatKind::Char(c) => write!(f, "{:?}", *c as char),
-            PatKind::IntRange(i) => write!(f, "{i}"),
-            PatKind::CharRange(range) => write!(f, "{}", range.map(|c| c as char)),
-            PatKind::Bool(b) => write!(f, "{b}"),
-            PatKind::Constructor { name, args } => {
-                write!(f, "({name}")?;
-                for pat in args {
-                    write!(f, " ")?;
-                    pat.format_helper(f)?;
-                }
-                write!(f, ")")
-            }
-        }
-        .and_then(|()| write!(f, ": {}", self.ty))
-    }
-}
-
 #[derive(Clone)]
 pub struct Expr<T> {
     pub kind: ExprKind<T>,
@@ -501,15 +440,6 @@ impl<T> MatchArm<T> {
     }
 }
 
-impl<T: Display> MatchArm<T> {
-    fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
-        self.pat.format_helper(f)?;
-        write!(f, " -> ")?;
-        self.expr.format_helper(f, indentation)?;
-        writeln!(f, ",")
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Param<T> {
     pub pat: Pat<T>,
@@ -519,13 +449,6 @@ impl<T> Param<T> {
     #[must_use]
     pub const fn new(pat: Pat<T>) -> Self {
         Self { pat }
-    }
-}
-
-impl<T: Display> Display for Param<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.pat.format_helper(f)?;
-        write!(f, ": {}", self.pat.ty)
     }
 }
 
@@ -542,17 +465,6 @@ impl<T> LetBind<T> {
     }
 }
 
-impl<T: Display> LetBind<T> {
-    fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
-        write!(f, "let {} ", self.name)?;
-        for p in &self.params {
-            write!(f, "{p} ")?;
-        }
-        write!(f, "= ")?;
-        self.expr.format_helper(f, indentation + 1)
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ValDeclaration {
     pub params: Box<[Ty]>,
@@ -560,12 +472,6 @@ pub struct ValDeclaration {
     pub name:   Ident,
     pub ty:     Ty,
     pub span:   Span,
-}
-
-impl Display for ValDeclaration {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "val {} {}: {}", self.set, self.name, self.ty)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -696,12 +602,6 @@ impl<T> Expr<T> {
     #[must_use]
     pub const fn new(kind: ExprKind<T>, span: Span, ty: T) -> Self {
         Self { kind, span, ty }
-    }
-}
-
-impl<T: Display> Display for Expr<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.format_helper(f, 0)
     }
 }
 
@@ -1012,91 +912,6 @@ impl Display for Path {
             write!(f, "{segment}")?;
         }
         Ok(())
-    }
-}
-
-impl<T: Display> Expr<T> {
-    fn format_helper(&self, f: &mut impl Write, indentation: usize) -> std::fmt::Result {
-        let tab = String::from_utf8(vec![b' '; indentation * 2]).unwrap();
-        match &self.kind {
-            ExprKind::Int(i) => write!(f, "{i}"),
-            ExprKind::Bool(b) => write!(f, "{b}"),
-            ExprKind::Char(c) => write!(f, "{:?}", *c as char),
-            ExprKind::Path(id) => write!(f, "{id}"),
-            ExprKind::Operator(id) => write!(f, "{id}"),
-            ExprKind::Let { bind, body } => {
-                write!(f, "(")?;
-                bind.format_helper(f, indentation)?;
-                if let Some(body) = body {
-                    write!(f, " in ")?;
-                    body.format_helper(f, indentation + 1)?;
-                }
-                write!(f, ")")
-            }
-            ExprKind::List(exprs) | ExprKind::Tuple(exprs) => {
-                write!(f, "(")?;
-                let mut first = true;
-                for e in exprs {
-                    if first {
-                        first = false;
-                    } else {
-                        write!(f, ", ")?;
-                    }
-                    e.format_helper(f, indentation + 1)?;
-                }
-                write!(f, ")")
-            }
-            ExprKind::Bin { op, lhs, rhs } => {
-                write!(f, "(")?;
-                lhs.format_helper(f, indentation + 1)?;
-                write!(f, "{op}")?;
-                rhs.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-            ExprKind::Un { op, expr } => {
-                write!(f, "({op} ")?;
-                expr.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-            ExprKind::Fn { param, expr } => {
-                write!(f, "(fn {param} -> ")?;
-                expr.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-            ExprKind::If {
-                cond,
-                then,
-                otherwise,
-            } => {
-                write!(f, "(if ")?;
-                cond.format_helper(f, indentation + 1)?;
-                writeln!(f, " then")?;
-                write!(f, "{tab}")?;
-                then.format_helper(f, indentation + 1)?;
-                writeln!(f, " else")?;
-                write!(f, "{tab}")?;
-                otherwise.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-            ExprKind::Match { expr, arms } => {
-                write!(f, "(match ")?;
-                expr.format_helper(f, indentation + 1)?;
-                writeln!(f, " in")?;
-                for arm in arms {
-                    write!(f, "{tab}")?;
-                    arm.format_helper(f, indentation)?;
-                }
-                write!(f, ")")
-            }
-            ExprKind::Call { callee, arg } => {
-                write!(f, "(")?;
-                callee.format_helper(f, indentation + 1)?;
-                write!(f, " ")?;
-                arg.format_helper(f, indentation + 1)?;
-                write!(f, ")")
-            }
-        }
-        .and_then(|()| write!(f, ": {}", self.ty))
     }
 }
 

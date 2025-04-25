@@ -9,8 +9,7 @@ use super::ast::{
     UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat, UntypedStmt, ValDeclaration,
 };
 use super::ctx::{
-    AliasData, ClassData, Ctx, Generator, IdGenerator, InstanceData, MemberData, ModuleData,
-    VarData,
+    AliasData, ClassData, Ctx, Generator, IdGenerator, InstanceData, MemberData, VarData,
 };
 use super::error::{
     CheckError, CheckErrorKind, CheckResult, DiagnosticLabel, IsaError, Uninferable,
@@ -84,10 +83,6 @@ impl Checker {
     {
         self.ctx
             .insert_var(id.ident, VarData::new(ty, Set::from(set), id.span))
-    }
-
-    fn get_var_ty(&self, id: Ident) -> CheckResult<Ty> {
-        self.ctx.get_var(id).map(VarData::ty).cloned()
     }
 
     fn gen_id(&mut self) -> u64 {
@@ -446,19 +441,16 @@ impl Checker {
 
         let (u1, expr, params, set) = self.check_let_bind(bind)?;
 
-        let (body, ty, set) = match body {
-            Some(body) => {
-                self.ctx.push_scope();
-                self.insert_let(name, u1, set.clone());
-                let (body, body_set) = self.check(body)?;
-                self.ctx.pop_scope();
-                let ty = body.ty.clone();
-                (Some(body), ty, set.concat(body_set))
-            }
-            None => {
-                self.insert_let(name, u1, set.clone());
-                (None, Ty::Unit, set)
-            }
+        let (body, ty, set) = if let Some(body) = body {
+            self.ctx.push_scope();
+            self.insert_let(name, u1, set.clone());
+            let (body, body_set) = self.check(body)?;
+            self.ctx.pop_scope();
+            let ty = body.ty.clone();
+            (Some(body), ty, set.concat(body_set))
+        } else {
+            self.insert_let(name, u1, set.clone());
+            (None, Ty::Unit, set)
         };
 
         let bind = LetBind::new(name, params, expr);
@@ -505,28 +497,25 @@ impl Checker {
         constructors: Box<[UntypedConstructor]>,
         span: Span,
     ) -> IsaResult<Stmt<Ty>> {
-        let mut quant = Vec::new();
+        let quant = parameters
+            .iter()
+            .map(|p| p.as_var().unwrap())
+            .collect::<Rc<_>>();
 
-        for param in &parameters {
-            let new = param.as_var().unwrap();
-            quant.push(new);
-        }
-
-        let quant = Rc::<[u64]>::from(quant);
-
+        let module = Ident::new(self.ctx.current_module().ident, name.span);
         let ty = Ty::Named {
-            name: self.ctx.new_path_from_current(name),
+            name: Path::new(smallvec![module, name]),
             args: parameters.clone().into(),
         };
 
-        let mut typed_constructors = Vec::new();
-        for c in constructors {
-            let ctor = self.check_constructor(c, quant.clone(), ty.clone())?;
-            self.ctx.insert_constructor_for_ty(name, &ctor)?;
-            typed_constructors.push(ctor);
-        }
-
-        let constructors = typed_constructors.into_boxed_slice();
+        let constructors = constructors
+            .into_iter()
+            .map(|c| {
+                let ctor = self.check_constructor(c, quant.clone(), ty.clone())?;
+                self.ctx.insert_constructor_for_ty(name, &ctor)?;
+                Ok(ctor)
+            })
+            .collect::<IsaResult<_>>()?;
 
         let kind = StmtKind::Type {
             name,
@@ -544,41 +533,39 @@ impl Checker {
         ops: Box<[OpDeclaration]>,
         span: Span,
     ) -> IsaResult<Stmt<Ty>> {
-        let mut quant = Vec::new();
+        let quant = params
+            .iter()
+            .map(|p| p.as_var().unwrap())
+            .collect::<Rc<_>>();
 
-        for param in &params {
-            let new = param.as_var().unwrap();
-            quant.push(new);
-        }
+        let ops = ops
+            .into_iter()
+            .map(|OpDeclaration { prefix, op, ty }| {
+                let ty = Ty::Scheme {
+                    quant: quant.clone(),
+                    ty:    Rc::new(ty),
+                };
+                let data = OperatorData::new(ty.clone(), set.clone());
+                if prefix {
+                    self.ctx.insert_prefix(op, data);
+                } else {
+                    self.ctx.insert_infix(op, data);
+                }
+                OpDeclaration::new(prefix, op, ty)
+            })
+            .collect();
 
-        let quant = Rc::<[u64]>::from(quant);
-        let mut new_ops = Vec::new();
-
-        for OpDeclaration { prefix, op, ty } in ops {
-            let ty = Ty::Scheme {
-                quant: quant.clone(),
-                ty:    Rc::new(ty),
-            };
-            let data = OperatorData::new(ty.clone(), set.clone());
-            if prefix {
-                self.ctx.insert_prefix(op, data);
-            } else {
-                self.ctx.insert_infix(op, data);
-            }
-            new_ops.push(OpDeclaration::new(prefix, op, ty));
-        }
-
-        let kind = StmtKind::Operator {
-            params,
-            set,
-            ops: new_ops.into_boxed_slice(),
-        };
+        let kind = StmtKind::Operator { params, set, ops };
 
         Ok(Stmt::new(kind, span))
     }
 
     fn check_val(&self, val: &mut ValDeclaration) -> IsaResult<()> {
-        let quant: Rc<_> = val.params.iter().map(|p| p.as_var().unwrap()).collect();
+        let quant = val
+            .params
+            .iter()
+            .map(|p| p.as_var().unwrap())
+            .collect::<Rc<_>>();
 
         if !quant.is_empty() {
             val.ty = Ty::Scheme {
@@ -1036,45 +1023,13 @@ impl Checker {
         Ok((Expr::new(kind, span, var), set))
     }
 
-    fn check_path_simple(
-        module_name: Ident,
-        ctx: &ModuleData,
-        path: &[Ident],
-        generator: &mut impl Generator,
-        span: Span,
-    ) -> IsaResult<(Path, Ty, Set)> {
-        match path {
-            [] => unreachable!(),
-
-            &[id] => {
-                let VarData {
-                    ty, mut constrs, ..
-                } = ctx.get_var(id)?.clone();
-                let (ty, subs) = ty.instantiate(generator);
-                constrs.substitute_many(&subs);
-
-                Ok((Path::from_ident(id), ty, constrs))
-            }
-
-            _ => {
-                let mut invalid = Path::from_ident(module_name);
-                invalid.segments.extend_from_slice(path);
-
-                Err(IsaError::from(CheckError::new(
-                    CheckErrorKind::InvalidPath(invalid),
-                    span,
-                )))
-            }
-        }
-    }
-
     fn check_path(
         ctx: &Ctx,
-        path: &[Ident],
         generator: &mut impl Generator,
+        path: Path,
         span: Span,
     ) -> IsaResult<(Path, Ty, Set)> {
-        match path {
+        match path.segments.as_slice() {
             [] => unreachable!(),
 
             &[id] => {
@@ -1088,10 +1043,6 @@ impl Checker {
             }
 
             &[first, id] => {
-                let path = Path {
-                    segments: smallvec![first, id],
-                };
-
                 if let Ok(ty) = ctx.get_constructor(&path) {
                     let (ty, _) = ty.clone().instantiate(generator);
                     return Ok((path, ty, Set::new()));
@@ -1105,14 +1056,17 @@ impl Checker {
 
                 let module = ctx.get_module(first)?;
 
-                Self::check_path_simple(first, module, &[id], generator, span)
+                let VarData {
+                    ty, mut constrs, ..
+                } = module.get_var(id)?.clone();
+
+                let (ty, subs) = ty.instantiate(generator);
+                constrs.substitute_many(&subs);
+
+                Ok((Path::from_ident(id), ty, constrs))
             }
 
             &[fst, snd, trd] => {
-                let path = Path {
-                    segments: smallvec![fst, snd, trd],
-                };
-
                 if let Ok(ty) = ctx.get_constructor(&path) {
                     let (ty, _) = ty.clone().instantiate(generator);
                     return Ok((path, ty, Set::new()));
@@ -1129,14 +1083,10 @@ impl Checker {
                 Ok((path, ty, set))
             }
 
-            _ => {
-                let invalid = Path::new(path.into());
-
-                Err(IsaError::from(CheckError::new(
-                    CheckErrorKind::InvalidPath(invalid),
-                    span,
-                )))
-            }
+            _ => Err(IsaError::from(CheckError::new(
+                CheckErrorKind::InvalidPath(path),
+                span,
+            ))),
         }
     }
 
@@ -1264,7 +1214,6 @@ impl Checker {
 
         let mut typed_exprs = Vec::new();
         let mut types = Vec::new();
-
         let mut set = Set::new();
 
         for expr in exprs {
@@ -1541,8 +1490,8 @@ impl Checker {
         constraints.extend(member_set);
 
         constraints.substitute(&mut subs);
-        constraints.substitute_many(&sig_subs);
         sig.substitute(&mut subs);
+        constraints.substitute_many(&sig_subs);
         sig.substitute_many(&sig_subs);
 
         constraints.push(ClassConstraint::new(class, Ty::Var(new_var), span));
@@ -1600,19 +1549,21 @@ impl Checker {
                 let _ = self.ctx.import_prelude();
             }
 
+            let mut subs = |ty: &Ty| match ty {
+                Ty::Named { name, args } => {
+                    let name = self.ctx.resolve_type_name(name).ok()?;
+                    Some(Ty::Named {
+                        name,
+                        args: args.clone(),
+                    })
+                }
+                _ => None,
+            };
+
             let extracted = module
                 .stmts
                 .extract_if(.., |e| {
-                    e.substitute(&mut |ty| match ty {
-                        Ty::Named { name, args } => {
-                            let name = self.ctx.resolve_type_name(name).ok()?;
-                            Some(Ty::Named {
-                                name,
-                                args: args.clone(),
-                            })
-                        }
-                        _ => None,
-                    });
+                    e.substitute(&mut subs);
                     e.kind.is_type_or_val_or_op()
                 })
                 .collect::<Vec<_>>();
@@ -1757,8 +1708,7 @@ impl Checker {
             ExprKind::Operator(op) => self.check_operator_expr(op, span),
 
             ExprKind::Path(path) => {
-                let (path, ty, set) =
-                    Self::check_path(&self.ctx, &path.segments, &mut self.generator, span)?;
+                let (path, ty, set) = Self::check_path(&self.ctx, &mut self.generator, path, span)?;
                 Ok((Expr::new(ExprKind::Path(path), span, ty), set))
             }
 

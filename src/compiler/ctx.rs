@@ -134,9 +134,15 @@ pub trait Generator {
 #[derive(Debug, Clone, Copy)]
 pub struct IdGenerator(u64);
 
+impl IdGenerator {
+    pub const fn new() -> Self {
+        Self(0)
+    }
+}
+
 impl Default for IdGenerator {
     fn default() -> Self {
-        Self(1)
+        Self::new()
     }
 }
 
@@ -251,7 +257,7 @@ impl AliasData {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct InstanceData {
     constraints: ClassConstraintSet,
     span:        Span,
@@ -275,7 +281,7 @@ pub struct MemberData {
     pub span:        Span,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ClassData {
     constraints:  ClassConstraintSet,
     instance_var: u64,
@@ -1014,52 +1020,162 @@ impl Ctx {
         ty: &Ty,
         span: Span,
     ) -> CheckResult<Vec<ClassConstraint>> {
-        if self.implementation(ty, class).is_ok() {
+        let data = self.get_class(class)?;
+
+        if data.instances.contains_key(ty) {
             return Ok(Vec::new());
         }
 
-        let data = self.get_class(class)?;
-
-        let Some((args, constraints)) = data.instances.iter().find_map(|(instance, data)| {
-            let Ty::Scheme {
-                ty: instance_ty, ..
-            } = instance
-            else {
-                return None;
-            };
-            Self::zip_args(instance_ty, ty).map(|args| (args, data.constraints().iter()))
+        let Some((args, set)) = data.instances.iter().find_map(|(inst, data)| match inst {
+            Ty::Scheme { ty: inst, .. } => {
+                Self::zip_args(inst, ty).map(|args| (args, data.constraints().iter()))
+            }
+            _ => None,
         }) else {
             return Ok(vec![ClassConstraint::new(class.clone(), ty.clone(), span)]);
         };
 
-        let new = constraints
-            .filter_map(|c| {
-                args.iter().find_map(|(a1, a2)| {
-                    if c.ty() == a1 {
-                        self.instantiate_class(c.class(), a2, span).ok()
-                    } else {
-                        None
-                    }
-                })
+        set.filter_map(|c| {
+            args.iter().find_map(|(a1, a2)| {
+                if c.ty() == a1 {
+                    Some(self.instantiate_class(c.class(), a2, span))
+                } else {
+                    None
+                }
             })
-            .reduce(|mut new, constr| {
-                new.extend(constr);
-                new
-            });
-
-        Ok(new.unwrap_or_default())
+        })
+        .try_fold(Vec::new(), |mut new, constr| {
+            new.extend(constr?);
+            Ok(new)
+        })
     }
 
     pub fn set_constraints(&mut self, class: &Path, ty: Ty, constr: ClassConstraintSet) {
         self.implementation_mut(ty, class).unwrap().constraints = constr;
     }
+}
 
-    pub fn new_path_from_current(&self, name: Ident) -> Path {
-        let mut module = self.current_module;
-        module.span = name.span;
-        Path {
-            segments: smallvec![module, name],
+impl Substitute for Ctx {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        for env in &mut self.env[1..] {
+            for t in env.values_mut() {
+                t.substitute(subs);
+            }
         }
+    }
+}
+
+#[derive(Debug)]
+struct TyVarFormatter<T>
+where
+    T: Iterator<Item = char>,
+{
+    vars:  FxHashMap<u64, char>,
+    chars: T,
+}
+
+impl<T> TyVarFormatter<T>
+where
+    T: Iterator<Item = char>,
+{
+    fn get(&mut self, var: u64) -> char {
+        *self
+            .vars
+            .entry(var)
+            .or_insert_with(|| self.chars.next().unwrap())
+    }
+}
+
+impl Ty {
+    fn fmt_var<T: Iterator<Item = char>>(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        chars: &mut TyVarFormatter<T>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Unit => write!(f, "()"),
+            Self::Int => write!(f, "int"),
+            Self::Bool => write!(f, "bool"),
+            Self::Char => write!(f, "char"),
+            Self::Fn { param, ret } => {
+                if param.is_simple_fmt() {
+                    param.fmt_var(f, chars)?;
+                } else {
+                    write!(f, "(")?;
+                    param.fmt_var(f, chars)?;
+                    write!(f, ")")?;
+                }
+                write!(f, " -> ")?;
+                ret.fmt_var(f, chars)
+            }
+            Self::Var(var) => {
+                let c = chars.get(*var);
+                write!(f, "'{c}")
+            }
+            Self::Scheme { quant, ty } => {
+                for n in quant.iter() {
+                    let c = chars.get(*n);
+                    write!(f, "'{c} ")?;
+                }
+                write!(f, ". ")?;
+                ty.fmt_var(f, chars)
+            }
+            Self::Named { name, args } => {
+                write!(f, "{}", name.base_name())?;
+                for arg in args.iter() {
+                    if arg.is_simple_fmt() {
+                        write!(f, " ")?;
+                        arg.fmt_var(f, chars)?;
+                    } else {
+                        write!(f, " (")?;
+                        arg.fmt_var(f, chars)?;
+                        write!(f, ")")?;
+                    }
+                }
+                Ok(())
+            }
+            Self::Generic { var, args } => {
+                let var = chars.get(*var);
+                write!(f, "'{var}")?;
+                for arg in args.iter() {
+                    if arg.is_simple_fmt() {
+                        write!(f, " ")?;
+                        arg.fmt_var(f, chars)?;
+                    } else {
+                        write!(f, " (")?;
+                        arg.fmt_var(f, chars)?;
+                        write!(f, ")")?;
+                    }
+                }
+                Ok(())
+            }
+            Self::Tuple(types) => {
+                write!(f, "(")?;
+                let mut first = true;
+                for ty in types.iter() {
+                    if first {
+                        first = false;
+                    } else {
+                        write!(f, ", ")?;
+                    }
+                    ty.fmt_var(f, chars)?;
+                }
+                write!(f, ")")
+            }
+        }
+    }
+}
+
+impl Display for Ty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut chars = TyVarFormatter {
+            vars:  FxHashMap::default(),
+            chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
+        };
+        self.fmt_var(f, &mut chars)
     }
 }
 
@@ -1081,35 +1197,56 @@ impl Display for ModuleData {
                     writeln!(f, "  import {import}::{id}")?;
                 }
                 ClassDataImport::Class(class) => {
-                    writeln!(
-                        f,
-                        "  class {}{id} '{} =",
-                        class.constraints(),
-                        class.instance_var()
-                    )?;
+                    let mut chars = TyVarFormatter {
+                        vars:  FxHashMap::default(),
+                        chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
+                    };
+                    write!(f, "  class ")?;
+                    class.constraints.fmt_var(f, &mut chars)?;
+                    writeln!(f, "{id} '{} =", chars.get(class.instance_var()))?;
                     for (id, sig) in class.signatures() {
-                        writeln!(f, "    val {}{id}: {}", sig.set, sig.ty)?;
+                        write!(f, "    val ")?;
+                        sig.set.fmt_var(f, &mut chars)?;
+                        write!(f, "{id}: ")?;
+                        sig.ty.fmt_var(f, &mut chars)?;
+                        writeln!(f)?;
                     }
-                    for (ty, data) in &class.instances {
-                        writeln!(f, "    instance {}{ty}", data.constraints)?;
+                    for (ty, data) in class.instances.iter().filter(|(ty, _)| !ty.is_var()) {
+                        let mut chars = TyVarFormatter {
+                            vars:  FxHashMap::default(),
+                            chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
+                        };
+                        write!(f, "    instance ")?;
+                        data.constraints.fmt_var(f, &mut chars)?;
+                        ty.fmt_var(f, &mut chars)?;
+                        writeln!(f)?;
                     }
                 }
             }
         }
 
         for (id, ty) in &self.types {
-            write!(f, "  type {id}")?;
-            for p in ty.params() {
-                write!(f, " '{p}")?;
-            }
-            write!(f, " =")?;
-            for c in ty.constructors() {
-                write!(f, " | {}", c.name)?;
-                for p in &c.params {
-                    write!(f, " {p}")?;
+            if let Some(import) = ty.imported {
+                writeln!(f, "  import {import}::{id}")?;
+            } else {
+                let mut chars = TyVarFormatter {
+                    vars:  FxHashMap::default(),
+                    chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
+                };
+                write!(f, "  type {id}")?;
+                for p in ty.params() {
+                    write!(f, " '{}", chars.get(*p))?;
+                }
+                writeln!(f, " =")?;
+                for c in ty.constructors() {
+                    write!(f, "    | {}", c.name)?;
+                    for p in &c.params {
+                        write!(f, " ")?;
+                        p.fmt_var(f, &mut chars)?;
+                    }
+                    writeln!(f)?;
                 }
             }
-            writeln!(f)?;
         }
 
         for (id, bind) in self
@@ -1118,22 +1255,41 @@ impl Display for ModuleData {
             .chain(self.vals.iter())
             .chain(self.constructors.iter())
         {
-            writeln!(f, "  val {}{id}: {}", bind.constrs, bind.ty)?;
+            let mut chars = TyVarFormatter {
+                vars:  FxHashMap::default(),
+                chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
+            };
+            write!(f, "  val ")?;
+            bind.constrs.fmt_var(f, &mut chars)?;
+            write!(f, "{id}: ")?;
+            bind.ty.fmt_var(f, &mut chars)?;
+            writeln!(f)?;
         }
 
         Ok(())
     }
 }
 
-impl Substitute for Ctx {
-    fn substitute<S>(&mut self, subs: &mut S)
-    where
-        S: FnMut(&Ty) -> Option<Ty>,
-    {
-        for env in &mut self.env[1..] {
-            for t in env.values_mut() {
-                t.substitute(subs);
-            }
+impl ClassConstraintSet {
+    fn fmt_var<T: Iterator<Item = char>>(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        chars: &mut TyVarFormatter<T>,
+    ) -> std::fmt::Result {
+        if self.constrs.is_empty() {
+            return Ok(());
         }
+        write!(f, "{{")?;
+        let mut first = true;
+        for ty in &self.constrs {
+            if first {
+                first = false;
+            } else {
+                write!(f, ", ")?;
+            }
+            write!(f, "{} ", ty.class().base_name())?;
+            ty.ty().fmt_var(f, chars)?;
+        }
+        write!(f, "}} => ")
     }
 }

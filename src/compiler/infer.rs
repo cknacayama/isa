@@ -259,7 +259,7 @@ impl Constraint {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClassConstraintSet {
     pub constrs: Vec<ClassConstraint>,
 }
@@ -277,8 +277,10 @@ impl ClassConstraintSet {
         self.constrs.push(class);
     }
 
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self {
+            constrs: Vec::new(),
+        }
     }
 
     pub fn extend(&mut self, other: Self) {
@@ -491,49 +493,6 @@ impl EqConstraintSet {
 
     pub fn push(&mut self, c: EqConstraint) {
         self.constrs.push_back(c);
-    }
-}
-
-impl Display for ClassConstraintSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.constrs.is_empty() {
-            return Ok(());
-        }
-        write!(f, "{{")?;
-        let mut first = true;
-        for ty in &self.constrs {
-            if first {
-                first = false;
-            } else {
-                write!(f, ", ")?;
-            }
-            write!(f, "{ty}")?;
-        }
-        write!(f, "}} => ")
-    }
-}
-
-impl Display for Subs {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "'{} |-> ({})", self.old, self.subs)
-    }
-}
-
-impl Display for EqConstraint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} = {}", self.lhs, self.rhs)
-    }
-}
-
-impl Display for EqConstraintSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.constrs.iter().try_for_each(|c| write!(f, "{c}, "))
-    }
-}
-
-impl Display for ClassConstraint {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {}", self.class, self.ty)
     }
 }
 

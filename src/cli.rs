@@ -166,10 +166,9 @@ impl Config {
             modules.extend(cur_modules);
         }
 
-        let mut checker = Checker::default();
-
         let end_parse = Instant::now();
 
+        let mut checker = Checker::default();
         let (modules, set) = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
             Err(err) => {
@@ -192,10 +191,6 @@ impl Config {
         let duration = end_exhaust.duration_since(start);
 
         println!("{}", checker.ctx());
-        println!("where");
-        for c in set.iter() {
-            println!("  {} {},", c.class(), c.ty());
-        }
 
         println!("ran in {duration:?}");
         println!("  parsing in {:?}", end_parse.duration_since(start));

@@ -1,7 +1,4 @@
-use std::fmt::Display;
 use std::rc::Rc;
-
-use rustc_hash::FxHashMap;
 
 use super::ast::{Path, mod_path};
 use super::ctx::Generator;
@@ -119,12 +116,16 @@ impl Ty {
         matches!(self, Self::Char)
     }
 
-    fn is_simple_fmt(&self) -> bool {
+    pub fn is_simple_fmt(&self) -> bool {
         match self {
-            Self::Generic { args, .. } | Self::Named { args, .. } => args.is_empty(),
-            Self::Unit | Self::Int | Self::Bool | Self::Char | Self::Var(_) | Self::Tuple(_) => {
-                true
-            }
+            Self::Generic { .. }
+            | Self::Named { .. }
+            | Self::Unit
+            | Self::Int
+            | Self::Bool
+            | Self::Char
+            | Self::Var(_)
+            | Self::Tuple(_) => true,
             Self::Fn { .. } | Self::Scheme { .. } => false,
         }
     }
@@ -251,15 +252,15 @@ impl Substitute for Rc<Ty> {
                 new_param.substitute(subs);
                 new_ret.substitute(subs);
 
-                let param = if param.as_ref() != &new_param {
-                    Self::new(new_param)
-                } else {
+                let param = if param.as_ref() == &new_param {
                     param.clone()
-                };
-                let ret = if ret.as_ref() != &new_ret {
-                    Self::new(new_ret)
                 } else {
+                    Self::new(new_param)
+                };
+                let ret = if ret.as_ref() == &new_ret {
                     ret.clone()
+                } else {
+                    Self::new(new_ret)
                 };
 
                 Ty::Fn { param, ret }
@@ -268,10 +269,10 @@ impl Substitute for Rc<Ty> {
                 let mut new_ty = ty.as_ref().clone();
                 new_ty.substitute(subs);
 
-                let ty = if ty.as_ref() != &new_ty {
-                    Self::new(new_ty)
-                } else {
+                let ty = if ty.as_ref() == &new_ty {
                     ty.clone()
+                } else {
+                    Self::new(new_ty)
                 };
 
                 Ty::Scheme {
@@ -284,10 +285,10 @@ impl Substitute for Rc<Ty> {
                 for arg in &mut new_args {
                     arg.substitute(subs);
                 }
-                let args = if args.as_ref() != &new_args {
-                    Rc::from(new_args)
-                } else {
+                let args = if args.as_ref() == new_args {
                     args.clone()
+                } else {
+                    Rc::from(new_args)
                 };
                 Ty::Named {
                     name: name.clone(),
@@ -299,10 +300,10 @@ impl Substitute for Rc<Ty> {
                 for arg in &mut new_args {
                     arg.substitute(subs);
                 }
-                let args = if args.as_ref() != &new_args {
-                    Rc::from(new_args)
-                } else {
+                let args = if args.as_ref() == new_args {
                     args.clone()
+                } else {
+                    Rc::from(new_args)
                 };
                 Ty::Generic { var: *var, args }
             }
@@ -311,10 +312,10 @@ impl Substitute for Rc<Ty> {
                 for arg in &mut new_args {
                     arg.substitute(subs);
                 }
-                let args = if args.as_ref() != &new_args {
-                    Rc::from(new_args)
-                } else {
+                let args = if args.as_ref() == new_args {
                     args.clone()
+                } else {
+                    Rc::from(new_args)
                 };
                 Ty::Tuple(args)
             }
@@ -356,123 +357,5 @@ impl Iterator for ParamIter {
             }
             _ => None,
         }
-    }
-}
-
-#[derive(Debug)]
-struct TyVarFormatter<T>
-where
-    T: Iterator<Item = char>,
-{
-    vars:  FxHashMap<u64, char>,
-    chars: T,
-}
-
-impl<T> TyVarFormatter<T>
-where
-    T: Iterator<Item = char>,
-{
-    fn get(&mut self, var: u64) -> char {
-        *self
-            .vars
-            .entry(var)
-            .or_insert_with(|| self.chars.next().unwrap())
-    }
-}
-
-impl Ty {
-    fn fmt_var<T: Iterator<Item = char>>(
-        &self,
-        f: &mut std::fmt::Formatter<'_>,
-        chars: &mut TyVarFormatter<T>,
-    ) -> std::fmt::Result {
-        match self {
-            Self::Unit => write!(f, "()"),
-            Self::Int => write!(f, "int"),
-            Self::Bool => write!(f, "bool"),
-            Self::Char => write!(f, "char"),
-            Self::Fn { param, ret } => {
-                if param.is_simple_fmt() {
-                    param.fmt_var(f, chars)?;
-                } else {
-                    write!(f, "(")?;
-                    param.fmt_var(f, chars)?;
-                    write!(f, ")")?;
-                }
-                write!(f, " -> ")?;
-                ret.fmt_var(f, chars)
-            }
-            Self::Var(var) => {
-                let c = chars.get(*var);
-                write!(f, "'{c}")
-            }
-            Self::Scheme { quant, ty } => {
-                write!(f, "{{")?;
-                let mut first = true;
-                for n in quant.iter() {
-                    if first {
-                        first = false;
-                    } else {
-                        write!(f, ", ")?;
-                    }
-                    let c = chars.get(*n);
-                    write!(f, "'{c}")?;
-                }
-                write!(f, "}} => ")?;
-                ty.fmt_var(f, chars)
-            }
-            Self::Named { name, args } => {
-                write!(f, "{}", name.base_name())?;
-                for arg in args.iter() {
-                    if arg.is_simple_fmt() {
-                        write!(f, " ")?;
-                        arg.fmt_var(f, chars)?;
-                    } else {
-                        write!(f, " (")?;
-                        arg.fmt_var(f, chars)?;
-                        write!(f, ")")?;
-                    }
-                }
-                Ok(())
-            }
-            Self::Generic { var, args } => {
-                let var = chars.get(*var);
-                write!(f, "'{var}")?;
-                for arg in args.iter() {
-                    if arg.is_simple_fmt() {
-                        write!(f, " ")?;
-                        arg.fmt_var(f, chars)?;
-                    } else {
-                        write!(f, " (")?;
-                        arg.fmt_var(f, chars)?;
-                        write!(f, ")")?;
-                    }
-                }
-                Ok(())
-            }
-            Self::Tuple(types) => {
-                write!(f, "(")?;
-                let mut first = true;
-                for ty in types.iter() {
-                    if first {
-                        first = false;
-                    } else {
-                        write!(f, ", ")?;
-                    }
-                    ty.fmt_var(f, chars)?;
-                }
-                write!(f, ")")
-            }
-        }
-    }
-}
-
-impl Display for Ty {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut chars = TyVarFormatter {
-            vars:  FxHashMap::default(),
-            chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
-        };
-        self.fmt_var(f, &mut chars)
     }
 }
