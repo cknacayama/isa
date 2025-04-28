@@ -25,7 +25,7 @@ class {Applicative m} => Monad m =
     val {a,b} => action: m a -> m b -> m b,
 
     let return = Applicative::pure,
-    let action a b = a >>= fn c -> b,
+    let action a b = a >>= \_ -> b,
 ;
 
 operator {a, b, f, Functor f} => 

@@ -14,11 +14,17 @@ let head a = match a with
     [a]_ -> Some a,
 ;
 
-val {a} => tail: List a -> Option a;
-let tail a = match a with
+val {a} => last: List a -> Option a;
+let last a = match a with
     [] -> None,
     [a] -> Some a,
-    [_]rest -> tail rest,
+    [_]rest -> last rest,
+;
+
+val {a} => tail: List a -> List a;
+let tail a = match a with
+    [] -> [],
+    [_]rest -> rest,
 ;
 
 instance Functor List =

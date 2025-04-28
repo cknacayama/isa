@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Display, Write};
+use std::fmt::{Debug, Display};
 
 use rustc_hash::FxHashMap;
 use smallvec::{SmallVec, smallvec};
@@ -170,13 +170,13 @@ impl TokenKind {
             self,
             Self::LParen
                 | Self::LBracket
+                | Self::Backslash
                 | Self::Integer(_)
                 | Self::Ident(_)
                 | Self::Char(_)
                 | Self::KwTrue
                 | Self::KwFalse
                 | Self::KwLet
-                | Self::KwFn
                 | Self::KwMatch
                 | Self::KwIf
         )
@@ -293,21 +293,6 @@ pub enum RangePat<T> {
     ToInclusive(T),
     Exclusive(T, T),
     Inclusive(T, T),
-}
-
-impl<T> RangePat<T> {
-    pub fn map<U, F>(self, f: F) -> RangePat<U>
-    where
-        F: Fn(T) -> U,
-    {
-        match self {
-            Self::From(lo) => RangePat::From(f(lo)),
-            Self::To(hi) => RangePat::To(f(hi)),
-            Self::ToInclusive(hi) => RangePat::ToInclusive(f(hi)),
-            Self::Exclusive(lo, hi) => RangePat::Exclusive(f(lo), f(hi)),
-            Self::Inclusive(lo, hi) => RangePat::Inclusive(f(lo), f(hi)),
-        }
-    }
 }
 
 impl<T: Debug> Display for RangePat<T> {

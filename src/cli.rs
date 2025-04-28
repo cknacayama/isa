@@ -92,7 +92,6 @@ impl Config {
         );
 
         let mut files = FilesDatabase::default();
-        Self::add_prelude(&mut files);
 
         let input = std::fs::read_to_string(&input_path).expect("Should have valid path as input");
         let input_file_name = input_path
@@ -100,6 +99,7 @@ impl Config {
             .and_then(OsStr::to_str)
             .unwrap_or_default()
             .to_owned();
+        Self::add_prelude(&mut files);
         files.add(input_file_name, input);
 
         let opt = env
@@ -169,7 +169,7 @@ impl Config {
         let end_parse = Instant::now();
 
         let mut checker = Checker::default();
-        let (modules, set) = match checker.check_many_modules(modules) {
+        let (modules, _) = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
             Err(err) => {
                 self.report(&err, checker.ctx());

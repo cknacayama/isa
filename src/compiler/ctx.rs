@@ -1,8 +1,9 @@
 use std::fmt::Display;
+use std::ops::BitOr;
 use std::rc::Rc;
 use std::{fmt, vec};
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use smallvec::smallvec;
 
 use super::ast::{Constructor, Import, ImportClause, ImportWildcard, Path, mod_path};
@@ -36,16 +37,22 @@ impl VarData {
 pub struct ModuleData {
     lets:         FxHashMap<Symbol, VarData>,
     vals:         FxHashMap<Symbol, VarData>,
-    types:        FxHashMap<Symbol, TyData>,
     constructors: FxHashMap<Symbol, VarData>,
-    classes:      FxHashMap<Symbol, ClassDataImport>,
+    types:        FxHashMap<Symbol, ImportData<TyData>>,
+    classes:      FxHashMap<Symbol, ImportData<ClassData>>,
 }
 
 impl ModuleData {
-    pub fn get_type(&self, id: Ident) -> CheckResult<&TyData> {
+    pub fn get_ty(&self, id: Ident) -> CheckResult<&ImportData<TyData>> {
         self.types
             .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
+    }
+
+    pub fn get_type_data(&self, id: Ident) -> CheckResult<&TyData> {
+        self.get_ty(id)?
+            .as_own()
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotType, id))
     }
 
     pub fn get_val(&self, id: Ident) -> CheckResult<&VarData> {
@@ -72,13 +79,13 @@ impl ModuleData {
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
-    fn get_class(&self, id: Ident) -> CheckResult<&ClassDataImport> {
+    fn get_class(&self, id: Ident) -> CheckResult<&ImportData<ClassData>> {
         self.classes
             .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
-    pub fn get_type_mut(&mut self, id: Ident) -> CheckResult<&mut TyData> {
+    pub fn get_type_mut(&mut self, id: Ident) -> CheckResult<&mut ImportData<TyData>> {
         self.types
             .get_mut(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
@@ -90,19 +97,19 @@ impl ModuleData {
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
             .and_then(|class| {
                 class
-                    .as_class_mut()
+                    .as_own_mut()
                     .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotClass, id))
             })
     }
 
-    fn get_class_mut(&mut self, id: Ident) -> CheckResult<&mut ClassDataImport> {
+    fn get_class_mut(&mut self, id: Ident) -> CheckResult<&mut ImportData<ClassData>> {
         self.classes
             .get_mut(&id.ident)
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
     }
 
-    pub fn insert_type(&mut self, id: Symbol, data: TyData) -> Option<TyData> {
-        self.types.insert(id, data)
+    pub fn insert_type(&mut self, id: Symbol, data: TyData) -> Option<ImportData<TyData>> {
+        self.types.insert(id, ImportData::Own(data))
     }
 
     pub fn insert_val(&mut self, id: Symbol, data: VarData) -> Option<VarData> {
@@ -113,12 +120,16 @@ impl ModuleData {
         self.constructors.insert(id, data)
     }
 
-    pub fn insert_class(&mut self, id: Symbol, data: ClassData) -> Option<ClassDataImport> {
-        self.classes.insert(id, ClassDataImport::Class(data))
+    pub fn insert_class(&mut self, id: Symbol, data: ClassData) -> Option<ImportData<ClassData>> {
+        self.classes.insert(id, ImportData::Own(data))
     }
 
-    pub fn insert_class_import(&mut self, id: Symbol, data: Ident) -> Option<ClassDataImport> {
-        self.classes.insert(id, ClassDataImport::Import(data))
+    fn insert_class_import(&mut self, id: Symbol, data: Ident) -> Option<ImportData<ClassData>> {
+        self.classes.insert(id, ImportData::Import(data))
+    }
+
+    fn insert_type_import(&mut self, id: Symbol, data: Ident) -> Option<ImportData<TyData>> {
+        self.types.insert(id, ImportData::Import(data))
     }
 }
 
@@ -186,7 +197,6 @@ pub trait CtxFmt {
 pub struct TyData {
     params:       Rc<[u64]>,
     constructors: Vec<Constructor<Ty>>,
-    imported:     Option<Ident>,
     span:         Span,
 }
 
@@ -196,15 +206,7 @@ impl TyData {
         Self {
             params,
             constructors,
-            imported: None,
             span,
-        }
-    }
-
-    fn with_import(self, module: Ident) -> Self {
-        Self {
-            imported: Some(module),
-            ..self
         }
     }
 
@@ -323,12 +325,12 @@ impl ClassData {
 }
 
 #[derive(Debug, Clone)]
-pub enum ClassDataImport {
+pub enum ImportData<T> {
     Import(Ident),
-    Class(ClassData),
+    Own(T),
 }
 
-impl ClassDataImport {
+impl<T> ImportData<T> {
     const fn as_import(&self) -> Option<Ident> {
         if let Self::Import(v) = self {
             Some(*v)
@@ -337,16 +339,16 @@ impl ClassDataImport {
         }
     }
 
-    const fn as_class(&self) -> Option<&ClassData> {
-        if let Self::Class(v) = self {
+    const fn as_own(&self) -> Option<&T> {
+        if let Self::Own(v) = self {
             Some(v)
         } else {
             None
         }
     }
 
-    const fn as_class_mut(&mut self) -> Option<&mut ClassData> {
-        if let Self::Class(v) = self {
+    const fn as_own_mut(&mut self) -> Option<&mut T> {
+        if let Self::Own(v) = self {
             Some(v)
         } else {
             None
@@ -486,12 +488,17 @@ impl Ctx {
         self.env.pop()
     }
 
-    fn free_type_variables(&self) -> FxHashSet<u64> {
-        let mut free = FxHashSet::default();
-        for t in self.env.iter().flat_map(FxHashMap::values) {
-            free.extend(t.ty.free_type_variables());
-        }
-        free
+    fn free_type_variables(&self) -> Vec<u64> {
+        self.env
+            .iter()
+            .skip(1)
+            .flat_map(FxHashMap::values)
+            .map(|data| data.ty().free_type_variables())
+            .reduce(|mut acc, v| {
+                acc.extend(v);
+                acc
+            })
+            .unwrap_or_default()
     }
 
     #[must_use]
@@ -533,8 +540,16 @@ impl Ctx {
         if let Some(prev) =
             module.insert_type(name.ident, TyData::new(params, Vec::new(), name.span))
         {
+            let prev = match prev {
+                ImportData::Import(ident) => {
+                    let module = self.get_module(ident).unwrap();
+                    let prev = module.get_ty(name).unwrap().as_own().unwrap();
+                    prev.span
+                }
+                ImportData::Own(prev) => prev.span,
+            };
             Err(CheckError::new(
-                CheckErrorKind::SameNameType(name.ident, prev.span),
+                CheckErrorKind::SameNameType(name.ident, prev),
                 name.span,
             ))
         } else {
@@ -549,7 +564,7 @@ impl Ctx {
     ) -> CheckResult<()> {
         let module = self.current_mut()?;
 
-        let data = module.get_type_mut(name)?;
+        let data = module.get_type_mut(name)?.as_own_mut().unwrap();
 
         if let Ok(prev) = data.find_constructor(ctor.name) {
             Err(CheckError::new(
@@ -570,15 +585,14 @@ impl Ctx {
             }
 
             [ty, id] => {
-                let current = self.current()?;
-                let data = current.get_type(ty)?;
+                let current = self.current_module;
+                let data = self.get_data_from_module(current, ty, ModuleData::get_ty)?;
 
                 data.find_constructor(id).map(|c| &c.ty)
             }
 
             [module, ty, id] => {
-                let module = self.get_module(module)?;
-                let data = module.get_type(ty)?;
+                let data = self.get_data_from_module(module, ty, ModuleData::get_ty)?;
 
                 data.find_constructor(id).map(|c| &c.ty)
             }
@@ -587,6 +601,21 @@ impl Ctx {
                 CheckErrorKind::InvalidPath(id.clone()),
                 id.span(),
             )),
+        }
+    }
+
+    fn get_data_from_module<T, F>(&self, module: Ident, id: Ident, f: F) -> CheckResult<&T>
+    where
+        F: Fn(&ModuleData, Ident) -> CheckResult<&ImportData<T>>,
+    {
+        let data = self.get_from_module(module, id, &f)?;
+        match data {
+            ImportData::Import(module) => Ok(self
+                .get_from_module(*module, id, f)
+                .unwrap()
+                .as_own()
+                .unwrap()),
+            ImportData::Own(ty) => Ok(ty),
         }
     }
 
@@ -606,24 +635,20 @@ impl Ctx {
         f(module, id)
     }
 
-    pub fn get_ty(&self, id: &Path) -> CheckResult<&TyData> {
+    fn get_ty(&self, id: &Path) -> CheckResult<&ImportData<TyData>> {
         let (module, id) = self.get_module_and_ident(id)?;
 
-        self.get_from_module(module, id, ModuleData::get_type)
+        self.get_from_module(module, id, ModuleData::get_ty)
+    }
+
+    pub fn get_ty_data(&self, id: &Path) -> CheckResult<&TyData> {
+        let (module, id) = self.get_module_and_ident(id)?;
+        self.get_data_from_module(module, id, ModuleData::get_ty)
     }
 
     pub fn get_class(&self, name: &Path) -> CheckResult<&ClassData> {
         let (module, id) = self.get_module_and_ident(name)?;
-
-        let class = self.get_from_module(module, id, ModuleData::get_class)?;
-        match class {
-            ClassDataImport::Import(module) => Ok(self
-                .get_from_module(*module, id, ModuleData::get_class)
-                .unwrap()
-                .as_class()
-                .unwrap()),
-            ClassDataImport::Class(class_data) => Ok(class_data),
-        }
+        self.get_data_from_module(module, id, ModuleData::get_class)
     }
 
     pub fn get_class_mut(&mut self, name: &Path) -> CheckResult<&mut ClassData> {
@@ -638,18 +663,18 @@ impl Ctx {
         Ok(self
             .get_from_module_mut(module, id, ModuleData::get_class_mut)
             .unwrap()
-            .as_class_mut()
+            .as_own_mut()
             .unwrap())
     }
 
     #[must_use]
     pub fn get_constructors_for_ty(&self, name: &Path) -> &[Constructor<Ty>] {
-        self.get_ty(name)
+        self.get_ty_data(name)
             .map_or(&[], |data| data.constructors.as_slice())
     }
 
     pub fn get_type_arity(&self, name: &Path) -> CheckResult<usize> {
-        self.get_ty(name).map(|data| data.params.len())
+        self.get_ty_data(name).map(|data| data.params.len())
     }
 
     pub fn insert_class(&mut self, name: Symbol, data: ClassData) -> CheckResult<()> {
@@ -670,34 +695,33 @@ impl Ctx {
 
     pub fn resolve_type_name(&self, name: &Path) -> CheckResult<Path> {
         let (module, ty) = self.get_module_and_ident(name)?;
-        let data = self.get_ty(name)?;
-        let module = data.imported.unwrap_or(module);
+        let data = self.get_from_module(module, ty, ModuleData::get_ty)?;
+        let module = data.as_import().unwrap_or(module);
         Ok(Path::new(smallvec![module, ty]))
     }
 
-    fn import_from_module(&mut self, from: Ident, id: Ident) -> CheckResult<()> {
+    fn import_from_module(&mut self, from: Ident, id: Ident) -> CheckResult<bool> {
         let module_data = self.get_module(from)?;
 
-        if let Ok(data) = module_data.get_type(id).cloned() {
-            if data.imported.is_some() {
-                self.current_mut()?.insert_type(id.ident, data);
-            } else {
-                self.current_mut()?
-                    .insert_type(id.ident, data.with_import(from));
-            }
-            return Ok(());
+        if let Ok(data) = module_data.get_ty(id).cloned() {
+            let from = data.as_import().unwrap_or(from);
+            let new = self
+                .current_mut()?
+                .insert_type_import(id.ident, from)
+                .is_none();
+            return Ok(new);
         }
         if let Ok(data) = module_data.get_class(id).cloned() {
-            if let ClassDataImport::Import(data) = data {
-                self.current_mut()?.insert_class_import(id.ident, data);
-            } else {
-                self.current_mut()?.insert_class_import(id.ident, from);
-            }
-            return Ok(());
+            let from = data.as_import().unwrap_or(from);
+            let new = self
+                .current_mut()?
+                .insert_class_import(id.ident, from)
+                .is_none();
+            return Ok(new);
         }
         if let Ok(data) = module_data.get_val(id).cloned() {
-            self.current_mut()?.insert_val(id.ident, data);
-            return Ok(());
+            let new = self.current_mut()?.insert_val(id.ident, data).is_none();
+            return Ok(new);
         }
 
         let path = Path {
@@ -708,15 +732,21 @@ impl Ctx {
         Err(CheckError::new(CheckErrorKind::InvalidImport(path), span))
     }
 
-    fn import(&mut self, import: Import) -> CheckResult<()> {
+    fn import(&mut self, import: Import) -> (bool, Vec<CheckError>) {
         match import.wildcard {
-            ImportWildcard::Nil => self.import_single(&import.path),
+            ImportWildcard::Nil => match self.import_single(&import.path) {
+                Ok(ok) => (ok, Vec::new()),
+                Err(err) => (false, vec![err]),
+            },
             ImportWildcard::Clause(clause) => {
                 let [module] = *import.path.segments.as_slice() else {
-                    return Err(CheckError::new(
-                        CheckErrorKind::InvalidImport(import.path.clone()),
-                        import.path.span(),
-                    ));
+                    return (
+                        false,
+                        vec![CheckError::new(
+                            CheckErrorKind::InvalidImport(import.path.clone()),
+                            import.path.span(),
+                        )],
+                    );
                 };
                 let clause = clause
                     .into_iter()
@@ -730,11 +760,14 @@ impl Ctx {
                 let clause = ImportClause(clause);
                 self.import_clause(clause)
             }
-            ImportWildcard::Wildcard => self.import_wildcard(&import.path),
+            ImportWildcard::Wildcard => match self.import_wildcard(&import.path) {
+                Ok(ok) => (ok, Vec::new()),
+                Err(err) => (false, vec![err]),
+            },
         }
     }
 
-    fn import_wildcard(&mut self, path: &Path) -> CheckResult<()> {
+    fn import_wildcard(&mut self, path: &Path) -> CheckResult<bool> {
         match *path.segments.as_slice() {
             [module] => {
                 let module_data = self.get_module(module)?;
@@ -742,19 +775,16 @@ impl Ctx {
                 let classes = module_data
                     .classes
                     .iter()
-                    .map(|(&id, data)| match *data {
-                        ClassDataImport::Import(ident) => (id, ClassDataImport::Import(ident)),
-                        ClassDataImport::Class(_) => (id, ClassDataImport::Import(module)),
+                    .map(|(&id, data)| {
+                        let data = ImportData::Import(data.as_import().unwrap_or(module));
+                        (id, data)
                     })
                     .collect::<Vec<_>>();
                 let types = module_data
                     .types
                     .iter()
                     .map(|(&id, data)| {
-                        let data = TyData {
-                            imported: data.imported.or(Some(module)),
-                            ..data.clone()
-                        };
+                        let data = ImportData::Import(data.as_import().unwrap_or(module));
                         (id, data)
                     })
                     .collect::<Vec<_>>();
@@ -763,16 +793,31 @@ impl Ctx {
 
                 let module = self.current_mut()?;
 
-                module.vals.extend(vals);
-                module.types.extend(types);
-                module.classes.extend(classes);
-                module.constructors.extend(constructors);
+                let res = vals
+                    .into_iter()
+                    .map(|(k, v)| module.vals.insert(k, v).is_none())
+                    .chain(
+                        types
+                            .into_iter()
+                            .map(|(k, v)| module.types.insert(k, v).is_none()),
+                    )
+                    .chain(
+                        classes
+                            .into_iter()
+                            .map(|(k, v)| module.classes.insert(k, v).is_none()),
+                    )
+                    .chain(
+                        constructors
+                            .into_iter()
+                            .map(|(k, v)| module.constructors.insert(k, v).is_none()),
+                    )
+                    .reduce(BitOr::bitor)
+                    .unwrap_or(false);
 
-                Ok(())
+                Ok(res)
             }
-            [module, ty] => {
-                let module_data = self.get_module(module)?;
-                let ty_data = module_data.get_type(ty)?;
+            _ => {
+                let ty_data = self.get_ty_data(path)?;
                 let constructors: Vec<_> = ty_data
                     .constructors
                     .iter()
@@ -780,47 +825,48 @@ impl Ctx {
                     .collect();
 
                 let cur = self.current_mut()?;
-                for (ctor, ty, span) in constructors {
-                    cur.insert_constructor(
-                        ctor.ident,
-                        VarData::new(ty, ClassConstraintSet::new(), span),
-                    );
-                }
 
-                Ok(())
+                let res = constructors
+                    .into_iter()
+                    .map(|(ctor, ty, span)| {
+                        cur.insert_constructor(
+                            ctor.ident,
+                            VarData::new(ty, ClassConstraintSet::new(), span),
+                        )
+                        .is_none()
+                    })
+                    .reduce(BitOr::bitor)
+                    .unwrap_or(false);
+
+                Ok(res)
             }
-            _ => Err(CheckError::new(
-                CheckErrorKind::InvalidImport(path.clone()),
-                path.span(),
-            )),
         }
     }
 
-    pub fn import_clause(&mut self, import_clause: ImportClause) -> CheckResult<()> {
-        let mut res = Ok(());
+    pub fn import_clause(&mut self, import_clause: ImportClause) -> (bool, Vec<CheckError>) {
+        let mut errors = Vec::new();
+        let mut res = false;
         for import in import_clause {
-            res = self.import(import).and(res);
+            let (changed, err) = self.import(import);
+            res |= changed;
+            errors.extend(err);
         }
-        res
+        (res, errors)
     }
 
-    fn import_single(&mut self, path: &Path) -> CheckResult<()> {
+    fn import_single(&mut self, path: &Path) -> CheckResult<bool> {
         match *path.segments.as_slice() {
             [module, id] => self.import_from_module(module, id),
 
             [module, ty, ctor] => {
-                let module_data = self.get_module(module)?;
-                let data = module_data.get_type(ty).and_then(|ty| match ty.imported {
-                    Some(_) => Err(CheckError::new(
-                        CheckErrorKind::InvalidImport(path.clone()),
-                        path.span(),
-                    )),
-                    None => Ok(ty),
-                })?;
+                let data = self.get_data_from_module(module, ty, ModuleData::get_ty)?;
                 let data = data.find_constructor(ctor)?;
                 let data = VarData::new(data.ty.clone(), ClassConstraintSet::new(), path.span());
-                self.current_mut()?.insert_constructor(ctor.ident, data);
-                Ok(())
+                let new = self
+                    .current_mut()?
+                    .insert_constructor(ctor.ident, data)
+                    .is_none();
+                Ok(new)
             }
 
             _ => Err(CheckError::new(
@@ -830,7 +876,7 @@ impl Ctx {
         }
     }
 
-    pub fn import_prelude(&mut self) -> CheckResult<()> {
+    pub fn import_prelude(&mut self) -> CheckResult<bool> {
         self.import_wildcard(&mod_path!(prelude))
     }
 
@@ -843,7 +889,7 @@ impl Ctx {
         let class_data = self
             .current_mut()?
             .get_class_mut(class)?
-            .as_class_mut()
+            .as_own_mut()
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotClass, class))?;
 
         let span = data.span;
@@ -908,7 +954,7 @@ impl Ctx {
             return Box::default();
         };
 
-        let mut data = self.get_ty(name).cloned().unwrap_or_default();
+        let mut data = self.get_ty_data(name).cloned().unwrap_or_default();
 
         let subs = data
             .params
@@ -1060,6 +1106,10 @@ impl Substitute for Ctx {
     where
         S: FnMut(&Ty) -> Option<Ty>,
     {
+        // We can skip the first scope
+        // because you do not access type
+        // variables from these binds
+        // due to instantiation
         for env in &mut self.env[1..] {
             for t in env.values_mut() {
                 t.substitute(subs);
@@ -1193,10 +1243,10 @@ impl Display for ModuleData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (id, class) in &self.classes {
             match class {
-                ClassDataImport::Import(import) => {
+                ImportData::Import(import) => {
                     writeln!(f, "  import {import}::{id}")?;
                 }
-                ClassDataImport::Class(class) => {
+                ImportData::Own(class) => {
                     let mut chars = TyVarFormatter {
                         vars:  FxHashMap::default(),
                         chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
@@ -1226,25 +1276,28 @@ impl Display for ModuleData {
         }
 
         for (id, ty) in &self.types {
-            if let Some(import) = ty.imported {
-                writeln!(f, "  import {import}::{id}")?;
-            } else {
-                let mut chars = TyVarFormatter {
-                    vars:  FxHashMap::default(),
-                    chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
-                };
-                write!(f, "  type {id}")?;
-                for p in ty.params() {
-                    write!(f, " '{}", chars.get(*p))?;
+            match ty {
+                ImportData::Import(import) => {
+                    writeln!(f, "  import {import}::{id}")?;
                 }
-                writeln!(f, " =")?;
-                for c in ty.constructors() {
-                    write!(f, "    | {}", c.name)?;
-                    for p in &c.params {
-                        write!(f, " ")?;
-                        p.fmt_var(f, &mut chars)?;
+                ImportData::Own(ty) => {
+                    let mut chars = TyVarFormatter {
+                        vars:  FxHashMap::default(),
+                        chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
+                    };
+                    write!(f, "  type {id}")?;
+                    for p in ty.params() {
+                        write!(f, " '{}", chars.get(*p))?;
                     }
-                    writeln!(f)?;
+                    writeln!(f, " =")?;
+                    for c in ty.constructors() {
+                        write!(f, "    | {}", c.name)?;
+                        for p in &c.params {
+                            write!(f, " ")?;
+                            p.fmt_var(f, &mut chars)?;
+                        }
+                        writeln!(f)?;
+                    }
                 }
             }
         }

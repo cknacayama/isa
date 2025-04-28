@@ -59,7 +59,6 @@ class {Eq a} => Cmp a =
 class {Cmp a, Add a, Sub a, Mul a, Div a, Neg a} => 
     Number a = val from_int: int -> a;
 
-
 operator {a, Add a} => (+): a -> a -> a; 
 operator {a, Sub a} => (-): a -> a -> a; 
 operator {a, Mul a} => (*): a -> a -> a; 

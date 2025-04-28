@@ -52,6 +52,8 @@ pub enum TokenKind {
     Colon,
     ColonColon,
 
+    Backslash,
+
     Integer(i64),
     Ident(Symbol),
     Operator(Symbol),
@@ -65,7 +67,6 @@ pub enum TokenKind {
     KwLet,
     KwVal,
     KwIn,
-    KwFn,
     KwModule,
     KwClass,
     KwInstance,
@@ -86,19 +87,19 @@ impl TokenKind {
     #[must_use]
     pub fn keyword(s: &str) -> Self {
         match s {
+            "_" => Self::Underscore,
+            "let" => Self::KwLet,
+            "val" => Self::KwVal,
+            "if" => Self::KwIf,
+            "then" => Self::KwThen,
             "true" => Self::KwTrue,
             "false" => Self::KwFalse,
             "type" => Self::KwType,
             "alias" => Self::KwAlias,
-            "let" => Self::KwLet,
-            "val" => Self::KwVal,
             "class" => Self::KwClass,
             "instance" => Self::KwInstance,
             "operator" => Self::KwOperator,
-            "fn" => Self::KwFn,
             "match" => Self::KwMatch,
-            "if" => Self::KwIf,
-            "then" => Self::KwThen,
             "else" => Self::KwElse,
             "in" => Self::KwIn,
             "with" => Self::KwWith,
@@ -106,7 +107,6 @@ impl TokenKind {
             "int" => Self::KwInt,
             "bool" => Self::KwBool,
             "char" => Self::KwChar,
-            "_" => Self::Underscore,
             _ => Self::Ident(symbol!(s)),
         }
     }
@@ -168,6 +168,7 @@ impl Display for TokenKind {
             Self::Eq => write!(f, "="),
             Self::Arrow => write!(f, "->"),
             Self::Rocket => write!(f, "=>"),
+            Self::Backslash => write!(f, "\\"),
             Self::Integer(v) => write!(f, "{v}"),
             Self::Ident(v) | Self::Operator(v) => write!(f, "{v}"),
             Self::Char(v) => write!(f, "{:?}", *v as char),
@@ -181,7 +182,6 @@ impl Display for TokenKind {
             Self::KwClass => write!(f, "class"),
             Self::KwInstance => write!(f, "instance"),
             Self::KwOperator => write!(f, "operator"),
-            Self::KwFn => write!(f, "fn"),
             Self::KwModule => write!(f, "module"),
             Self::KwInt => write!(f, "int"),
             Self::KwBool => write!(f, "bool"),

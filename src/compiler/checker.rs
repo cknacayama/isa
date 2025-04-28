@@ -104,7 +104,7 @@ impl Checker {
             }
             Ty::Scheme { ty, .. } => self.check_valid_type(ty),
             Ty::Named { name, args } => {
-                self.ctx.get_ty(name)?;
+                self.ctx.get_ty_data(name)?;
                 args.iter().try_for_each(|ty| self.check_valid_type(ty))
             }
 
@@ -1233,25 +1233,14 @@ impl Checker {
         ty.instantiate(&mut self.generator)
     }
 
-    fn check_module_types(
-        &mut self,
-        module: &mut UntypedModule,
-    ) -> IsaResult<Vec<(Path, AliasData)>> {
+    fn check_module_types(&mut self, module: &mut UntypedModule) -> IsaResult<()> {
         self.ctx.create_module(module.name);
         let mut declared = FxHashMap::default();
         for expr in &mut module.stmts {
             self.check_type_declaration(expr, &mut declared)?;
         }
 
-        if declared.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        module
-            .stmts
-            .iter()
-            .filter_map(|expr| self.check_alias_declaration(expr))
-            .collect()
+        Ok(())
     }
 
     fn check_type_declaration(
@@ -1422,29 +1411,26 @@ impl Checker {
         })
     }
 
-    fn check_alias_declaration(&self, expr: &UntypedStmt) -> Option<IsaResult<(Path, AliasData)>> {
+    fn check_alias_declaration(
+        &self,
+        module: Ident,
+        expr: &UntypedStmt,
+    ) -> Option<IsaResult<(Path, AliasData)>> {
         match &expr.kind {
             StmtKind::Alias {
                 name,
                 parameters,
                 ty,
-            } => {
-                let mut vars = Vec::new();
-
-                for param in parameters {
-                    let id = param.as_var().unwrap();
-                    vars.push(id);
-                }
-
-                let module = self.ctx.current_module();
-
-                Some(self.check_valid_type(ty).map(|()| {
-                    (
-                        Path::new(smallvec![module, *name]),
-                        AliasData::new(vars.into(), ty.clone()),
-                    )
-                }))
-            }
+            } => Some(self.check_valid_type(ty).map(|()| {
+                let vars = parameters
+                    .iter()
+                    .map(|param| param.as_var().unwrap())
+                    .collect();
+                (
+                    Path::new(smallvec![module, *name]),
+                    AliasData::new(vars, ty.clone()),
+                )
+            })),
 
             _ => None,
         }
@@ -1523,57 +1509,74 @@ impl Checker {
         }
     }
 
+    fn early_resolve_imports(&mut self, modules: &mut [UntypedModule]) -> Vec<CheckError> {
+        loop {
+            let mut errors = Vec::new();
+            let mut changed = false;
+            for module in modules.iter_mut() {
+                self.ctx.set_current_module(module.name);
+                let (cur, err) = self.ctx.import_clause(module.imports.clone());
+                changed |= cur;
+                errors.extend(err);
+                if !module.no_prelude {
+                    match self.ctx.import_prelude() {
+                        Ok(ok) => changed |= ok,
+                        Err(err) => errors.push(err),
+                    }
+                }
+            }
+            if !changed {
+                break errors;
+            }
+        }
+    }
+
     pub fn check_many_modules(
         &mut self,
         mut modules: Vec<UntypedModule>,
     ) -> IsaResult<(Vec<Module<Ty>>, Set)> {
-        let mut aliases = Vec::new();
+        for module in &mut modules {
+            self.check_module_types(module)?;
+        }
 
-        for types in modules
-            .iter_mut()
-            .map(|module| self.check_module_types(module))
-        {
-            aliases.extend(types?);
+        self.early_resolve_imports(&mut modules);
+
+        let mut subs = |ty: &Ty| match ty {
+            Ty::Named { name, args } => {
+                let name = self.ctx.resolve_type_name(name).ok()?;
+                Some(Ty::Named {
+                    name,
+                    args: args.clone(),
+                })
+            }
+            _ => None,
+        };
+
+        let mut aliases = Vec::new();
+        for module in &mut modules {
+            for stmt in &mut module.stmts {
+                stmt.substitute(&mut subs);
+                if let Some(alias) = self.check_alias_declaration(module.name, stmt) {
+                    aliases.push(alias?);
+                }
+            }
         }
 
         let mut decl = Vec::new();
         let mut set = Set::new();
 
         for module in &mut modules {
-            if !aliases.is_empty() {
-                todo!()
-            }
             self.ctx.set_current_module(module.name);
-            let _ = self.ctx.import_clause(module.imports.clone());
-            if !module.no_prelude {
-                let _ = self.ctx.import_prelude();
-            }
-
-            let mut subs = |ty: &Ty| match ty {
-                Ty::Named { name, args } => {
-                    let name = self.ctx.resolve_type_name(name).ok()?;
-                    Some(Ty::Named {
-                        name,
-                        args: args.clone(),
-                    })
-                }
-                _ => None,
-            };
-
-            let extracted = module
-                .stmts
-                .extract_if(.., |e| {
-                    e.substitute(&mut subs);
-                    e.kind.is_type_or_val_or_op()
-                })
-                .collect::<Vec<_>>();
 
             for stmt in &mut module.stmts {
                 self.check_for_class_signatures(stmt)?;
             }
 
             let mut stmts = Vec::new();
-            for stmt in extracted {
+            for stmt in module
+                .stmts
+                .extract_if(.., |e| e.kind.is_type_or_val_or_op())
+            {
                 let (stmt, stmt_set) = self.check_stmt(stmt)?;
                 stmts.push(stmt);
                 set.extend(stmt_set);
@@ -1582,12 +1585,9 @@ impl Checker {
             decl.push(stmts);
         }
 
-        for module in &mut modules {
-            self.ctx.set_current_module(module.name);
-            let _ = self.ctx.import_clause(module.imports.clone());
-            if !module.no_prelude {
-                let _ = self.ctx.import_prelude();
-            }
+        let mut errs = self.early_resolve_imports(&mut modules);
+        if let Some(err) = errs.pop() {
+            return Err(IsaError::from(err));
         }
 
         let modules = modules
@@ -1609,10 +1609,6 @@ impl Checker {
         self.ctx.push_scope();
 
         self.ctx.set_current_module(module.name);
-        self.ctx.import_clause(module.imports.clone())?;
-        if !module.no_prelude {
-            let _ = self.ctx.import_prelude();
-        }
 
         let mut stmts = Vec::new();
         let mut set = Set::new();

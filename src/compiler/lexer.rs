@@ -189,6 +189,7 @@ impl<'a> Lexer<'a> {
             '{' => token!(LBrace),
             '}' => token!(RBrace),
             ',' => token!(Comma),
+            '\\' => token!(Backslash),
             ';' => token!(Semicolon),
             ':' => token!(Colon, ':' => ColonColon),
             '0'..='9' => Some(Ok(self.number())),

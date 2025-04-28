@@ -5,16 +5,16 @@ use smallvec::smallvec;
 
 use super::ast::{
     Associativity, Constructor, Expr, ExprKind, Import, ImportClause, ImportWildcard, ListPat,
-    OpDeclaration, Operator, OperatorTable, PatKind, Path, RangePat, StmtKind, UntypedConstructor,
-    UntypedExpr, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat,
-    UntypedStmt, ValDeclaration,
+    OpDeclaration, Operator, OperatorTable, Pat, PatKind, Path, RangePat, StmtKind,
+    UntypedConstructor, UntypedExpr, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
+    UntypedPat, UntypedStmt, ValDeclaration,
 };
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};
 use super::lexer::Lexer;
 use super::token::{Ident, Token, TokenKind};
 use super::types::Ty;
-use crate::global::Symbol;
+use crate::global::{Symbol, symbol};
 use crate::span::{Span, Spanned};
 
 pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
@@ -194,7 +194,7 @@ impl<'a> Parser<'a> {
 
     /// parses one module
     fn parse_module(&mut self) -> ParseResult<UntypedModule> {
-        let mut span = self.expect(TokenKind::KwModule)?;
+        let span = self.expect(TokenKind::KwModule)?;
         let no_prelude = self.next_if_match(TokenKind::At).is_some();
         let name = self.expect_id()?;
 
@@ -204,18 +204,19 @@ impl<'a> Parser<'a> {
             ImportClause::default()
         };
 
-        let mut exprs = vec![self.parse_stmt()?];
+        let mut stmts = vec![self.parse_stmt()?];
 
         while !self.check(TokenKind::KwModule) {
             let Some(expr) = self.parse() else { break };
-            exprs.push(expr?);
+            stmts.push(expr?);
         }
 
-        if let [.., expr] = exprs.as_slice() {
-            span = span.union(expr.span);
-        }
+        let [.., stmt] = stmts.as_slice() else {
+            unreachable!()
+        };
+        let span = span.union(stmt.span);
 
-        Ok(UntypedModule::new(no_prelude, name, imports, exprs, span))
+        Ok(UntypedModule::new(no_prelude, name, imports, stmts, span))
     }
 
     pub fn parse_all(&mut self) -> ParseResult<Vec<UntypedModule>> {
@@ -629,7 +630,7 @@ impl<'a> Parser<'a> {
 
         match data {
             TokenKind::KwLet => self.parse_let(),
-            TokenKind::KwFn => self.parse_fn(),
+            TokenKind::Backslash => self.parse_fn(),
             TokenKind::KwIf => self.parse_if(),
             TokenKind::KwMatch => self.parse_match(),
             TokenKind::LBracket => self.parse_list(),
@@ -686,9 +687,10 @@ impl<'a> Parser<'a> {
         let span = span.union(self.expect(TokenKind::RParen)?);
 
         if exprs.len() == 1 {
-            let mut expr = exprs.pop().unwrap();
-            expr.span = span;
-            Ok(expr)
+            Ok(Expr {
+                span,
+                ..exprs.pop().unwrap()
+            })
         } else {
             Ok(UntypedExpr::untyped(
                 ExprKind::Tuple(exprs.into_boxed_slice()),
@@ -948,7 +950,7 @@ impl<'a> Parser<'a> {
     fn try_parse_integer(&mut self) -> Option<ParseResult<Spanned<i64>>> {
         if let Some(span) = self.next_if_map(|tk| {
             tk.data.as_operator().and_then(|op| {
-                if op == crate::global::intern_symbol("-") {
+                if op == symbol!("-") {
                     Some(tk.span)
                 } else {
                     None
@@ -1097,9 +1099,10 @@ impl<'a> Parser<'a> {
                 let span = span.union(self.expect(TokenKind::RParen)?);
 
                 if pats.len() == 1 {
-                    let mut pat = pats.pop().unwrap();
-                    pat.span = span;
-                    Ok(pat)
+                    Ok(Pat {
+                        span,
+                        ..pats.pop().unwrap()
+                    })
                 } else {
                     Ok(UntypedPat::untyped(
                         PatKind::Tuple(pats.into_boxed_slice()),
@@ -1140,14 +1143,14 @@ impl<'a> Parser<'a> {
         }
 
         let head = self.parse_pat()?;
-        let mut span = span.union(self.expect(TokenKind::RBracket)?);
+        let span = span.union(self.expect(TokenKind::RBracket)?);
 
-        let kind = if self.peek_and(|tk| tk.can_start_pat())? {
+        let (kind, span) = if self.peek_and(|tk| tk.can_start_pat())? {
             let rest = self.parse_pat()?;
-            span = span.union(rest.span);
-            ListPat::Cons(Box::new(head), Box::new(rest))
+            let span = span.union(rest.span);
+            (ListPat::Cons(Box::new(head), Box::new(rest)), span)
         } else {
-            ListPat::Single(Box::new(head))
+            (ListPat::Single(Box::new(head)), span)
         };
 
         Ok(UntypedPat::untyped(PatKind::List(kind), span))
@@ -1198,7 +1201,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_let_bind(&mut self) -> ParseResult<Spanned<UntypedLetBind>> {
-        let mut span = self.expect(TokenKind::KwLet)?;
+        let span = self.expect(TokenKind::KwLet)?;
         let name = self.expect_id()?;
 
         let mut parametes = Vec::new();
@@ -1209,7 +1212,7 @@ impl<'a> Parser<'a> {
         }
         self.expect(TokenKind::Eq)?;
         let expr = self.parse_expr()?;
-        span = span.union(expr.span);
+        let span = span.union(expr.span);
 
         Ok(Spanned::new(
             UntypedLetBind::new(name, parametes.into_boxed_slice(), expr),
@@ -1240,7 +1243,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_fn(&mut self) -> ParseResult<UntypedExpr> {
-        let span = self.expect(TokenKind::KwFn)?;
+        let span = self.expect(TokenKind::Backslash)?;
         let pat = self.parse_type_pat()?;
 
         self.expect(TokenKind::Arrow)?;
