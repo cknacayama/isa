@@ -328,9 +328,13 @@ pub enum PatKind<T> {
 
     Int(i64),
 
+    Real(f64),
+
     Char(u8),
 
     IntRange(RangePat<i64>),
+
+    RealRange(RangePat<f64>),
 
     CharRange(RangePat<u8>),
 
@@ -522,6 +526,8 @@ pub enum StmtKind<T> {
 #[derive(Debug, Clone)]
 pub enum ExprKind<T> {
     Int(i64),
+
+    Real(f64),
 
     Bool(bool),
 
@@ -810,6 +816,7 @@ impl Substitute for Expr<Ty> {
 
             ExprKind::Operator(_)
             | ExprKind::Int(_)
+            | ExprKind::Real(_)
             | ExprKind::Bool(_)
             | ExprKind::Char(_)
             | ExprKind::Path(_) => (),
@@ -871,9 +878,11 @@ impl Substitute for Pat<Ty> {
             | PatKind::Int(_)
             | PatKind::Bool(_)
             | PatKind::Ident(_)
+            | PatKind::Real(_)
             | PatKind::Char(_)
             | PatKind::IntRange(_)
-            | PatKind::CharRange(_) => (),
+            | PatKind::CharRange(_)
+            | PatKind::RealRange(_) => (),
         }
         self.ty.substitute(subs);
     }

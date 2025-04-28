@@ -319,8 +319,8 @@ fn unify_eq(
     let span = c.span;
     match (&c.lhs, &c.rhs) {
         (
-            lhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Char | Ty::Var(_)),
-            rhs @ (Ty::Int | Ty::Bool | Ty::Unit | Ty::Char | Ty::Var(_)),
+            lhs @ (Ty::Int | Ty::Bool | Ty::Char | Ty::Real | Ty::Var(_)),
+            rhs @ (Ty::Int | Ty::Bool | Ty::Char | Ty::Real | Ty::Var(_)),
         ) if lhs == rhs => {}
         (new, Ty::Var(old)) | (Ty::Var(old), new) if !new.occurs(*old) => {
             let s = Subs::new(*old, new.clone());

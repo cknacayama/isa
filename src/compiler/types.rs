@@ -8,10 +8,10 @@ use crate::span::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
-    Unit,
     Int,
     Bool,
     Char,
+    Real,
     Var(u64),
     Tuple(Rc<[Ty]>),
     Fn { param: Rc<Ty>, ret: Rc<Ty> },
@@ -42,7 +42,7 @@ impl Ty {
             Self::Tuple(args) | Self::Named { args, .. } => args.iter().any(|t| t.occurs(var)),
             Self::Generic { var: n, args } => *n == var || args.iter().any(|t| t.occurs(var)),
 
-            Self::Unit | Self::Int | Self::Char | Self::Bool => false,
+            Self::Int | Self::Char | Self::Bool | Self::Real => false,
         }
     }
 
@@ -62,7 +62,7 @@ impl Ty {
                 args.iter().find_map(|t| t.contains_name(path))
             }
 
-            Self::Unit | Self::Int | Self::Char | Self::Bool | Self::Var(_) => None,
+            Self::Int | Self::Char | Self::Bool | Self::Real | Self::Var(_) => None,
         }
     }
 
@@ -142,10 +142,10 @@ impl Ty {
             self,
             Self::Generic { .. }
                 | Self::Named { .. }
-                | Self::Unit
                 | Self::Int
                 | Self::Bool
                 | Self::Char
+                | Self::Real
                 | Self::Var(_)
                 | Self::Tuple(_)
         )
@@ -170,7 +170,7 @@ impl Ty {
 
     fn free_type_variables_inner(&self, free: &mut Vec<u64>) {
         match self {
-            Self::Unit | Self::Int | Self::Bool | Self::Char => (),
+            Self::Int | Self::Bool | Self::Char | Self::Real => (),
             Self::Named { args, .. } if args.is_empty() => (),
             Self::Var(id) if free.contains(id) => (),
 
@@ -252,7 +252,7 @@ impl Substitute for Ty {
                 }
             }
 
-            Self::Unit | Self::Int | Self::Bool | Self::Char | Self::Var(_) => (),
+            Self::Int | Self::Bool | Self::Char | Self::Real | Self::Var(_) => (),
         }
 
         if let Some(ty) = subs(self) {
@@ -340,7 +340,7 @@ impl Substitute for Rc<Ty> {
                 };
                 Ty::Tuple(args)
             }
-            Ty::Unit | Ty::Int | Ty::Bool | Ty::Char | Ty::Var(_) => {
+            Ty::Int | Ty::Bool | Ty::Char | Ty::Real | Ty::Var(_) => {
                 if let Some(new) = subs(self) {
                     *self = Self::new(new);
                 }

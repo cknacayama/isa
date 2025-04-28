@@ -60,13 +60,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn check_next<P>(&self, pred: P) -> bool
-    where
-        P: FnOnce(char) -> bool,
-    {
-        self.peek_next().is_some_and(pred)
-    }
-
     fn eat_while<P>(&mut self, mut pred: P)
     where
         P: FnMut(char) -> bool,
@@ -95,7 +88,7 @@ impl<'a> Lexer<'a> {
     fn skip_whitespace(&mut self) {
         while let Some(c) = self.peek() {
             match c {
-                '/' if self.check_next(|c| c == '/') => {
+                '/' if self.peek_next().is_some_and(|c| c == '/') => {
                     self.bump_twice();
                     self.eat_while(|c| c != '\n');
                 }
@@ -109,8 +102,18 @@ impl<'a> Lexer<'a> {
 
     fn number(&mut self) -> Token {
         self.eat_while(|c| c.is_ascii_digit());
-        let s = &self.input[self.start..self.cur];
-        self.make_token(TokenKind::Integer(s.parse().unwrap()))
+
+        if self.peek().is_some_and(|c| c == '.')
+            && self.peek_next().is_some_and(|c| c.is_ascii_digit())
+        {
+            self.bump_twice();
+            self.eat_while(|c| c.is_ascii_digit());
+            let s = &self.input[self.start..self.cur];
+            self.make_token(TokenKind::Real(s.parse().unwrap()))
+        } else {
+            let s = &self.input[self.start..self.cur];
+            self.make_token(TokenKind::Integer(s.parse().unwrap()))
+        }
     }
 
     fn character(&mut self) -> LexResult<Token> {

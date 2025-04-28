@@ -57,7 +57,10 @@ class {Eq a} => Cmp a =
 ;
 
 class {Cmp a, Add a, Sub a, Mul a, Div a, Neg a} => 
-    Number a = val from_int: int -> a;
+    Number a = 
+        val from_int: int -> a,
+        val from_real: real -> a,
+;
 
 operator {a, Add a} => (+): a -> a -> a; 
 operator {a, Sub a} => (-): a -> a -> a; 
@@ -82,3 +85,11 @@ operator {a, b} => ($): (a -> b) -> a -> b;
 operator {a, b, c} => (.): (b -> c) -> (a -> b) -> a -> c;
 operator {a, Neg a} => {-}: a -> a;
 operator {a, Not a} => {!}: a -> bool;
+
+instance Eq Ordering =
+    let eq a b = match (a,b) with
+        (Ordering::Less, Ordering::Less) 
+        | (Ordering::Equal, Ordering::Equal) 
+        | (Ordering::Greater, Ordering::Greater) -> true,
+        _ -> false,
+;

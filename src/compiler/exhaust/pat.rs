@@ -24,7 +24,8 @@ impl CtxFmt for &WitnessPat {
             | Ctor::Wildcard
             | Ctor::NonExhaustive
             | Ctor::Bool(_)
-            | Ctor::IntRange(_) => true,
+            | Ctor::IntRange(_)
+            | Ctor::RealRange(_) => true,
 
             Ctor::Type(_) => self.fields.is_empty(),
             Ctor::Or => false,

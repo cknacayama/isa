@@ -1,15 +1,17 @@
+use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroUsize;
 
 use crate::compiler::ctx::{Ctx as TypeCtx, CtxFmt};
 use crate::compiler::types::Ty;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum Ctor {
     Single,
     Type(usize),
     Bool(bool),
     IntRange(IntRange),
+    RealRange(RealRange),
     Missing,
     Or,
     Wildcard,
@@ -24,6 +26,14 @@ impl Ctor {
             (Self::Bool(self_b), Self::Bool(other_b)) => self_b == other_b,
             (Self::IntRange(self_range), Self::IntRange(other_range)) => {
                 self_range.is_subrange(other_range)
+            }
+            (Self::RealRange(self_range), Self::RealRange(other_range)) => {
+                self_range.lo >= other_range.lo
+                    && match self_range.hi.partial_cmp(&other_range.hi) {
+                        Some(Ordering::Less) => true,
+                        Some(Ordering::Equal) => self_range.inclusive == other_range.inclusive,
+                        _ => false,
+                    }
             }
             _ => false,
         }
@@ -104,6 +114,7 @@ impl Ctor {
                     .unwrap(),
             )?,
             Self::IntRange(range) => write!(f, "{range}")?,
+            Self::RealRange(range) => write!(f, "{range}")?,
             Self::Or => {
                 for pat in fields {
                     write!(f, "{}", start_or_continue(" | "))?;
@@ -230,6 +241,31 @@ impl IntRange {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RealRange {
+    pub lo:        f64,
+    pub hi:        f64,
+    pub inclusive: bool,
+}
+
+impl RealRange {
+    pub fn inclusive(lo: f64, hi: f64) -> Self {
+        Self {
+            lo,
+            hi,
+            inclusive: true,
+        }
+    }
+
+    pub fn exclusive(lo: f64, hi: f64) -> Self {
+        Self {
+            lo,
+            hi,
+            inclusive: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CtorSet {
     Single,
@@ -332,6 +368,19 @@ impl fmt::Display for IntRange {
         if let Some(hi) = self.hi.as_finite() {
             write!(f, "{hi}")?;
         }
+
+        Ok(())
+    }
+}
+
+impl fmt::Display for RealRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.lo)?;
+        write!(f, "..")?;
+        if !self.inclusive {
+            write!(f, "=")?;
+        }
+        write!(f, "{}", self.hi)?;
 
         Ok(())
     }

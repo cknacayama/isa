@@ -11,7 +11,7 @@ use crate::global::Symbol;
 use crate::span::Span;
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum LexError {
     InvalidChar(char),
     UnterminatedChar,
@@ -33,7 +33,7 @@ impl Display for LexError {
 impl std::error::Error for LexError {
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum ParseError {
     LexError(LexError),
     UnexpectedEof,

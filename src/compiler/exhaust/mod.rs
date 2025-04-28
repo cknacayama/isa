@@ -3,7 +3,7 @@ pub mod pat;
 
 use std::num::NonZeroUsize;
 
-use ctor::{Ctor, CtorSet, IntRange, MaybeInfinite};
+use ctor::{Ctor, CtorSet, IntRange, MaybeInfinite, RealRange};
 use pat::{PatMatrix, PatMatrixRow, PatOrWild, PatVector, Pattern, WitnessPat};
 
 use super::ast::{
@@ -26,7 +26,7 @@ impl<'a> Ctx<'a> {
 
     fn ctors_for_ty(&self, ty: &Ty) -> CtorSet {
         match ty {
-            Ty::Tuple(_) | Ty::Unit => CtorSet::Single,
+            Ty::Tuple(_) => CtorSet::Single,
             Ty::Int => CtorSet::Integers(IntRange::infinite()),
             Ty::Bool => CtorSet::Bool,
             Ty::Char => CtorSet::Integers(IntRange::character()),
@@ -36,7 +36,7 @@ impl<'a> Ctx<'a> {
                 let variants = NonZeroUsize::new(variants).unwrap();
                 CtorSet::Type { variants }
             }
-            Ty::Fn { .. } | Ty::Var(_) | Ty::Generic { .. } => CtorSet::Unlistable,
+            Ty::Real | Ty::Fn { .. } | Ty::Var(_) | Ty::Generic { .. } => CtorSet::Unlistable,
         }
     }
 
@@ -133,6 +133,9 @@ impl Pattern {
                 Ctor::IntRange(IntRange::from_singleton(MaybeInfinite::Finite(*i))),
                 Vec::new(),
             ),
+            PatKind::Real(i) => {
+                Self::new(Ctor::RealRange(RealRange::inclusive(*i, *i)), Vec::new())
+            }
             PatKind::Char(c) => Self::new(
                 Ctor::IntRange(IntRange::from_singleton(MaybeInfinite::Finite(i64::from(
                     *c,
@@ -164,10 +167,26 @@ impl Pattern {
                 Ctor::IntRange(IntRange::from_int_range_pat(*int_range_pat)),
                 Vec::new(),
             ),
+            PatKind::RealRange(range) => Self::new(
+                Ctor::RealRange(RealRange::from_range_pat(*range)),
+                Vec::new(),
+            ),
             PatKind::CharRange(char_range_pat) => Self::new(
                 Ctor::IntRange(IntRange::from_char_range_pat(*char_range_pat)),
                 Vec::new(),
             ),
+        }
+    }
+}
+
+impl RealRange {
+    fn from_range_pat(range: RangePat<f64>) -> Self {
+        match range {
+            RangePat::From(lo) => Self::exclusive(lo, f64::INFINITY),
+            RangePat::To(hi) => Self::exclusive(f64::NEG_INFINITY, hi),
+            RangePat::ToInclusive(hi) => Self::inclusive(f64::NEG_INFINITY, hi),
+            RangePat::Exclusive(lo, hi) => Self::exclusive(lo, hi),
+            RangePat::Inclusive(lo, hi) => Self::inclusive(lo, hi),
         }
     }
 }
@@ -315,6 +334,7 @@ impl TypeCtx {
 
             ExprKind::Operator(_)
             | ExprKind::Int(_)
+            | ExprKind::Real(_)
             | ExprKind::Bool(_)
             | ExprKind::Char(_)
             | ExprKind::Path(_) => (),

@@ -6,6 +6,9 @@ module @prelude with {
     list::_,
 }
 
+val real_to_int: real -> int;
+val int_to_real: int -> real;
+
 val {a,b} => const: a -> b -> a;
 let const a _ = a;
 
@@ -22,16 +25,45 @@ instance Div int =
 instance Neg int = let neg a = -a;
 instance Eq int = let eq a b = a == b;
 instance Cmp int = 
-    let cmp a b = 
-        if a == b then 
+    let cmp a b =
+        if a == b then
             Ordering::Equal
         else if a > b then
             Ordering::Greater 
         else
             Ordering::Less
 ;
-instance Number int = let from_int a = a;
+instance Number int = 
+    let from_int a = a,
+    let from_real a = real_to_int a,
+;
+
+instance Add real = let add a b = a + b;
+instance Sub real = let sub a b = a - b;
+instance Mul real = let mul a b = a * b;
+instance Div real = 
+    let div a b = a / b,
+    let rem a b = a % b,
+;
+instance Neg real = let neg a = -a;
+instance Eq real = let eq a b = a == b;
+instance Cmp real = 
+    let cmp a b =
+        if a == b then
+            Ordering::Equal
+        else if a > b then
+            Ordering::Greater 
+        else
+            Ordering::Less
+;
+instance Number real = 
+    let from_int a = int_to_real a,
+    let from_real a = a,
+;
 
 instance And bool = let and a b = a && b;
 instance Or bool = let or a b = a || b;
 instance Not bool = let not a = !a;
+
+instance Eq char = let eq a b = a == b;
+instance Eq () = let eq () () = true;

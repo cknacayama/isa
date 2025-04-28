@@ -29,7 +29,7 @@ impl std::hash::Hash for Ident {
 
 pub type Token = Spanned<TokenKind>;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenKind {
     Underscore,
 
@@ -55,6 +55,7 @@ pub enum TokenKind {
     Backslash,
 
     Integer(i64),
+    Real(f64),
     Ident(Symbol),
     Operator(Symbol),
     Char(u8),
@@ -75,6 +76,7 @@ pub enum TokenKind {
     KwInt,
     KwBool,
     KwChar,
+    KwReal,
 
     KwMatch,
     KwWith,
@@ -94,6 +96,10 @@ impl TokenKind {
             "then" => Self::KwThen,
             "true" => Self::KwTrue,
             "false" => Self::KwFalse,
+            "int" => Self::KwInt,
+            "bool" => Self::KwBool,
+            "char" => Self::KwChar,
+            "real" => Self::KwReal,
             "type" => Self::KwType,
             "alias" => Self::KwAlias,
             "class" => Self::KwClass,
@@ -104,9 +110,6 @@ impl TokenKind {
             "in" => Self::KwIn,
             "with" => Self::KwWith,
             "module" => Self::KwModule,
-            "int" => Self::KwInt,
-            "bool" => Self::KwBool,
-            "char" => Self::KwChar,
             _ => Self::Ident(symbol!(s)),
         }
     }
@@ -170,6 +173,7 @@ impl Display for TokenKind {
             Self::Rocket => write!(f, "=>"),
             Self::Backslash => write!(f, "\\"),
             Self::Integer(v) => write!(f, "{v}"),
+            Self::Real(v) => write!(f, "{v:?}"),
             Self::Ident(v) | Self::Operator(v) => write!(f, "{v}"),
             Self::Char(v) => write!(f, "{:?}", *v as char),
             Self::KwTrue => write!(f, "true"),
@@ -186,6 +190,7 @@ impl Display for TokenKind {
             Self::KwInt => write!(f, "int"),
             Self::KwBool => write!(f, "bool"),
             Self::KwChar => write!(f, "char"),
+            Self::KwReal => write!(f, "real"),
             Self::KwMatch => write!(f, "match"),
             Self::KwWith => write!(f, "with"),
             Self::KwIf => write!(f, "if"),

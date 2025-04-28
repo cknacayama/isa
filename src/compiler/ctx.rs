@@ -408,12 +408,17 @@ pub struct Ctx {
     env:            Vec<FxHashMap<Symbol, VarData>>,
     infix:          FxHashMap<Symbol, OperatorData>,
     prefix:         FxHashMap<Symbol, OperatorData>,
+    empty_args:     Rc<[Ty]>,
     current_module: Ident,
 }
 
 impl Ctx {
     pub const fn current_module(&self) -> Ident {
         self.current_module
+    }
+
+    pub fn unit(&self) -> Ty {
+        Ty::Tuple(self.empty_args.clone())
     }
 
     pub const fn set_current_module(&mut self, module: Ident) {
@@ -1181,10 +1186,10 @@ impl Ty {
         chars: &mut TyVarFormatter<T>,
     ) -> std::fmt::Result {
         match self {
-            Self::Unit => write!(f, "()"),
             Self::Int => write!(f, "int"),
             Self::Bool => write!(f, "bool"),
             Self::Char => write!(f, "char"),
+            Self::Real => write!(f, "real"),
             Self::Fn { param, ret } => {
                 if param.is_simple_fmt() {
                     param.fmt_var(f, chars)?;

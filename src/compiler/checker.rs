@@ -61,22 +61,6 @@ impl Checker {
         &self.subs[pos..]
     }
 
-    fn insert_val<ClassSet>(
-        &mut self,
-        id: Symbol,
-        ty: Ty,
-        set: ClassSet,
-        span: Span,
-    ) -> Option<VarData>
-    where
-        Set: From<ClassSet>,
-    {
-        self.ctx
-            .current_mut()
-            .unwrap()
-            .insert_val(id, VarData::new(ty, Set::from(set), span))
-    }
-
     fn insert_let<ClassSet>(&mut self, id: Ident, ty: Ty, set: ClassSet) -> Option<VarData>
     where
         Set: From<ClassSet>,
@@ -108,7 +92,7 @@ impl Checker {
                 args.iter().try_for_each(|ty| self.check_valid_type(ty))
             }
 
-            Ty::Unit | Ty::Int | Ty::Bool | Ty::Char | Ty::Var(_) => Ok(()),
+            Ty::Int | Ty::Bool | Ty::Char | Ty::Real | Ty::Var(_) => Ok(()),
         }
     }
 
@@ -450,7 +434,7 @@ impl Checker {
             (Some(body), ty, set.concat(body_set))
         } else {
             self.insert_let(name, u1, set.clone());
-            (None, Ty::Unit, set)
+            (None, self.ctx.unit(), set)
         };
 
         let bind = LetBind::new(name, params, expr);
@@ -580,7 +564,10 @@ impl Checker {
     fn check_val_stmt(&mut self, mut val: ValDeclaration, span: Span) -> IsaResult<Stmt<Ty>> {
         self.check_val(&mut val)?;
 
-        self.insert_val(val.name.ident, val.ty.clone(), val.set.clone(), val.span);
+        self.ctx.current_mut().unwrap().insert_val(
+            val.name.ident,
+            VarData::new(val.ty.clone(), val.set.clone(), val.span),
+        );
 
         let kind = StmtKind::Val(val);
 
@@ -906,11 +893,16 @@ impl Checker {
             }
             PatKind::List(list) => self.check_list_pat(list, span),
             PatKind::Int(i) => Ok(Pat::new(PatKind::Int(i), span, Ty::Int)),
+            PatKind::Real(r) => Ok(Pat::new(PatKind::Real(r), span, Ty::Real)),
             PatKind::Bool(b) => Ok(Pat::new(PatKind::Bool(b), span, Ty::Bool)),
             PatKind::Char(c) => Ok(Pat::new(PatKind::Char(c), span, Ty::Char)),
             PatKind::Tuple(pats) => {
                 if pats.is_empty() {
-                    return Ok(Pat::new(PatKind::Tuple(Box::new([])), span, Ty::Unit));
+                    return Ok(Pat::new(
+                        PatKind::Tuple(Box::new([])),
+                        span,
+                        self.ctx.unit(),
+                    ));
                 }
 
                 let mut typed_pats = Vec::new();
@@ -934,6 +926,8 @@ impl Checker {
             }
 
             PatKind::IntRange(range) => Ok(Pat::new(PatKind::IntRange(range), span, Ty::Int)),
+
+            PatKind::RealRange(range) => Ok(Pat::new(PatKind::RealRange(range), span, Ty::Real)),
 
             PatKind::CharRange(range) => Ok(Pat::new(PatKind::CharRange(range), span, Ty::Char)),
         }
@@ -1207,7 +1201,7 @@ impl Checker {
     fn check_tuple(&mut self, exprs: Box<[UntypedExpr]>, span: Span) -> IsaResult<(Expr<Ty>, Set)> {
         if exprs.is_empty() {
             return Ok((
-                Expr::new(ExprKind::Tuple(Box::new([])), span, Ty::Unit),
+                Expr::new(ExprKind::Tuple(Box::new([])), span, self.ctx.unit()),
                 Set::new(),
             ));
         }
@@ -1720,6 +1714,8 @@ impl Checker {
         let span = expr.span;
         match expr.kind {
             ExprKind::Int(i) => Ok((Expr::new(ExprKind::Int(i), span, Ty::Int), Set::new())),
+
+            ExprKind::Real(r) => Ok((Expr::new(ExprKind::Real(r), span, Ty::Real), Set::new())),
 
             ExprKind::Bool(b) => Ok((Expr::new(ExprKind::Bool(b), span, Ty::Bool), Set::new())),
 
