@@ -4,6 +4,7 @@ use super::ast::{Path, mod_path};
 use super::ctx::Generator;
 use super::infer::{Subs, Substitute};
 use super::token::Ident;
+use crate::span::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
@@ -42,6 +43,26 @@ impl Ty {
             Self::Generic { var: n, args } => *n == var || args.iter().any(|t| t.occurs(var)),
 
             Self::Unit | Self::Int | Self::Char | Self::Bool => false,
+        }
+    }
+
+    pub fn contains_name(&self, path: &Path) -> Option<Span> {
+        match self {
+            Self::Fn { param, ret } => param
+                .contains_name(path)
+                .or_else(|| ret.contains_name(path)),
+            Self::Scheme { ty, .. } => ty.contains_name(path),
+            Self::Tuple(args) | Self::Generic { args, .. } => {
+                args.iter().find_map(|t| t.contains_name(path))
+            }
+            Self::Named { name, args } => {
+                if name == path {
+                    return Some(name.span());
+                }
+                args.iter().find_map(|t| t.contains_name(path))
+            }
+
+            Self::Unit | Self::Int | Self::Char | Self::Bool | Self::Var(_) => None,
         }
     }
 

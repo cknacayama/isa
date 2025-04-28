@@ -1421,16 +1421,18 @@ impl Checker {
                 name,
                 parameters,
                 ty,
-            } => Some(self.check_valid_type(ty).map(|()| {
-                let vars = parameters
-                    .iter()
-                    .map(|param| param.as_var().unwrap())
-                    .collect();
-                (
-                    Path::new(smallvec![module, *name]),
-                    AliasData::new(vars, ty.clone()),
-                )
-            })),
+            } => {
+                let module = Ident::new(module.ident, name.span);
+                let path = Path::new(smallvec![module, *name]);
+
+                Some(self.check_valid_type(ty).map(|()| {
+                    let vars = parameters
+                        .iter()
+                        .map(|param| param.as_var().unwrap())
+                        .collect();
+                    (path, AliasData::new(vars, ty.clone()))
+                }))
+            }
 
             _ => None,
         }
@@ -1509,7 +1511,7 @@ impl Checker {
         }
     }
 
-    fn early_resolve_imports(&mut self, modules: &mut [UntypedModule]) -> Vec<CheckError> {
+    fn resolve_imports(&mut self, modules: &mut [UntypedModule]) -> Vec<CheckError> {
         loop {
             let mut errors = Vec::new();
             let mut changed = false;
@@ -1539,7 +1541,7 @@ impl Checker {
             self.check_module_types(module)?;
         }
 
-        self.early_resolve_imports(&mut modules);
+        self.resolve_imports(&mut modules);
 
         let mut subs = |ty: &Ty| match ty {
             Ty::Named { name, args } => {
@@ -1561,6 +1563,25 @@ impl Checker {
                 }
             }
         }
+        AliasData::resolve(&mut aliases);
+        for (path, alias) in &aliases {
+            if let Some(span) = alias.ty().contains_name(path) {
+                let fst = DiagnosticLabel::new("cannot recursively define a type alias", span);
+                let snd = DiagnosticLabel::new("references self in definition", path.span());
+                return Err(IsaError::new("recursive type alias", fst, vec![snd]));
+            }
+        }
+
+        let mut subs = |ty: &Ty| match ty {
+            Ty::Named { name, args } => aliases.iter().find_map(|(syn, data)| {
+                if name == syn {
+                    Some(data.subs(args))
+                } else {
+                    None
+                }
+            }),
+            _ => None,
+        };
 
         let mut decl = Vec::new();
         let mut set = Set::new();
@@ -1569,6 +1590,9 @@ impl Checker {
             self.ctx.set_current_module(module.name);
 
             for stmt in &mut module.stmts {
+                if !aliases.is_empty() {
+                    stmt.substitute(&mut subs);
+                }
                 self.check_for_class_signatures(stmt)?;
             }
 
@@ -1585,7 +1609,7 @@ impl Checker {
             decl.push(stmts);
         }
 
-        let mut errs = self.early_resolve_imports(&mut modules);
+        let mut errs = self.resolve_imports(&mut modules);
         if let Some(err) = errs.pop() {
             return Err(IsaError::from(err));
         }

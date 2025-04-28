@@ -257,6 +257,26 @@ impl AliasData {
         });
         ty
     }
+
+    pub fn resolve(aliases: &mut Vec<(Path, Self)>) {
+        let mut changed = true;
+        while changed {
+            changed = false;
+            let cloned = aliases.clone();
+            for (syn, data) in cloned {
+                let mut subs = |ty: &Ty| match ty {
+                    Ty::Named { name, args } if name == &syn => {
+                        changed = true;
+                        Some(data.subs(args))
+                    }
+                    _ => None,
+                };
+                for (_, alias) in aliases.iter_mut().filter(|(name, _)| name != &syn) {
+                    alias.substitute(&mut subs);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -684,7 +704,10 @@ impl Ctx {
 
     fn get_module_and_ident(&self, path: &Path) -> CheckResult<(Ident, Ident)> {
         match *path.segments.as_slice() {
-            [id] => Ok((self.current_module, id)),
+            [id] => {
+                let cur = Ident::new(self.current_module.ident, id.span);
+                Ok((cur, id))
+            }
             [module, id] => Ok((module, id)),
             _ => Err(CheckError::new(
                 CheckErrorKind::InvalidPath(path.clone()),
@@ -696,7 +719,10 @@ impl Ctx {
     pub fn resolve_type_name(&self, name: &Path) -> CheckResult<Path> {
         let (module, ty) = self.get_module_and_ident(name)?;
         let data = self.get_from_module(module, ty, ModuleData::get_ty)?;
-        let module = data.as_import().unwrap_or(module);
+        let module = data
+            .as_import()
+            .map(|id| Ident::new(id.ident, module.span))
+            .unwrap_or(module);
         Ok(Path::new(smallvec![module, ty]))
     }
 
@@ -1115,6 +1141,15 @@ impl Substitute for Ctx {
                 t.substitute(subs);
             }
         }
+    }
+}
+
+impl Substitute for AliasData {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.ty.substitute(subs);
     }
 }
 
