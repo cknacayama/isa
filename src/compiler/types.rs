@@ -137,18 +137,16 @@ impl Ty {
         matches!(self, Self::Char)
     }
 
-    pub const fn is_simple_fmt(&self) -> bool {
-        matches!(
-            self,
-            Self::Generic { .. }
-                | Self::Named { .. }
-                | Self::Int
-                | Self::Bool
-                | Self::Char
-                | Self::Real
-                | Self::Var(_)
-                | Self::Tuple(_)
-        )
+    pub fn is_simple_fmt(&self) -> bool {
+        match self {
+            Self::Int | Self::Bool | Self::Char | Self::Real | Self::Var(_) | Self::Tuple(_) => {
+                true
+            }
+
+            Self::Generic { args, .. } | Self::Named { args, .. } => args.is_empty(),
+
+            _ => false,
+        }
     }
 
     pub fn get_ident(&self) -> Option<Ident> {

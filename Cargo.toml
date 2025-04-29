@@ -20,3 +20,7 @@ enum_glob_use = { level = "deny", priority = -1 }
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 too_many_lines = "allow"
+type_complexity = "allow"
+
+# false positive
+needless_collect = "allow"

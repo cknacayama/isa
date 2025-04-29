@@ -21,7 +21,6 @@ use super::infer::{
 use super::token::Ident;
 use super::types::Ty;
 use crate::compiler::ctx::OperatorData;
-use crate::global::Symbol;
 use crate::span::Span;
 
 #[derive(Debug, Default)]
@@ -745,7 +744,16 @@ impl Checker {
     ) -> IsaResult<(Stmt<Ty>, Set)> {
         let class_data = self.ctx.get_class(&class)?;
 
-        let scheme = self.ctx.generalize(instance.clone());
+        let quant: Rc<_> = params.iter().map(|p| p.as_var().unwrap()).collect();
+
+        let scheme = if quant.is_empty() {
+            instance.clone()
+        } else {
+            Ty::Scheme {
+                quant,
+                ty: Rc::new(instance.clone()),
+            }
+        };
         for constr in class_data.constraints().iter() {
             if self.ctx.implementation(&scheme, constr.class()).is_err() {
                 let fst = DiagnosticLabel::new(
@@ -1492,12 +1500,21 @@ impl Checker {
             StmtKind::Instance {
                 set,
                 class,
+                params,
                 instance,
                 ..
             } => {
                 let data = InstanceData::new(set.clone(), expr.span);
                 self.check_valid_type(instance)?;
-                let instance = self.ctx.generalize(instance.clone());
+                let quant: Rc<_> = params.iter().map(|p| p.as_var().unwrap()).collect();
+                let instance = if quant.is_empty() {
+                    instance.clone()
+                } else {
+                    Ty::Scheme {
+                        quant,
+                        ty: Rc::new(instance.clone()),
+                    }
+                };
                 self.ctx.insert_instance(instance, class, data)?;
                 Ok(())
             }
@@ -1631,10 +1648,11 @@ impl Checker {
         let mut stmts = Vec::new();
         let mut set = Set::new();
 
-        for res in module.stmts.into_iter().map(|stmt| self.check_stmt(stmt)) {
-            let (stmt, stmt_set) = res?;
+        for stmt in module.stmts {
+            let (stmt, stmt_set) = self.check_stmt(stmt)?;
             stmts.push(stmt);
             set.extend(stmt_set);
+            self.subs.clear();
         }
 
         let scope = self.ctx.pop_scope().unwrap();
@@ -1687,6 +1705,7 @@ impl Checker {
                 let val = self.check_val_stmt(val, span)?;
                 Ok((val, Set::new()))
             }
+
             StmtKind::Class {
                 set,
                 name,
@@ -1720,6 +1739,11 @@ impl Checker {
             ExprKind::Bool(b) => Ok((Expr::new(ExprKind::Bool(b), span, Ty::Bool), Set::new())),
 
             ExprKind::Char(c) => Ok((Expr::new(ExprKind::Char(c), span, Ty::Char), Set::new())),
+
+            ExprKind::String(s) => {
+                let ty = Ty::list(Ty::Char);
+                Ok((Expr::new(ExprKind::String(s), span, ty), Set::new()))
+            }
 
             ExprKind::Operator(op) => self.check_operator_expr(op, span),
 

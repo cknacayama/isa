@@ -11,7 +11,7 @@ pub struct Symbol(u32);
 impl std::fmt::Debug for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match GLOBAL_DATA.with_borrow(|e| e.symbols.get(*self)) {
-            Some(symbol) => write!(f, "\"{symbol}\""),
+            Some(symbol) => write!(f, "{symbol:?}"),
             None => f.debug_tuple("Symbol").field(&self.0).finish(),
         }
     }

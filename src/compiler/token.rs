@@ -58,6 +58,7 @@ pub enum TokenKind {
     Real(f64),
     Ident(Symbol),
     Operator(Symbol),
+    String(Symbol),
     Char(u8),
 
     KwTrue,
@@ -174,6 +175,7 @@ impl Display for TokenKind {
             Self::Backslash => write!(f, "\\"),
             Self::Integer(v) => write!(f, "{v}"),
             Self::Real(v) => write!(f, "{v:?}"),
+            Self::String(v) => write!(f, "{v:?}"),
             Self::Ident(v) | Self::Operator(v) => write!(f, "{v}"),
             Self::Char(v) => write!(f, "{:?}", *v as char),
             Self::KwTrue => write!(f, "true"),

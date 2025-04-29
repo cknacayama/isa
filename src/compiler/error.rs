@@ -15,8 +15,9 @@ use crate::span::Span;
 pub enum LexError {
     InvalidChar(char),
     UnterminatedChar,
+    UnterminatedString,
     EmptyChar,
-    UnrecognizedEscape,
+    UnrecognizedEscape(char),
 }
 
 impl Display for LexError {
@@ -24,8 +25,9 @@ impl Display for LexError {
         match self {
             Self::InvalidChar(c) => write!(f, "invalid character `{c}`"),
             Self::UnterminatedChar => write!(f, "unterminated character"),
+            Self::UnterminatedString => write!(f, "unterminated string"),
             Self::EmptyChar => write!(f, "empty character"),
-            Self::UnrecognizedEscape => write!(f, "unrecognized escape sequence"),
+            Self::UnrecognizedEscape(c) => write!(f, "unrecognized escape sequence \\{c}"),
         }
     }
 }
@@ -111,8 +113,6 @@ pub enum CheckErrorKind {
     SameNameType(Symbol, Span),
     NotConstructor(Ty),
     NotConstructorName(Symbol),
-    NotVal(Symbol),
-    NotType(Symbol),
     NotClass(Symbol),
     NotInstance(Ty, Path),
     MultipleInstances(Path, Ty, Span),
@@ -238,19 +238,9 @@ impl From<CheckError> for IsaError {
                 let label = DiagnosticLabel::new("expected a module", value.span());
                 Self::new(message, label, Vec::new())
             }
-            CheckErrorKind::NotType(name) => {
-                let message = format!("not a type: `{name}`");
-                let label = DiagnosticLabel::new("expected a type", value.span());
-                Self::new(message, label, Vec::new())
-            }
             CheckErrorKind::NotClass(name) => {
                 let message = format!("not a class: `{name}`");
                 let label = DiagnosticLabel::new("expected a class", value.span());
-                Self::new(message, label, Vec::new())
-            }
-            CheckErrorKind::NotVal(name) => {
-                let message = format!("not a declared value: `{name}`");
-                let label = DiagnosticLabel::new("expected a declared value", value.span());
                 Self::new(message, label, Vec::new())
             }
             CheckErrorKind::NotInstance(ty, class) => {

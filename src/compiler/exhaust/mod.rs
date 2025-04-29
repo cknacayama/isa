@@ -180,7 +180,7 @@ impl Pattern {
 }
 
 impl RealRange {
-    fn from_range_pat(range: RangePat<f64>) -> Self {
+    const fn from_range_pat(range: RangePat<f64>) -> Self {
         match range {
             RangePat::From(lo) => Self::exclusive(lo, f64::INFINITY),
             RangePat::To(hi) => Self::exclusive(f64::NEG_INFINITY, hi),
@@ -335,6 +335,7 @@ impl TypeCtx {
             ExprKind::Operator(_)
             | ExprKind::Int(_)
             | ExprKind::Real(_)
+            | ExprKind::String(_)
             | ExprKind::Bool(_)
             | ExprKind::Char(_)
             | ExprKind::Path(_) => (),

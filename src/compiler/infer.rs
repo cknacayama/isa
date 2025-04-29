@@ -447,15 +447,25 @@ impl Ctx {
     ) -> Result<ClassConstraintSet, Box<ClassConstraint>> {
         let mut constrs = Vec::new();
 
-        for constr in classes
+        for sets in classes
             .constrs
             .into_iter()
             .map(|c| self.instantiate_class(c.class(), c.ty(), c.span()).unwrap())
         {
-            if let Some(constr) = constr.iter().find(|c| !c.ty().is_var()) {
-                return Err(Box::new(constr.clone()));
+            if let Some(constr) = sets
+                .iter()
+                .map(|(_, c)| c)
+                .find(|c| c.constrs.iter().all(|c| c.ty().is_var()))
+            {
+                constrs.extend_from_slice(&constr.constrs);
+            } else {
+                let constr = sets
+                    .into_iter()
+                    .map(|(_, c)| c)
+                    .find_map(|c| c.constrs.into_iter().find(|c| !c.ty().is_var()))
+                    .unwrap();
+                return Err(Box::new(constr));
             }
-            constrs.extend(constr);
         }
 
         Ok(ClassConstraintSet { constrs })

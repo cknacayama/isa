@@ -172,6 +172,7 @@ impl TokenKind {
                 | Self::LBracket
                 | Self::Backslash
                 | Self::Integer(_)
+                | Self::String(_)
                 | Self::Ident(_)
                 | Self::Char(_)
                 | Self::KwTrue
@@ -314,6 +315,7 @@ pub enum ListPat<T> {
     Cons(Box<Pat<T>>, Box<Pat<T>>),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum PatKind<T> {
     Wild,
@@ -528,6 +530,8 @@ pub enum ExprKind<T> {
     Int(i64),
 
     Real(f64),
+
+    String(Symbol),
 
     Bool(bool),
 
@@ -817,6 +821,7 @@ impl Substitute for Expr<Ty> {
             ExprKind::Operator(_)
             | ExprKind::Int(_)
             | ExprKind::Real(_)
+            | ExprKind::String(_)
             | ExprKind::Bool(_)
             | ExprKind::Char(_)
             | ExprKind::Path(_) => (),

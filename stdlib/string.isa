@@ -1,0 +1,3 @@
+module @string with {list::_}
+
+alias String = List char;

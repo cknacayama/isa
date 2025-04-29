@@ -2,7 +2,7 @@ use std::str::Chars;
 
 use super::error::LexError;
 use super::token::{Token, TokenKind};
-use crate::global::intern_span;
+use crate::global::{intern_span, symbol};
 use crate::span::{SpanData, Spanned};
 
 #[derive(Debug)]
@@ -122,7 +122,15 @@ impl<'a> Lexer<'a> {
             .ok_or_else(|| self.make_err(LexError::UnterminatedChar))?;
 
         let c = match c {
-            '\\' => todo!(),
+            '\\' => {
+                let c = self
+                    .bump()
+                    .ok_or_else(|| self.make_err(LexError::UnterminatedString))?;
+                Self::escape(c).ok_or_else(|| {
+                    self.eat_while(|c| c != '"');
+                    self.make_err(LexError::UnrecognizedEscape(c))
+                })? as u8
+            }
             '\'' => return Err(self.make_err(LexError::EmptyChar)),
             _ if c.is_ascii() => c as u8,
             _ => return Err(self.make_err(LexError::InvalidChar(c))),
@@ -133,6 +141,46 @@ impl<'a> Lexer<'a> {
         } else {
             Err(self.make_err(LexError::UnterminatedChar))
         }
+    }
+
+    const fn escape(c: char) -> Option<char> {
+        match c {
+            'n' => Some('\n'),
+            'r' => Some('\r'),
+            '0' => Some('\0'),
+            '\\' => Some('\\'),
+            '\'' => Some('\''),
+            '\"' => Some('\"'),
+            _ => None,
+        }
+    }
+
+    fn string(&mut self) -> LexResult<Token> {
+        let mut s = String::new();
+
+        while self.peek().is_some_and(|c| c != '"') {
+            let c = self.bump().unwrap();
+            if c == '\\' {
+                let c = self
+                    .bump()
+                    .ok_or_else(|| self.make_err(LexError::UnterminatedString))?;
+                let c = Self::escape(c).ok_or_else(|| {
+                    self.eat_while(|c| c != '"');
+                    self.make_err(LexError::UnrecognizedEscape(c))
+                })?;
+                s.push(c);
+            } else {
+                s.push(c);
+            }
+        }
+
+        if !self.match_cur('"') {
+            return Err(self.make_err(LexError::UnterminatedString));
+        }
+
+        let kind = TokenKind::String(symbol!(&s));
+
+        Ok(self.make_token(kind))
     }
 
     fn identifier_or_keyword(&mut self) -> Token {
@@ -197,6 +245,7 @@ impl<'a> Lexer<'a> {
             ':' => token!(Colon, ':' => ColonColon),
             '0'..='9' => Some(Ok(self.number())),
             '\'' => Some(self.character()),
+            '"' => Some(self.string()),
             '_' | 'a'..='z' | 'A'..='Z' => Some(Ok(self.identifier_or_keyword())),
             c if TokenKind::operator_character(c) => Some(Ok(self.operator())),
             _ => Some(Err(self.make_err(LexError::InvalidChar(c)))),

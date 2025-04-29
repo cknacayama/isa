@@ -4,6 +4,7 @@ module @prelude with {
     monad::_,
     ops::_,
     list::_,
+    string::_,
 }
 
 val real_to_int: real -> int;

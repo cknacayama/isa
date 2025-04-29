@@ -647,6 +647,10 @@ impl<'a> Parser<'a> {
                 self.next();
                 Ok(UntypedExpr::untyped(ExprKind::Char(lit), span))
             }
+            TokenKind::String(s) => {
+                self.next();
+                Ok(UntypedExpr::untyped(ExprKind::String(s), span))
+            }
             TokenKind::Ident(_) => {
                 let (path, span) = self.parse_path()?;
                 Ok(UntypedExpr::untyped(ExprKind::Path(path), span))
@@ -955,24 +959,21 @@ impl<'a> Parser<'a> {
         T: std::ops::Neg<Output = T>,
         Parse: FnOnce(Token) -> Option<Spanned<T>>,
     {
-        if let Some(span) = self.next_if_map(|tk| match tk.data {
+        let Some(span) = self.next_if_map(|tk| match tk.data {
             TokenKind::Operator(op) if op == symbol!("-") => Some(tk.span),
             _ => None,
-        }) {
-            let mut int = match self.next_if_map(parse) {
-                Some(int) => int,
-                None => {
-                    return Some(Err(Spanned::new(
-                        ParseError::ExpectedPattern(TokenKind::Operator(symbol!("-"))),
-                        span,
-                    )));
-                }
-            };
-            int.span = span.union(int.span);
-            return Some(Ok(int.map(|int| -int)));
-        }
+        }) else {
+            return self.next_if_map(parse).map(Result::Ok);
+        };
 
-        self.next_if_map(parse).map(Result::Ok)
+        let Some(int) = self.next_if_map(parse) else {
+            return Some(Err(Spanned::new(
+                ParseError::ExpectedPattern(TokenKind::Operator(symbol!("-"))),
+                span,
+            )));
+        };
+
+        Some(Ok(Spanned::new(-int.data, span.union(int.span))))
     }
 
     fn try_parse_real(&mut self) -> Option<ParseResult<Spanned<f64>>> {
