@@ -1,6 +1,5 @@
 use std::fmt::{Debug, Display};
 
-use rustc_hash::FxHashMap;
 use smallvec::{SmallVec, smallvec};
 
 use super::super::span::Span;
@@ -68,98 +67,38 @@ macro_rules! mod_path {
 }
 pub(crate) use mod_path;
 
-#[derive(Debug, Clone, Copy)]
-pub struct Operator {
-    pub precedence:    u8,
-    pub associativity: Associativity,
-}
-
-impl Operator {
-    pub const fn new(precedence: u8, associativity: Associativity) -> Self {
-        Self {
-            precedence,
-            associativity,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Associativity {
-    Non,
-    Left,
-    Right,
+pub enum Fixity {
+    Nonfix,
+    Infixl,
+    Infixr,
+    Prefix,
 }
 
-impl Associativity {
+impl Fixity {
     #[must_use]
     pub const fn is_right(self) -> bool {
-        matches!(self, Self::Right)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct OperatorTable {
-    infix:  FxHashMap<Symbol, Operator>,
-    prefix: FxHashMap<Symbol, Operator>,
-}
-
-impl OperatorTable {
-    pub fn get_infix(&self, op: Symbol) -> Option<Operator> {
-        self.infix.get(&op).copied()
+        matches!(self, Self::Infixr)
     }
 
-    pub fn get_prefix(&self, op: Symbol) -> Option<Operator> {
-        self.prefix.get(&op).copied()
-    }
-}
-
-impl Default for OperatorTable {
-    fn default() -> Self {
-        use crate::global::intern_symbol as intern;
-
-        macro_rules! operator {
-            ($prec:literal $op:literal) => {
-                (intern($op), Operator::new($prec, Associativity::Non))
-            };
-            (left $prec:literal $op:literal) => {
-                (intern($op), Operator::new($prec, Associativity::Left))
-            };
-            (right $prec:literal $op:literal) => {
-                (intern($op), Operator::new($prec, Associativity::Right))
-            };
+    pub const fn from_token(kind: TokenKind) -> Option<Self> {
+        match kind {
+            TokenKind::KwInfix => Some(Self::Nonfix),
+            TokenKind::KwInfixl => Some(Self::Infixl),
+            TokenKind::KwInfixr => Some(Self::Infixr),
+            TokenKind::KwPrefix => Some(Self::Prefix),
+            _ => None,
         }
+    }
 
-        let mut infix = FxHashMap::default();
-        let mut prefix = FxHashMap::default();
-        prefix.extend([operator!(right 8 "!"), operator!(right 8 "-")]);
-        infix.extend([
-            operator!(right 0 "$"),
-            operator!(left 1 ">>"),
-            operator!(left 1 ">>="),
-            operator!(right 2 "||"),
-            operator!(right 3 "&&"),
-            operator!(left 4 "<*"),
-            operator!(left 4 "*>"),
-            operator!(left 4 "<*>"),
-            operator!(left 4 "<$>"),
-            operator!(left 4 "<$"),
-            operator!(4 "<"),
-            operator!(4 "<="),
-            operator!(4 ">"),
-            operator!(4 ">="),
-            operator!(4 "=="),
-            operator!(4 "!="),
-            operator!(right 5 "&"),
-            operator!(right 5 "++"),
-            operator!(left 6 "+"),
-            operator!(left 6 "-"),
-            operator!(left 7 "*"),
-            operator!(left 7 "/"),
-            operator!(left 7 "%"),
-            operator!(right 8 "."),
-        ]);
+    #[must_use]
+    pub const fn is_prefix(self) -> bool {
+        matches!(self, Self::Prefix)
+    }
 
-        Self { infix, prefix }
+    #[must_use]
+    pub const fn is_nonfix(self) -> bool {
+        matches!(self, Self::Nonfix)
     }
 }
 
@@ -374,7 +313,7 @@ impl<T> Pat<T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct Expr<T> {
     pub kind: ExprKind<T>,
     pub span: Span,
@@ -467,20 +406,20 @@ pub struct ValDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct OpDeclaration {
-    pub prefix: bool,
+    pub fixity: Fixity,
+    pub prec:   u8,
     pub op:     Symbol,
     pub ty:     Ty,
 }
 
 impl OpDeclaration {
-    pub const fn new(prefix: bool, op: Symbol, ty: Ty) -> Self {
-        Self { prefix, op, ty }
-    }
-}
-
-impl Display for OpDeclaration {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}): {}", self.op, self.ty)
+    pub const fn new(fixity: Fixity, prec: u8, op: Symbol, ty: Ty) -> Self {
+        Self {
+            fixity,
+            prec,
+            op,
+            ty,
+        }
     }
 }
 
@@ -545,18 +484,20 @@ pub enum ExprKind<T> {
 
     List(Box<[Expr<T>]>),
 
+    Paren(Box<Expr<T>>),
+
     Let {
         bind: Box<LetBind<T>>,
         body: Option<Box<Expr<T>>>,
     },
 
-    Bin {
+    Infix {
         op:  Ident,
         lhs: Box<Expr<T>>,
         rhs: Box<Expr<T>>,
     },
 
-    Un {
+    Prefix {
         op:   Ident,
         expr: Box<Expr<T>>,
     },
@@ -583,12 +524,18 @@ pub enum ExprKind<T> {
     },
 }
 
+impl<T> Default for ExprKind<T> {
+    fn default() -> Self {
+        Self::Bool(false)
+    }
+}
+
 impl<T> StmtKind<T> {
     #[must_use]
     pub const fn is_type_or_val_or_op(&self) -> bool {
         matches!(
             self,
-            Self::Type { .. } | Self::Val { .. } | Self::Operator { .. }
+            Self::Type { .. } | Self::Alias { .. } | Self::Val { .. } | Self::Operator { .. }
         )
     }
 }
@@ -810,11 +757,11 @@ impl Substitute for Expr<Ty> {
                     expr.substitute(subs);
                 }
             }
-            ExprKind::Bin { lhs, rhs, .. } => {
+            ExprKind::Infix { lhs, rhs, .. } => {
                 lhs.substitute(subs);
                 rhs.substitute(subs);
             }
-            ExprKind::Un { expr, .. } => {
+            ExprKind::Prefix { expr, .. } | ExprKind::Paren(expr) => {
                 expr.substitute(subs);
             }
 

@@ -102,9 +102,9 @@ impl Checker {
         otherwise: UntypedExpr,
         span: Span,
     ) -> IsaResult<(Expr<Ty>, Set)> {
-        let (mut cond, set) = self.check(cond)?;
-        let (mut then, then_set) = self.check(then)?;
-        let (mut otherwise, else_set) = self.check(otherwise)?;
+        let (mut cond, set) = self.check_expr(cond)?;
+        let (mut then, then_set) = self.check_expr(then)?;
+        let (mut otherwise, else_set) = self.check_expr(otherwise)?;
 
         let c_cond = EqConstraint::new(Ty::Bool, cond.ty.clone(), cond.span);
         let c_body = EqConstraint::new(then.ty.clone(), otherwise.ty.clone(), otherwise.span);
@@ -177,7 +177,7 @@ impl Checker {
         let mut pat = self.check_pat(param.pat)?;
         let pos = self.subs_count();
 
-        let (expr, set) = self.check(expr)?;
+        let (expr, set) = self.check_expr(expr)?;
         pat.ty.substitute_many(self.subs_from(pos));
 
         self.ctx.pop_scope();
@@ -201,8 +201,8 @@ impl Checker {
         arg: UntypedExpr,
         span: Span,
     ) -> IsaResult<(Expr<Ty>, Set)> {
-        let (mut callee, set) = self.check(callee)?;
-        let (mut arg, arg_set) = self.check(arg)?;
+        let (mut callee, set) = self.check_expr(callee)?;
+        let (mut arg, arg_set) = self.check_expr(arg)?;
 
         let mut var = self.gen_type_var();
         let fn_ty = Ty::Fn {
@@ -284,11 +284,11 @@ impl Checker {
             .collect::<IsaResult<Box<_>>>()?;
 
         let (mut expr, set) = if typed_params.is_empty() {
-            self.check(bind.expr)?
+            self.check_expr(bind.expr)?
         } else {
             let pos = self.subs_count();
             self.ctx.assume_constraints(&val_set);
-            let (mut expr, set) = self.check(bind.expr)?;
+            let (mut expr, set) = self.check_expr(bind.expr)?;
 
             let subs = self.subs_from(pos);
             for p in &mut typed_params {
@@ -385,14 +385,14 @@ impl Checker {
             .collect::<IsaResult<Box<_>>>()?;
 
         let (expr, set) = if typed_params.is_empty() {
-            self.check(bind.expr)?
+            self.check_expr(bind.expr)?
         } else {
             let pos = self.subs_count();
             let var_id = self.gen_id();
             let var = Ty::Var(var_id);
             self.insert_let(bind.name, var, []);
 
-            let (mut expr, set) = self.check(bind.expr)?;
+            let (mut expr, set) = self.check_expr(bind.expr)?;
 
             let subs = self.subs_from(pos);
             for p in &mut typed_params {
@@ -427,7 +427,7 @@ impl Checker {
         let (body, ty, set) = if let Some(body) = body {
             self.ctx.push_scope();
             self.insert_let(name, u1, set.clone());
-            let (body, body_set) = self.check(body)?;
+            let (body, body_set) = self.check_expr(body)?;
             self.ctx.pop_scope();
             let ty = body.ty.clone();
             (Some(body), ty, set.concat(body_set))
@@ -513,7 +513,7 @@ impl Checker {
         &mut self,
         params: Box<[Ty]>,
         set: Set,
-        ops: Box<[OpDeclaration]>,
+        mut ops: Box<[OpDeclaration]>,
         span: Span,
     ) -> IsaResult<Stmt<Ty>> {
         let quant = params
@@ -521,22 +521,25 @@ impl Checker {
             .map(|p| p.as_var().unwrap())
             .collect::<Rc<_>>();
 
-        let ops = ops
-            .into_iter()
-            .map(|OpDeclaration { prefix, op, ty }| {
-                let ty = Ty::Scheme {
-                    quant: quant.clone(),
-                    ty:    Rc::new(ty),
-                };
-                let data = OperatorData::new(ty.clone(), set.clone());
-                if prefix {
-                    self.ctx.insert_prefix(op, data);
-                } else {
-                    self.ctx.insert_infix(op, data);
-                }
-                OpDeclaration::new(prefix, op, ty)
-            })
-            .collect();
+        for OpDeclaration {
+            fixity,
+            prec,
+            op,
+            ty,
+        } in &mut ops
+        {
+            self.check_valid_type(ty)?;
+            *ty = Ty::Scheme {
+                quant: quant.clone(),
+                ty:    Rc::new(ty.clone()),
+            };
+            let data = OperatorData::new(*fixity, *prec, ty.clone(), set.clone());
+            if fixity.is_prefix() {
+                self.ctx.insert_prefix(*op, data);
+            } else {
+                self.ctx.insert_infix(*op, data);
+            }
+        }
 
         let kind = StmtKind::Operator { params, set, ops };
 
@@ -952,7 +955,7 @@ impl Checker {
 
         let count = self.subs_count();
 
-        let (expr, set) = self.check(expr)?;
+        let (expr, set) = self.check_expr(expr)?;
 
         pat.ty.substitute_many(self.subs_from(count));
 
@@ -967,7 +970,7 @@ impl Checker {
         arms: Box<[UntypedMatchArm]>,
         span: Span,
     ) -> IsaResult<(Expr<Ty>, Set)> {
-        let (mut expr, mut set) = self.check(expr)?;
+        let (mut expr, mut set) = self.check_expr(expr)?;
 
         let mut var = self.gen_type_var();
         let mut typed_arms = Vec::new();
@@ -1109,15 +1112,15 @@ impl Checker {
         Ok((Expr::new(kind, span, ty), set))
     }
 
-    fn check_bin(
+    fn check_infix(
         &mut self,
         op: Ident,
         lhs: UntypedExpr,
         rhs: UntypedExpr,
         span: Span,
     ) -> IsaResult<(Expr<Ty>, Set)> {
-        let (lhs, lhs_set) = self.check(lhs)?;
-        let (rhs, rhs_set) = self.check(rhs)?;
+        let (lhs, lhs_set) = self.check_expr(lhs)?;
+        let (rhs, rhs_set) = self.check_expr(rhs)?;
 
         let data = self.ctx.get_infix(op)?;
         let mut set = data.set().clone();
@@ -1147,7 +1150,7 @@ impl Checker {
         })?;
         ret.substitute_many(&subs);
 
-        let kind = ExprKind::Bin {
+        let kind = ExprKind::Infix {
             op,
             lhs: Box::new(lhs),
             rhs: Box::new(rhs),
@@ -1157,7 +1160,7 @@ impl Checker {
     }
 
     fn check_un(&mut self, op: Ident, expr: UntypedExpr, span: Span) -> IsaResult<(Expr<Ty>, Set)> {
-        let (expr, expr_set) = self.check(expr)?;
+        let (expr, expr_set) = self.check_expr(expr)?;
         let data = self.ctx.get_prefix(op)?;
         let mut set = data.set().clone();
         for c in &mut set.constrs {
@@ -1173,7 +1176,7 @@ impl Checker {
         let c = EqConstraint::new(ty.into(), expr.ty.clone(), expr.span);
         let (subs, set) = self.unify(c, set)?;
         ret.substitute_many(&subs);
-        let kind = ExprKind::Un {
+        let kind = ExprKind::Prefix {
             op,
             expr: Box::new(expr),
         };
@@ -1189,7 +1192,7 @@ impl Checker {
         let mut constrs = Vec::new();
 
         for expr in exprs {
-            let (expr, expr_set) = self.check(expr)?;
+            let (expr, expr_set) = self.check_expr(expr)?;
             set.extend(expr_set);
             constrs.push(EqConstraint::new(Ty::Var(id), expr.ty.clone(), expr.span));
             typed_exprs.push(expr);
@@ -1219,7 +1222,7 @@ impl Checker {
         let mut set = Set::new();
 
         for expr in exprs {
-            let (expr, expr_set) = self.check(expr)?;
+            let (expr, expr_set) = self.check_expr(expr)?;
             set.extend(expr_set);
             types.push(expr.ty.clone());
             typed_exprs.push(expr);
@@ -1489,7 +1492,7 @@ impl Checker {
         Ok((sig, constraints))
     }
 
-    fn check_for_class_signatures(&mut self, expr: &mut UntypedStmt) -> IsaResult<()> {
+    fn check_for_signatures(&mut self, expr: &mut UntypedStmt) -> IsaResult<()> {
         match &mut expr.kind {
             StmtKind::Class {
                 name,
@@ -1540,6 +1543,123 @@ impl Checker {
             }
             if !changed {
                 break errors;
+            }
+        }
+    }
+
+    fn resolve_infix_in_stmt(&self, stmt: &mut StmtKind<()>) -> IsaResult<()> {
+        match stmt {
+            StmtKind::Semi(expr) => self.resolve_infix(expr),
+            StmtKind::Instance { impls, .. }
+            | StmtKind::Class {
+                defaults: impls, ..
+            } => {
+                for bind in impls {
+                    self.resolve_infix(&mut bind.expr)?;
+                }
+                Ok(())
+            }
+
+            StmtKind::Operator { .. }
+            | StmtKind::Val(_)
+            | StmtKind::Type { .. }
+            | StmtKind::Alias { .. } => unreachable!(),
+        }
+    }
+
+    fn resolve_infix(&self, expr: &mut UntypedExpr) -> IsaResult<()> {
+        let span = expr.span;
+        match &mut expr.kind {
+            ExprKind::Int(_)
+            | ExprKind::Real(_)
+            | ExprKind::String(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Char(_)
+            | ExprKind::Path(_)
+            | ExprKind::Operator(_) => Ok(()),
+
+            ExprKind::List(exprs) | ExprKind::Tuple(exprs) => {
+                for expr in exprs {
+                    self.resolve_infix(expr)?;
+                }
+                Ok(())
+            }
+
+            ExprKind::Let { bind, body } => {
+                if let Some(body) = body {
+                    self.resolve_infix(body)?;
+                }
+                self.resolve_infix(&mut bind.expr)
+            }
+
+            ExprKind::Infix { op, lhs, rhs } => {
+                let data = self.ctx.get_infix(*op)?;
+
+                self.resolve_infix(lhs)?;
+
+                if let ExprKind::Infix {
+                    op: lop,
+                    lhs: llhs,
+                    rhs: lrhs,
+                } = &mut lhs.kind
+                {
+                    let ldata = self.ctx.get_infix(*lop)?;
+
+                    if ldata.prec() == data.prec()
+                        && (ldata.fixity() != data.fixity() || ldata.fixity().is_nonfix())
+                    {
+                        let fst = DiagnosticLabel::new("invalid infix expression", span);
+                        let snd =
+                            DiagnosticLabel::new(format!("{lop} is non assossiative"), lop.span);
+                        return Err(IsaError::new("invalid expression", fst, vec![snd]));
+                    }
+                    if ldata.prec() < data.prec()
+                        || (ldata.prec() == data.prec() && ldata.fixity().is_right())
+                    {
+                        let new_lhs = std::mem::take(lrhs);
+                        let new_rhs = std::mem::take(rhs);
+
+                        let span = new_lhs.span.union(new_rhs.span);
+                        let kind = ExprKind::Infix {
+                            op:  *op,
+                            lhs: new_lhs,
+                            rhs: new_rhs,
+                        };
+                        *rhs = Box::new(Expr::untyped(kind, span));
+                        *op = *lop;
+                        *lhs = std::mem::take(llhs);
+                    }
+                }
+
+                self.resolve_infix(rhs)?;
+
+                Ok(())
+            }
+
+            ExprKind::Paren(expr) | ExprKind::Prefix { expr, .. } | ExprKind::Fn { expr, .. } => {
+                self.resolve_infix(expr)
+            }
+
+            ExprKind::Match { expr, arms } => {
+                for arm in arms {
+                    self.resolve_infix(&mut arm.expr)?;
+                }
+                self.resolve_infix(expr)
+            }
+
+            ExprKind::If {
+                cond,
+                then,
+                otherwise,
+            } => {
+                self.resolve_infix(cond)?;
+                self.resolve_infix(then)?;
+                self.resolve_infix(otherwise)
+            }
+
+            ExprKind::Call { callee, arg } => {
+                self.resolve_infix(callee)?;
+                self.resolve_infix(arg)
             }
         }
     }
@@ -1604,7 +1724,7 @@ impl Checker {
                 if !aliases.is_empty() {
                     stmt.substitute(&mut subs);
                 }
-                self.check_for_class_signatures(stmt)?;
+                self.check_for_signatures(stmt)?;
             }
 
             let mut stmts = Vec::new();
@@ -1623,6 +1743,12 @@ impl Checker {
         let mut errs = self.resolve_imports(&mut modules);
         if let Some(err) = errs.pop() {
             return Err(IsaError::from(err));
+        }
+
+        for module in &mut modules {
+            for stmt in &mut module.stmts {
+                self.resolve_infix_in_stmt(&mut stmt.kind)?;
+            }
         }
 
         let modules = modules
@@ -1672,7 +1798,7 @@ impl Checker {
         let span = stmt.span;
         match stmt.kind {
             StmtKind::Semi(expr) => {
-                let (expr, set) = self.check(expr)?;
+                let (expr, set) = self.check_expr(expr)?;
                 Ok((Stmt::new(StmtKind::Semi(expr), span), set))
             }
 
@@ -1723,13 +1849,13 @@ impl Checker {
             } => self.check_instance(params, set, name, instance, impls, span),
 
             StmtKind::Operator { params, set, ops } => {
-                let operator = self.check_operator(params, set, ops, span)?;
-                Ok((operator, Set::new()))
+                let op = self.check_operator(params, set, ops, span)?;
+                Ok((op, Set::new()))
             }
         }
     }
 
-    fn check(&mut self, expr: UntypedExpr) -> IsaResult<(Expr<Ty>, Set)> {
+    fn check_expr(&mut self, expr: UntypedExpr) -> IsaResult<(Expr<Ty>, Set)> {
         let span = expr.span;
         match expr.kind {
             ExprKind::Int(i) => Ok((Expr::new(ExprKind::Int(i), span, Ty::Int), Set::new())),
@@ -1752,13 +1878,15 @@ impl Checker {
                 Ok((Expr::new(ExprKind::Path(path), span, ty), set))
             }
 
+            ExprKind::Paren(expr) => self.check_expr(*expr),
+
             ExprKind::Tuple(exprs) => self.check_tuple(exprs, span),
 
             ExprKind::List(exprs) => self.check_list(exprs, span),
 
-            ExprKind::Bin { op, lhs, rhs } => self.check_bin(op, *lhs, *rhs, span),
+            ExprKind::Infix { op, lhs, rhs } => self.check_infix(op, *lhs, *rhs, span),
 
-            ExprKind::Un { op, expr } => self.check_un(op, *expr, span),
+            ExprKind::Prefix { op, expr } => self.check_un(op, *expr, span),
 
             ExprKind::If {
                 cond,

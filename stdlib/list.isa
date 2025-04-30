@@ -54,6 +54,6 @@ instance {a, Eq a} => Eq List a =
 ;
 
 operator {a} => 
-    (++): List a -> List a -> List a,
-    (&): a -> List a -> List a,
+    infixr 5 (++): List a -> List a -> List a,
+    infixr 5 (&): a -> List a -> List a,
 ;

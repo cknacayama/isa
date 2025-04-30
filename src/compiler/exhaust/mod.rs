@@ -269,11 +269,11 @@ impl TypeCtx {
     fn check_single_match_expr(&self, expr: &Expr<Ty>) -> Result<(), MatchNonExhaustive> {
         let span = expr.span;
         match &expr.kind {
-            ExprKind::Bin { lhs, rhs, .. } => {
+            ExprKind::Infix { lhs, rhs, .. } => {
                 self.check_single_match_expr(lhs)?;
                 self.check_single_match_expr(rhs)?;
             }
-            ExprKind::Un { expr, .. } => {
+            ExprKind::Paren(expr) | ExprKind::Prefix { expr, .. } => {
                 self.check_single_match_expr(expr)?;
             }
             ExprKind::Fn { param, expr } => {
@@ -284,6 +284,7 @@ impl TypeCtx {
                 }
                 self.check_single_match_expr(expr)?;
             }
+
             ExprKind::Let { bind, body, .. } => {
                 for p in &bind.params {
                     let ty = p.pat.ty.clone();

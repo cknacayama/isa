@@ -48,7 +48,7 @@ pub enum ParseError {
     ExpectedInt(TokenKind),
     ExpectedType(TokenKind),
     ExpectedPattern(TokenKind),
-    InvalidOperator(Symbol),
+    PrecendenceLimit(i64),
 }
 
 impl From<LexError> for ParseError {
@@ -71,7 +71,7 @@ impl Display for ParseError {
             Self::ExpectedInt(got) => write!(f, "expected integer literal, got `{got}`"),
             Self::ExpectedType(got) => write!(f, "expected type, got `{got}`"),
             Self::ExpectedPattern(got) => write!(f, "expected pattern, got `{got}`"),
-            Self::InvalidOperator(got) => write!(f, "invalid operator `{got}`"),
+            Self::PrecendenceLimit(prec) => write!(f, "precedence limit exceded ({prec} > 255)"),
         }
     }
 }

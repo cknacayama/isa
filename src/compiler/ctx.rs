@@ -6,7 +6,7 @@ use std::{fmt, vec};
 use rustc_hash::FxHashMap;
 use smallvec::smallvec;
 
-use super::ast::{Constructor, Import, ImportClause, ImportWildcard, Path, mod_path};
+use super::ast::{Constructor, Fixity, Import, ImportClause, ImportWildcard, Path, mod_path};
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::token::Ident;
@@ -372,16 +372,20 @@ impl<T> ImportData<T> {
 
 #[derive(Debug, Clone)]
 pub struct OperatorData {
-    ty:  Ty,
-    set: ClassConstraintSet,
+    fixity: Fixity,
+    prec:   u8,
+    ty:     Ty,
+    set:    ClassConstraintSet,
 }
 
 impl OperatorData {
-    pub fn new<T>(ty: Ty, set: T) -> Self
+    pub fn new<T>(fixity: Fixity, prec: u8, ty: Ty, set: T) -> Self
     where
         ClassConstraintSet: From<T>,
     {
         Self {
+            fixity,
+            prec,
             ty,
             set: ClassConstraintSet::from(set),
         }
@@ -393,6 +397,14 @@ impl OperatorData {
 
     pub const fn set(&self) -> &ClassConstraintSet {
         &self.set
+    }
+
+    pub const fn fixity(&self) -> Fixity {
+        self.fixity
+    }
+
+    pub const fn prec(&self) -> u8 {
+        self.prec
     }
 }
 

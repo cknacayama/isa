@@ -4,17 +4,17 @@ use std::rc::Rc;
 use smallvec::smallvec;
 
 use super::ast::{
-    Associativity, Constructor, Expr, ExprKind, Import, ImportClause, ImportWildcard, ListPat,
-    OpDeclaration, Operator, OperatorTable, Pat, PatKind, Path, RangePat, StmtKind,
-    UntypedConstructor, UntypedExpr, UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam,
-    UntypedPat, UntypedStmt, ValDeclaration,
+    Constructor, Expr, ExprKind, Fixity, Import, ImportClause, ImportWildcard, ListPat,
+    OpDeclaration, Pat, PatKind, Path, RangePat, StmtKind, UntypedConstructor, UntypedExpr,
+    UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat, UntypedStmt,
+    ValDeclaration,
 };
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};
 use super::lexer::Lexer;
 use super::token::{Ident, Token, TokenKind};
 use super::types::Ty;
-use crate::global::{Symbol, symbol};
+use crate::global::symbol;
 use crate::span::{Span, Spanned};
 
 pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
@@ -23,7 +23,6 @@ pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
 pub struct Parser<'a> {
     lexer:     Peekable<Lexer<'a>>,
     last_span: Span,
-    operators: OperatorTable,
 }
 
 impl<'a> Parser<'a> {
@@ -37,7 +36,6 @@ impl<'a> Parser<'a> {
         Self {
             lexer:     lexer.peekable(),
             last_span: Span::default(),
-            operators: OperatorTable::default(),
         }
     }
 
@@ -265,33 +263,31 @@ impl<'a> Parser<'a> {
         let (set, params) = self.parse_constraint_set()?;
         let mut signatures = Vec::new();
         loop {
-            let (prefix, op) = match self.peek_kind()? {
-                Some(TokenKind::LParen) => {
-                    self.next();
-                    let op = self.expect_op()?;
-                    self.expect(TokenKind::RParen)?;
-                    (false, op)
-                }
-                Some(TokenKind::LBrace) => {
-                    self.next();
-                    let op = self.expect_op()?;
-                    self.expect(TokenKind::RBrace)?;
-                    (true, op)
-                }
-                _ => break,
+            let Some(fixity) = self.next_if_map(|tk| Fixity::from_token(tk.data)) else {
+                break;
             };
+            let Spanned {
+                data: prec,
+                span: prec_span,
+            } = self.expect_integer()?;
+            let prec = u8::try_from(prec)
+                .map_err(|_| Spanned::new(ParseError::PrecendenceLimit(prec), prec_span))?;
+            self.expect(TokenKind::LParen)?;
+            let op = self.expect_op()?;
+            self.expect(TokenKind::RParen)?;
             self.expect(TokenKind::Colon)?;
             let ty = self.parse_type()?;
-            span = span.union(ty.span);
-            signatures.push(OpDeclaration::new(prefix, op.ident, ty.data));
+            signatures.push(OpDeclaration::new(fixity, prec, op.ident, ty.data));
             if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
                 span = span.union(c_span);
+            } else {
+                break;
             }
         }
         if signatures.is_empty() {
             return Err(Spanned::new(
                 ParseError::ExpectedToken {
-                    expected: TokenKind::LParen,
+                    expected: TokenKind::KwInfix,
                     got:      self.peek().transpose()?.map(|tk| tk.data),
                 },
                 span,
@@ -506,59 +502,14 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> ParseResult<UntypedExpr> {
-        let lhs = self.parse_prefix()?;
-        self.parse_precedence(lhs, 0)
-    }
-
-    fn check_op_right(&self, token: Token, min_prec: u8) -> Option<(Ident, Operator)> {
-        let symbol = token.data.as_operator()?;
-        let op = self.operators.get_infix(symbol)?;
-        let symbol = Ident::new(symbol, token.span);
-
-        if op.precedence > min_prec || (op.associativity.is_right() && op.precedence == min_prec) {
-            Some((symbol, op))
-        } else {
-            None
-        }
-    }
-
-    fn check_op(&self, token: Token, min_prec: u8) -> Option<(Ident, Operator)> {
-        let symbol = token.data.as_operator()?;
-        let op = self.operators.get_infix(symbol)?;
-        let symbol = Ident::new(symbol, token.span);
-
-        if op.precedence >= min_prec {
-            Some((symbol, op))
-        } else {
-            None
-        }
-    }
-
-    fn parse_precedence(
-        &mut self,
-        mut lhs: UntypedExpr,
-        precedence: u8,
-    ) -> ParseResult<UntypedExpr> {
-        while let Some((op, curr_op)) = self
-            .peek()
-            .transpose()?
-            .and_then(|tk| self.check_op(tk, precedence))
+        let mut lhs = self.parse_prefix()?;
+        while let Some(op) =
+            self.next_if_map(|tk| tk.data.as_operator().map(|op| Ident::new(op, tk.span)))
         {
-            self.lexer.next();
-            let mut rhs = self.parse_prefix()?;
-            while let Some((_, next_op)) = self
-                .peek()
-                .transpose()?
-                .and_then(|tk| self.check_op_right(tk, curr_op.precedence))
-            {
-                let next_prec =
-                    curr_op.precedence + u8::from(next_op.precedence > curr_op.precedence);
-                rhs = self.parse_precedence(rhs, next_prec)?;
-            }
-
+            let rhs = self.parse_prefix()?;
             let span = lhs.span.union(rhs.span);
             lhs = Expr::untyped(
-                ExprKind::Bin {
+                ExprKind::Infix {
                     op,
                     lhs: Box::new(lhs),
                     rhs: Box::new(rhs),
@@ -576,33 +527,19 @@ impl<'a> Parser<'a> {
                 span,
             }) => {
                 self.next();
-                self.parse_prefix_op(op, span)
+                let expr = self.parse_prefix()?;
+                let op = Ident::new(op, span);
+                let span = span.union(expr.span);
+                let kind = ExprKind::Prefix {
+                    op,
+                    expr: Box::new(expr),
+                };
+
+                Ok(UntypedExpr::untyped(kind, span))
             }
 
             _ => self.parse_call(),
         }
-    }
-
-    fn parse_prefix_op(&mut self, op: Symbol, span: Span) -> ParseResult<UntypedExpr> {
-        let operator = self
-            .operators
-            .get_prefix(op)
-            .ok_or_else(|| Spanned::new(ParseError::InvalidOperator(op), span))?;
-
-        let expr = match operator.associativity {
-            Associativity::Non => self.parse_call()?,
-            Associativity::Right => self.parse_prefix()?,
-            Associativity::Left => unreachable!(),
-        };
-
-        let op = Ident::new(op, span);
-        let span = span.union(expr.span);
-        let kind = ExprKind::Un {
-            op,
-            expr: Box::new(expr),
-        };
-
-        Ok(UntypedExpr::untyped(kind, span))
     }
 
     fn parse_call(&mut self) -> ParseResult<UntypedExpr> {
@@ -680,7 +617,14 @@ impl<'a> Parser<'a> {
                 let kind = ExprKind::Operator(Ident::new(op, op_span));
                 return Ok(UntypedExpr::untyped(kind, span.union(rspan)));
             }
-            exprs.push(self.parse_prefix_op(op, op_span)?);
+            let expr = self.parse_prefix()?;
+            let op = Ident::new(op, span);
+            let span = span.union(expr.span);
+            let kind = ExprKind::Prefix {
+                op,
+                expr: Box::new(expr),
+            };
+            exprs.push(UntypedExpr::untyped(kind, span));
             self.next_if_match(TokenKind::Comma);
         }
 
@@ -695,10 +639,8 @@ impl<'a> Parser<'a> {
         let span = span.union(self.expect(TokenKind::RParen)?);
 
         if exprs.len() == 1 {
-            Ok(Expr {
-                span,
-                ..exprs.pop().unwrap()
-            })
+            let kind = ExprKind::Paren(Box::new(exprs.pop().unwrap()));
+            Ok(Expr::untyped(kind, span))
         } else {
             Ok(UntypedExpr::untyped(
                 ExprKind::Tuple(exprs.into_boxed_slice()),
