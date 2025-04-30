@@ -410,15 +410,17 @@ pub struct OpDeclaration {
     pub prec:   u8,
     pub op:     Symbol,
     pub ty:     Ty,
+    pub span:   Span,
 }
 
 impl OpDeclaration {
-    pub const fn new(fixity: Fixity, prec: u8, op: Symbol, ty: Ty) -> Self {
+    pub const fn new(fixity: Fixity, prec: u8, op: Symbol, ty: Ty, span: Span) -> Self {
         Self {
             fixity,
             prec,
             op,
             ty,
+            span,
         }
     }
 }
@@ -484,6 +486,8 @@ pub enum ExprKind<T> {
 
     List(Box<[Expr<T>]>),
 
+    /// Used for keeping track of intended precedence
+    /// when resolving operators
     Paren(Box<Expr<T>>),
 
     Let {

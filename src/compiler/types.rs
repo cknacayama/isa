@@ -127,6 +127,14 @@ impl Ty {
         })
     }
 
+    pub fn function_arity(&self) -> usize {
+        match self {
+            Ty::Fn { ret, .. } => 1 + ret.function_arity(),
+            Ty::Scheme { ty, .. } => ty.function_arity(),
+            _ => 0,
+        }
+    }
+
     #[must_use]
     pub const fn is_fn(&self) -> bool {
         matches!(self, Self::Fn { .. })
@@ -213,7 +221,7 @@ impl Ty {
     }
 
     pub fn param_iter(&self) -> impl Iterator<Item = Self> {
-        ParamIter { ty: self.clone() }
+        ParamIter(self.clone())
     }
 
     #[must_use]
@@ -356,22 +364,20 @@ impl Substitute for Rc<Ty> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParamIter {
-    ty: Ty,
-}
+pub struct ParamIter(Ty);
 
 impl Iterator for ParamIter {
     type Item = Ty;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match &self.ty {
+        match &self.0 {
             Ty::Fn { param, ret } => {
-                let param = param.as_ref().clone();
-                self.ty = ret.as_ref().clone();
+                let param = Ty::from(param);
+                self.0 = Ty::from(ret);
                 Some(param)
             }
             Ty::Scheme { ty, .. } => {
-                self.ty = ty.as_ref().clone();
+                self.0 = Ty::from(ty);
                 self.next()
             }
             _ => None,

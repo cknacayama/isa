@@ -262,10 +262,9 @@ impl<'a> Parser<'a> {
         let mut span = self.expect(TokenKind::KwOperator)?;
         let (set, params) = self.parse_constraint_set()?;
         let mut signatures = Vec::new();
-        loop {
-            let Some(fixity) = self.next_if_map(|tk| Fixity::from_token(tk.data)) else {
-                break;
-            };
+        while let Some((fixity, op_span)) =
+            self.next_if_map(|tk| Fixity::from_token(tk.data).map(|f| (f, tk.span)))
+        {
             let Spanned {
                 data: prec,
                 span: prec_span,
@@ -277,7 +276,8 @@ impl<'a> Parser<'a> {
             self.expect(TokenKind::RParen)?;
             self.expect(TokenKind::Colon)?;
             let ty = self.parse_type()?;
-            signatures.push(OpDeclaration::new(fixity, prec, op.ident, ty.data));
+            let op_span = op_span.union(ty.span);
+            signatures.push(OpDeclaration::new(fixity, prec, op.ident, ty.data, op_span));
             if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
                 span = span.union(c_span);
             } else {
@@ -503,6 +503,8 @@ impl<'a> Parser<'a> {
 
     fn parse_expr(&mut self) -> ParseResult<UntypedExpr> {
         let mut lhs = self.parse_prefix()?;
+        // We assume all infix operators to be left associative
+        // this will be resolved right before type checking
         while let Some(op) =
             self.next_if_map(|tk| tk.data.as_operator().map(|op| Ident::new(op, tk.span)))
         {

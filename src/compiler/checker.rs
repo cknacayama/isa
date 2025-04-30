@@ -526,17 +526,33 @@ impl Checker {
             prec,
             op,
             ty,
+            span,
         } in &mut ops
         {
             self.check_valid_type(ty)?;
-            *ty = Ty::Scheme {
-                quant: quant.clone(),
-                ty:    Rc::new(ty.clone()),
-            };
-            let data = OperatorData::new(*fixity, *prec, ty.clone(), set.clone());
+            let arity = ty.function_arity();
+            if !quant.is_empty() {
+                *ty = Ty::Scheme {
+                    quant: quant.clone(),
+                    ty:    Rc::new(ty.clone()),
+                };
+            }
+
             if fixity.is_prefix() {
+                if arity < 1 {
+                    let fst = DiagnosticLabel::new("invalid operator type", *span);
+                    let note = "prefix operator should have at least 1 parameter";
+                    return Err(IsaError::new("invalid operator", fst, Vec::new()).with_note(note));
+                }
+                let data = OperatorData::new(*fixity, *prec, ty.clone(), set.clone());
                 self.ctx.insert_prefix(*op, data);
             } else {
+                if arity < 2 {
+                    let fst = DiagnosticLabel::new("invalid operator type", *span);
+                    let note = "infix operator should have at least 2 parameters";
+                    return Err(IsaError::new("invalid operator", fst, Vec::new()).with_note(note));
+                }
+                let data = OperatorData::new(*fixity, *prec, ty.clone(), set.clone());
                 self.ctx.insert_infix(*op, data);
             }
         }
@@ -747,7 +763,10 @@ impl Checker {
     ) -> IsaResult<(Stmt<Ty>, Set)> {
         let class_data = self.ctx.get_class(&class)?;
 
-        let quant: Rc<_> = params.iter().map(|p| p.as_var().unwrap()).collect();
+        let quant = params
+            .iter()
+            .map(|p| p.as_var().unwrap())
+            .collect::<Rc<_>>();
 
         let scheme = if quant.is_empty() {
             instance.clone()
@@ -1509,7 +1528,10 @@ impl Checker {
             } => {
                 let data = InstanceData::new(set.clone(), expr.span);
                 self.check_valid_type(instance)?;
-                let quant: Rc<_> = params.iter().map(|p| p.as_var().unwrap()).collect();
+                let quant = params
+                    .iter()
+                    .map(|p| p.as_var().unwrap())
+                    .collect::<Rc<_>>();
                 let instance = if quant.is_empty() {
                     instance.clone()
                 } else {
@@ -1595,6 +1617,8 @@ impl Checker {
             ExprKind::Infix { op, lhs, rhs } => {
                 let data = self.ctx.get_infix(*op)?;
 
+                // Because we assume all operators are left
+                // associative during parsing we resolve the lhs first
                 self.resolve_infix(lhs)?;
 
                 if let ExprKind::Infix {
@@ -1605,14 +1629,23 @@ impl Checker {
                 {
                     let ldata = self.ctx.get_infix(*lop)?;
 
+                    // If the operator at the left side
+                    // doesn't associate with the current one
+                    // then the expression is invalid
                     if ldata.prec() == data.prec()
                         && (ldata.fixity() != data.fixity() || ldata.fixity().is_nonfix())
                     {
                         let fst = DiagnosticLabel::new("invalid infix expression", span);
                         let snd =
-                            DiagnosticLabel::new(format!("{lop} is non assossiative"), lop.span);
+                            DiagnosticLabel::new(format!("{lop} is non associative"), lop.span);
                         return Err(IsaError::new("invalid expression", fst, vec![snd]));
                     }
+
+                    // If the operator at the left side
+                    // has lower precedence than the current one
+                    // OR if it is right associative AND the precedence
+                    // is equal, then we rotate the tree
+                    // (right rotation in a binary tree)
                     if ldata.prec() < data.prec()
                         || (ldata.prec() == data.prec() && ldata.fixity().is_right())
                     {
@@ -1724,6 +1757,8 @@ impl Checker {
                 if !aliases.is_empty() {
                     stmt.substitute(&mut subs);
                 }
+                // We check type class signatures before
+                // other because we don't extract it
                 self.check_for_signatures(stmt)?;
             }
 

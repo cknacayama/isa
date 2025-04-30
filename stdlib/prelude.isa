@@ -23,6 +23,10 @@ instance Div int =
     let div a b = a / b,
     let rem a b = a % b,
 ;
+instance Pow int =
+    let powi a b = a ^ b,
+    let powr a b = a ^^ b,
+;
 instance Neg int = let neg a = -a;
 instance Eq int = let eq a b = a == b;
 instance Cmp int = 
@@ -45,6 +49,10 @@ instance Mul real = let mul a b = a * b;
 instance Div real = 
     let div a b = a / b,
     let rem a b = a % b,
+;
+instance Pow real =
+    let powi a b = a ^ b,
+    let powr a b = a ^^ b,
 ;
 instance Neg real = let neg a = -a;
 instance Eq real = let eq a b = a == b;
