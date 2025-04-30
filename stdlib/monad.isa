@@ -28,16 +28,11 @@ class {Applicative m} => Monad m =
     let action a b = a >>= \_ -> b,
 ;
 
-operator {a, b, f, Functor f} => 
-    infixl 4 (<$>): (a -> b) -> f a -> f b,
-    infixl 4 (<$):  a -> f b -> f a,
-;
-operator {a, b, f, Applicative f} => 
-    infixl 4 (<*>): f (a -> b) -> f a -> f b,
-    infixl 4 (*>):  f a -> f b -> f b,
-    infixl 4 (<*):  f a -> f b -> f a,
-;
-operator {a, b, m, Monad m} => 
-    infixl 1 (>>=): m a -> (a -> m b) -> m b,
-    infixl 1 (>>): m a -> m b -> m b,
-;
+infixl 4 {a, b, f, Functor f} => (<$>): (a -> b) -> f a -> f b;
+infixl 4 {a, b, f, Functor f} => (<$):  a -> f b -> f a;
+infixl 4 {a, b, f, Applicative f} => (<*>): f (a -> b) -> f a -> f b;
+infixl 4 {a, b, f, Applicative f} => (*>):  f a -> f b -> f b;
+infixl 4 {a, b, f, Applicative f} => (<*):  f a -> f b -> f a;
+
+infixl 1 {a, b, m, Monad m} =>(>>=): m a -> (a -> m b) -> m b;
+infixl 1 {a, b, m, Monad m} =>(>>): m a -> m b -> m b;

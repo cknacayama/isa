@@ -257,6 +257,16 @@ impl TypeCtx {
                     self.check_single_match_expr(&bind.expr)?;
                 }
             }
+            StmtKind::Let(bind) => {
+                for p in &bind.params {
+                    let ty = p.pat.ty.clone();
+                    let witnesses = check_match_pats(std::iter::once(&p.pat), ty, self);
+                    if !witnesses.is_empty() {
+                        return Err(MatchNonExhaustive::new(witnesses, p.pat.span));
+                    }
+                }
+                self.check_single_match_expr(&bind.expr)?;
+            }
 
             StmtKind::Val(_)
             | StmtKind::Alias { .. }
@@ -293,12 +303,8 @@ impl TypeCtx {
                         return Err(MatchNonExhaustive::new(witnesses, p.pat.span));
                     }
                 }
-                let expr = &bind.expr;
-
-                self.check_single_match_expr(expr)?;
-                if let Some(body) = body {
-                    self.check_single_match_expr(body)?;
-                }
+                self.check_single_match_expr(&bind.expr)?;
+                self.check_single_match_expr(body)?;
             }
             ExprKind::Match { expr, arms } => {
                 self.check_single_match_expr(expr)?;

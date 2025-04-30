@@ -75,25 +75,31 @@ pub enum Fixity {
     Prefix,
 }
 
+impl Display for Fixity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Infixl | Self::Infixr | Self::Nonfix => write!(f, "infix"),
+            Self::Prefix => write!(f, "prefix"),
+        }
+    }
+}
+
 impl Fixity {
     #[must_use]
     pub const fn is_right(self) -> bool {
         matches!(self, Self::Infixr)
     }
 
-    pub const fn from_token(kind: TokenKind) -> Option<Self> {
-        match kind {
-            TokenKind::KwInfix => Some(Self::Nonfix),
-            TokenKind::KwInfixl => Some(Self::Infixl),
-            TokenKind::KwInfixr => Some(Self::Infixr),
-            TokenKind::KwPrefix => Some(Self::Prefix),
-            _ => None,
-        }
-    }
-
     #[must_use]
     pub const fn is_prefix(self) -> bool {
         matches!(self, Self::Prefix)
+    }
+
+    pub const fn minimum_airty(self) -> usize {
+        match self {
+            Self::Infixl | Self::Infixr | Self::Nonfix => 2,
+            Self::Prefix => 1,
+        }
     }
 
     #[must_use]
@@ -405,34 +411,18 @@ pub struct ValDeclaration {
 }
 
 #[derive(Debug, Clone)]
-pub struct OpDeclaration {
-    pub fixity: Fixity,
-    pub prec:   u8,
-    pub op:     Symbol,
-    pub ty:     Ty,
-    pub span:   Span,
-}
-
-impl OpDeclaration {
-    pub const fn new(fixity: Fixity, prec: u8, op: Symbol, ty: Ty, span: Span) -> Self {
-        Self {
-            fixity,
-            prec,
-            op,
-            ty,
-            span,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
 pub enum StmtKind<T> {
     Semi(Expr<T>),
 
+    Let(LetBind<T>),
+
     Operator {
+        fixity: Fixity,
+        prec:   u8,
         params: Box<[Ty]>,
         set:    ClassConstraintSet,
-        ops:    Box<[OpDeclaration]>,
+        op:     Symbol,
+        ty:     Ty,
     },
 
     Val(ValDeclaration),
@@ -492,7 +482,7 @@ pub enum ExprKind<T> {
 
     Let {
         bind: Box<LetBind<T>>,
-        body: Option<Box<Expr<T>>>,
+        body: Box<Expr<T>>,
     },
 
     Infix {
@@ -623,12 +613,10 @@ impl Substitute for Stmt<()> {
             StmtKind::Instance { instance, .. } => {
                 instance.substitute(subs);
             }
-            StmtKind::Operator { ops, .. } => {
-                for op in ops {
-                    op.ty.substitute(subs);
-                }
+            StmtKind::Operator { ty, .. } => {
+                ty.substitute(subs);
             }
-            StmtKind::Semi(_) => (),
+            StmtKind::Let(_) | StmtKind::Semi(_) => (),
         }
     }
 }
@@ -651,6 +639,9 @@ impl Substitute for StmtKind<Ty> {
         S: FnMut(&Ty) -> Option<Ty>,
     {
         match self {
+            Self::Let(bind) => {
+                bind.substitute(subs);
+            }
             Self::Semi(semi) => {
                 semi.substitute(subs);
             }
@@ -697,14 +688,14 @@ impl Substitute for StmtKind<Ty> {
                     p.substitute(subs);
                 }
             }
-            Self::Operator { params, set, ops } => {
+            Self::Operator {
+                params, set, ty, ..
+            } => {
                 set.substitute(subs);
                 for p in params {
                     p.substitute(subs);
                 }
-                for op in ops {
-                    op.ty.substitute(subs);
-                }
+                ty.substitute(subs);
             }
         }
     }
@@ -728,9 +719,7 @@ impl Substitute for Expr<Ty> {
         match &mut self.kind {
             ExprKind::Let { bind, body } => {
                 bind.substitute(subs);
-                if let Some(body) = body.as_mut() {
-                    body.substitute(subs);
-                }
+                body.substitute(subs);
             }
             ExprKind::Fn { param, expr } => {
                 param.substitute(subs);

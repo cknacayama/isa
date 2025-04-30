@@ -129,8 +129,8 @@ impl Ty {
 
     pub fn function_arity(&self) -> usize {
         match self {
-            Ty::Fn { ret, .. } => 1 + ret.function_arity(),
-            Ty::Scheme { ty, .. } => ty.function_arity(),
+            Self::Fn { ret, .. } => 1 + ret.function_arity(),
+            Self::Scheme { ty, .. } => ty.function_arity(),
             _ => 0,
         }
     }

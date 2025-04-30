@@ -67,33 +67,25 @@ class {Cmp a, Add a, Sub a, Mul a, Div a, Pow a, Neg a} =>
         val from_real: real -> a,
 ;
 
-operator {a, Add a} => infixl 6 (+): a -> a -> a; 
-operator {a, Sub a} => infixl 6 (-): a -> a -> a; 
-operator {a, Mul a} => infixl 7 (*): a -> a -> a; 
-operator {a, Div a} => 
-    infixl 7 (/): a -> a -> a,
-    infixl 7 (%): a -> a -> a
-; 
-operator {a, Or a} => infixr 2 (||): a -> a -> a; 
-operator {a, And a} => infixr 3 (&&): a -> a -> a; 
-operator {a, Eq a} => 
-    infix 4 (==): a -> a -> bool,
-    infix 4 (!=): a -> a -> bool
-;
-operator {a, Cmp a} => 
-    infix 4 (>): a -> a -> bool,
-    infix 4 (<): a -> a -> bool,
-    infix 4 (>=): a -> a -> bool, 
-    infix 4 (<=): a -> a -> bool,
-;
-operator {a, Pow a} =>
-    infixr 8 (^): a -> int -> a,
-    infixr 8 (^^): a -> real -> a,
-;
-operator {a, b} => infixr 0 ($): (a -> b) -> a -> b;
-operator {a, b, c} => infixr 9 (.): (b -> c) -> (a -> b) -> a -> c;
-operator {a, Neg a} => prefix 10 (-): a -> a;
-operator {a, Not a} => prefix 10 (!): a -> bool;
+infixl 6 {a, Add a} => (+): a -> a -> a; 
+infixl 6 {a, Sub a} => (-): a -> a -> a; 
+infixl 7 {a, Mul a} => (*): a -> a -> a; 
+infixl 7 {a, Div a} => (/): a -> a -> a;
+infixl 7 {a, Div a} =>(%): a -> a -> a;
+infixr 2 {a, Or a} => (||): a -> a -> a; 
+infixr 3 {a, And a} => (&&): a -> a -> a; 
+infix 4 {a, Eq a} => (==): a -> a -> bool;
+infix 4 {a, Eq a} => (!=): a -> a -> bool;
+infix 4 {a, Cmp a} => (>): a -> a -> bool;
+infix 4 {a, Cmp a} => (<): a -> a -> bool;
+infix 4 {a, Cmp a} => (>=): a -> a -> bool;
+infix 4 {a, Cmp a} => (<=): a -> a -> bool;
+infixr 8 {a, Pow a} => (^): a -> int -> a;
+infixr 8 {a, Pow a} => (^^): a -> real -> a;
+infixr 0 {a, b} => ($): (a -> b) -> a -> b;
+infixr 9 {a, b, c} => (.): (b -> c) -> (a -> b) -> a -> c;
+prefix 10 {a, Neg a} => (-): a -> a;
+prefix 10 {a, Not a} => (!): a -> bool;
 
 instance Eq Ordering =
     let eq a b = match (a,b) with

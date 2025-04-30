@@ -4,9 +4,9 @@ use rustc_hash::FxHashMap;
 use smallvec::smallvec;
 
 use super::ast::{
-    Constructor, Expr, ExprKind, LetBind, ListPat, MatchArm, Module, OpDeclaration, Param, Pat,
-    PatKind, Path, Stmt, StmtKind, UntypedConstructor, UntypedExpr, UntypedLetBind,
-    UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat, UntypedStmt, ValDeclaration,
+    Constructor, Expr, ExprKind, Fixity, LetBind, ListPat, MatchArm, Module, Param, Pat, PatKind,
+    Path, Stmt, StmtKind, UntypedConstructor, UntypedExpr, UntypedLetBind, UntypedMatchArm,
+    UntypedModule, UntypedParam, UntypedPat, UntypedStmt, ValDeclaration,
 };
 use super::ctx::{
     AliasData, ClassData, Ctx, Generator, IdGenerator, InstanceData, MemberData, VarData,
@@ -21,6 +21,7 @@ use super::infer::{
 use super::token::Ident;
 use super::types::Ty;
 use crate::compiler::ctx::OperatorData;
+use crate::global::Symbol;
 use crate::span::Span;
 
 #[derive(Debug, Default)]
@@ -414,33 +415,42 @@ impl Checker {
         Ok((ty, expr, typed_params, set))
     }
 
+    fn check_let_stmt(&mut self, bind: UntypedLetBind, span: Span) -> IsaResult<(Stmt<Ty>, Set)> {
+        let name = bind.name;
+
+        let (u1, expr, params, set) = self.check_let_bind(bind)?;
+
+        self.insert_let(name, u1, set.clone());
+
+        let bind = LetBind::new(name, params, expr);
+
+        let kind = StmtKind::Let(bind);
+
+        Ok((Stmt::new(kind, span), set))
+    }
+
     fn check_let(
         &mut self,
         bind: UntypedLetBind,
-        body: Option<UntypedExpr>,
+        body: UntypedExpr,
         span: Span,
     ) -> IsaResult<(Expr<Ty>, Set)> {
         let name = bind.name;
 
         let (u1, expr, params, set) = self.check_let_bind(bind)?;
 
-        let (body, ty, set) = if let Some(body) = body {
-            self.ctx.push_scope();
-            self.insert_let(name, u1, set.clone());
-            let (body, body_set) = self.check_expr(body)?;
-            self.ctx.pop_scope();
-            let ty = body.ty.clone();
-            (Some(body), ty, set.concat(body_set))
-        } else {
-            self.insert_let(name, u1, set.clone());
-            (None, self.ctx.unit(), set)
-        };
+        self.ctx.push_scope();
+        self.insert_let(name, u1, set.clone());
+        let (body, body_set) = self.check_expr(body)?;
+        self.ctx.pop_scope();
+        let ty = body.ty.clone();
+        let set = set.concat(body_set);
 
         let bind = LetBind::new(name, params, expr);
 
         let kind = ExprKind::Let {
             bind: Box::new(bind),
-            body: body.map(Box::new),
+            body: Box::new(body),
         };
 
         Ok((Expr::new(kind, span, ty), set))
@@ -511,9 +521,12 @@ impl Checker {
 
     fn check_operator(
         &mut self,
+        fixity: Fixity,
+        prec: u8,
         params: Box<[Ty]>,
         set: Set,
-        mut ops: Box<[OpDeclaration]>,
+        op: Symbol,
+        mut ty: Ty,
         span: Span,
     ) -> IsaResult<Stmt<Ty>> {
         let quant = params
@@ -521,43 +534,42 @@ impl Checker {
             .map(|p| p.as_var().unwrap())
             .collect::<Rc<_>>();
 
-        for OpDeclaration {
-            fixity,
-            prec,
-            op,
-            ty,
-            span,
-        } in &mut ops
-        {
-            self.check_valid_type(ty)?;
-            let arity = ty.function_arity();
-            if !quant.is_empty() {
-                *ty = Ty::Scheme {
-                    quant: quant.clone(),
-                    ty:    Rc::new(ty.clone()),
-                };
-            }
-
-            if fixity.is_prefix() {
-                if arity < 1 {
-                    let fst = DiagnosticLabel::new("invalid operator type", *span);
-                    let note = "prefix operator should have at least 1 parameter";
-                    return Err(IsaError::new("invalid operator", fst, Vec::new()).with_note(note));
-                }
-                let data = OperatorData::new(*fixity, *prec, ty.clone(), set.clone());
-                self.ctx.insert_prefix(*op, data);
-            } else {
-                if arity < 2 {
-                    let fst = DiagnosticLabel::new("invalid operator type", *span);
-                    let note = "infix operator should have at least 2 parameters";
-                    return Err(IsaError::new("invalid operator", fst, Vec::new()).with_note(note));
-                }
-                let data = OperatorData::new(*fixity, *prec, ty.clone(), set.clone());
-                self.ctx.insert_infix(*op, data);
-            }
+        self.check_valid_type(&ty)?;
+        let arity = ty.function_arity();
+        if !quant.is_empty() {
+            ty = Ty::Scheme {
+                quant: quant.clone(),
+                ty:    Rc::new(ty.clone()),
+            };
         }
 
-        let kind = StmtKind::Operator { params, set, ops };
+        let data = OperatorData::new(fixity, prec, ty.clone(), set.clone(), span);
+        let min = fixity.minimum_airty();
+        if arity < min {
+            let fst = DiagnosticLabel::new("invalid operator type", span);
+            let note = format!("{fixity} operator should have at least airty of {min}");
+            return Err(IsaError::new("invalid operator", fst, Vec::new()).with_note(note));
+        }
+
+        if let Some(prev) = if fixity.is_prefix() {
+            self.ctx.insert_prefix(op, data)
+        } else {
+            self.ctx.insert_infix(op, data)
+        } {
+            let fst =
+                DiagnosticLabel::new(format!("redefinition of {fixity} operator `{op}`"), span);
+            let snd = DiagnosticLabel::new("previously defined here", prev.span());
+            return Err(IsaError::new("redefined operator", fst, vec![snd]));
+        }
+
+        let kind = StmtKind::Operator {
+            fixity,
+            prec,
+            params,
+            set,
+            op,
+            ty,
+        };
 
         Ok(Stmt::new(kind, span))
     }
@@ -1384,7 +1396,7 @@ impl Checker {
                 (*name, stmt.span)
             }
             StmtKind::Operator {
-                params, set, ops, ..
+                params, set, ty, ..
             } => {
                 let mut subs = Vec::new();
 
@@ -1397,9 +1409,7 @@ impl Checker {
                 }
 
                 set.substitute_param(&subs);
-                for op in ops {
-                    op.ty.substitute_param(&subs);
-                }
+                ty.substitute_param(&subs);
 
                 return Ok(());
             }
@@ -1425,7 +1435,7 @@ impl Checker {
                 return Ok(());
             }
 
-            StmtKind::Semi(_) => return Ok(()),
+            StmtKind::Let(_) | StmtKind::Semi(_) => return Ok(()),
         };
 
         declared.insert(name, span).map_or(Ok(()), |previous| {
@@ -1571,7 +1581,7 @@ impl Checker {
 
     fn resolve_infix_in_stmt(&self, stmt: &mut StmtKind<()>) -> IsaResult<()> {
         match stmt {
-            StmtKind::Semi(expr) => self.resolve_infix(expr),
+            StmtKind::Let(LetBind { expr, .. }) | StmtKind::Semi(expr) => self.resolve_infix(expr),
             StmtKind::Instance { impls, .. }
             | StmtKind::Class {
                 defaults: impls, ..
@@ -1608,10 +1618,8 @@ impl Checker {
             }
 
             ExprKind::Let { bind, body } => {
-                if let Some(body) = body {
-                    self.resolve_infix(body)?;
-                }
-                self.resolve_infix(&mut bind.expr)
+                self.resolve_infix(&mut bind.expr)?;
+                self.resolve_infix(body)
             }
 
             ExprKind::Infix { op, lhs, rhs } => {
@@ -1867,6 +1875,8 @@ impl Checker {
                 Ok((val, Set::new()))
             }
 
+            StmtKind::Let(bind) => self.check_let_stmt(bind, span),
+
             StmtKind::Class {
                 set,
                 name,
@@ -1883,8 +1893,15 @@ impl Checker {
                 impls,
             } => self.check_instance(params, set, name, instance, impls, span),
 
-            StmtKind::Operator { params, set, ops } => {
-                let op = self.check_operator(params, set, ops, span)?;
+            StmtKind::Operator {
+                fixity,
+                prec,
+                params,
+                set,
+                op,
+                ty,
+            } => {
+                let op = self.check_operator(fixity, prec, params, set, op, ty, span)?;
                 Ok((op, Set::new()))
             }
         }
@@ -1933,7 +1950,7 @@ impl Checker {
 
             ExprKind::Call { callee, arg } => self.check_call(*callee, *arg, span),
 
-            ExprKind::Let { bind, body } => self.check_let(*bind, body.map(|body| *body), span),
+            ExprKind::Let { bind, body } => self.check_let(*bind, *body, span),
 
             ExprKind::Match { expr, arms } => self.check_match(*expr, arms, span),
         }

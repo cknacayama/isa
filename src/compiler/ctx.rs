@@ -376,10 +376,11 @@ pub struct OperatorData {
     prec:   u8,
     ty:     Ty,
     set:    ClassConstraintSet,
+    span:   Span,
 }
 
 impl OperatorData {
-    pub fn new<T>(fixity: Fixity, prec: u8, ty: Ty, set: T) -> Self
+    pub fn new<T>(fixity: Fixity, prec: u8, ty: Ty, set: T, span: Span) -> Self
     where
         ClassConstraintSet: From<T>,
     {
@@ -388,7 +389,12 @@ impl OperatorData {
             prec,
             ty,
             set: ClassConstraintSet::from(set),
+            span,
         }
+    }
+
+    pub const fn span(&self) -> Span {
+        self.span
     }
 
     pub const fn ty(&self) -> &Ty {

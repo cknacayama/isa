@@ -4,10 +4,9 @@ use std::rc::Rc;
 use smallvec::smallvec;
 
 use super::ast::{
-    Constructor, Expr, ExprKind, Fixity, Import, ImportClause, ImportWildcard, ListPat,
-    OpDeclaration, Pat, PatKind, Path, RangePat, StmtKind, UntypedConstructor, UntypedExpr,
-    UntypedLetBind, UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat, UntypedStmt,
-    ValDeclaration,
+    Constructor, Expr, ExprKind, Fixity, Import, ImportClause, ImportWildcard, ListPat, Pat,
+    PatKind, Path, RangePat, StmtKind, UntypedConstructor, UntypedExpr, UntypedLetBind,
+    UntypedMatchArm, UntypedModule, UntypedParam, UntypedPat, UntypedStmt, ValDeclaration,
 };
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};
@@ -241,7 +240,11 @@ impl<'a> Parser<'a> {
             TokenKind::KwVal => self.parse_val_expr(),
             TokenKind::KwAlias => self.parse_alias(),
             TokenKind::KwClass => self.parse_class(),
-            TokenKind::KwOperator => self.parse_operator(),
+            TokenKind::KwInfix => self.parse_operator(Fixity::Nonfix),
+            TokenKind::KwInfixl => self.parse_operator(Fixity::Infixl),
+            TokenKind::KwInfixr => self.parse_operator(Fixity::Infixr),
+            TokenKind::KwPrefix => self.parse_operator(Fixity::Prefix),
+            TokenKind::KwLet => self.parse_let_stmt(),
             TokenKind::KwInstance => self.parse_instance(),
             _ => self.parse_expr_stmt(),
         }?;
@@ -251,6 +254,25 @@ impl<'a> Parser<'a> {
         Ok(stmt)
     }
 
+    fn parse_let_stmt(&mut self) -> ParseResult<UntypedStmt> {
+        let Spanned { data: bind, span } = self.parse_let_bind()?;
+        if self.next_if_match(TokenKind::KwIn).is_some() {
+            let body = self.parse_expr()?;
+            let span = span.union(body.span);
+            let kind = StmtKind::Semi(Expr::untyped(
+                ExprKind::Let {
+                    bind: Box::new(bind),
+                    body: Box::new(body),
+                },
+                span,
+            ));
+            Ok(UntypedStmt::new(kind, span))
+        } else {
+            let kind = StmtKind::Let(bind);
+            Ok(UntypedStmt::new(kind, span))
+        }
+    }
+
     fn parse_expr_stmt(&mut self) -> ParseResult<UntypedStmt> {
         let expr = self.parse_expr()?;
         let span = expr.span;
@@ -258,46 +280,29 @@ impl<'a> Parser<'a> {
         Ok(UntypedStmt::new(StmtKind::Semi(expr), span))
     }
 
-    fn parse_operator(&mut self) -> ParseResult<UntypedStmt> {
-        let mut span = self.expect(TokenKind::KwOperator)?;
+    fn parse_operator(&mut self, fixity: Fixity) -> ParseResult<UntypedStmt> {
+        let span = self.next().unwrap().unwrap().span;
+        let Spanned {
+            data: prec,
+            span: prec_span,
+        } = self.expect_integer()?;
+        let prec = u8::try_from(prec)
+            .map_err(|_| Spanned::new(ParseError::PrecendenceLimit(prec), prec_span))?;
         let (set, params) = self.parse_constraint_set()?;
-        let mut signatures = Vec::new();
-        while let Some((fixity, op_span)) =
-            self.next_if_map(|tk| Fixity::from_token(tk.data).map(|f| (f, tk.span)))
-        {
-            let Spanned {
-                data: prec,
-                span: prec_span,
-            } = self.expect_integer()?;
-            let prec = u8::try_from(prec)
-                .map_err(|_| Spanned::new(ParseError::PrecendenceLimit(prec), prec_span))?;
-            self.expect(TokenKind::LParen)?;
-            let op = self.expect_op()?;
-            self.expect(TokenKind::RParen)?;
-            self.expect(TokenKind::Colon)?;
-            let ty = self.parse_type()?;
-            let op_span = op_span.union(ty.span);
-            signatures.push(OpDeclaration::new(fixity, prec, op.ident, ty.data, op_span));
-            if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
-                span = span.union(c_span);
-            } else {
-                break;
-            }
-        }
-        if signatures.is_empty() {
-            return Err(Spanned::new(
-                ParseError::ExpectedToken {
-                    expected: TokenKind::KwInfix,
-                    got:      self.peek().transpose()?.map(|tk| tk.data),
-                },
-                span,
-            ));
-        }
+        self.expect(TokenKind::LParen)?;
+        let op = self.expect_op()?;
+        self.expect(TokenKind::RParen)?;
+        self.expect(TokenKind::Colon)?;
+        let ty = self.parse_type()?;
+        let span = span.union(ty.span);
 
         let kind = StmtKind::Operator {
+            fixity,
+            prec,
             params,
             set,
-            ops: signatures.into_boxed_slice(),
+            op: op.ident,
+            ty: ty.data,
         };
 
         Ok(UntypedStmt::new(kind, span))
@@ -503,6 +508,7 @@ impl<'a> Parser<'a> {
 
     fn parse_expr(&mut self) -> ParseResult<UntypedExpr> {
         let mut lhs = self.parse_prefix()?;
+
         // We assume all infix operators to be left associative
         // this will be resolved right before type checking
         while let Some(op) =
@@ -558,6 +564,7 @@ impl<'a> Parser<'a> {
                 span,
             );
         }
+
         Ok(expr)
     }
 
@@ -1263,22 +1270,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_let(&mut self) -> ParseResult<UntypedExpr> {
-        let Spanned {
-            data: bind,
-            mut span,
-        } = self.parse_let_bind()?;
-        let body = if self.next_if_match(TokenKind::KwIn).is_some() {
-            let body = self.parse_expr()?;
-            span = span.union(body.span);
-            Some(body)
-        } else {
-            None
-        };
+        let Spanned { data: bind, span } = self.parse_let_bind()?;
+        self.expect(TokenKind::KwIn)?;
+        let body = self.parse_expr()?;
+        let span = span.union(body.span);
 
         Ok(UntypedExpr::untyped(
             ExprKind::Let {
                 bind: Box::new(bind),
-                body: body.map(Box::new),
+                body: Box::new(body),
             },
             span,
         ))
