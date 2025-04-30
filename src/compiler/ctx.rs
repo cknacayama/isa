@@ -1336,7 +1336,7 @@ impl Display for ModuleData {
             for (id, sig) in class.signatures() {
                 write!(f, "    val ")?;
                 sig.set.fmt_var(f, &mut chars)?;
-                write!(f, "{id}: ")?;
+                write!(f, "{id} : ")?;
                 sig.ty.fmt_var(f, &mut chars)?;
                 writeln!(f)?;
             }
@@ -1389,7 +1389,7 @@ impl Display for ModuleData {
             };
             write!(f, "  val ")?;
             bind.constrs.fmt_var(f, &mut chars)?;
-            write!(f, "{id}: ")?;
+            write!(f, "{id} : ")?;
             bind.ty.fmt_var(f, &mut chars)?;
             writeln!(f)?;
         }

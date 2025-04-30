@@ -2,60 +2,60 @@ module @ops
 
 type Ordering = Less | Equal | Greater;
 
-class Add a = val add: a -> a -> a;
+class Add a = infixl 6 (+): a -> a -> a;
 
-class Sub a = val sub: a -> a -> a;
+class Sub a = infixl 6 (-): a -> a -> a;
 
-class Mul a = val mul: a -> a -> a;
+class Mul a = infixl 7 (*): a -> a -> a;
 
 class Div a =
-    val div: a -> a -> a,
-    val rem: a -> a -> a,
+    infixl 7 (/): a -> a -> a,
+    infixl 7 (%): a -> a -> a,
 ;
 
 class Pow a =
-    val powi: a -> int -> a,
-    val powr: a -> real -> a,
+    infixr 8 (^): a -> int -> a,
+    infixr 8 (^^): a -> real -> a,
 ;
 
-class Neg a = val neg: a -> a;
+class Neg a = prefix 10 (-): a -> a;
 
-class Not a = val not: a -> bool;
+class Not a = prefix 10 (!): a -> bool;
 
-class And a = val and: a -> a -> bool;
+class And a = infixr 3 (&&): a -> a -> bool;
 
-class Or a = val or: a -> a -> bool;
+class Or a = infixr 2 (||): a -> a -> bool;
 
 class Eq a =
-    val eq: a -> a -> bool,
-    val ne: a -> a -> bool,
+    infix 4 (==): a -> a -> bool,
+    infix 4 (!=): a -> a -> bool,
 
-    let ne a = (!) . (==) a,
+    let (!=) a = (!) . (==) a,
 ;
 
 class {Eq a} => Cmp a =
     val cmp: a -> a -> Ordering,
-    val gt:  a -> a -> bool,
-    val lt:  a -> a -> bool,
-    val ge:  a -> a -> bool,
-    val le:  a -> a -> bool,
+    infix 4 (>):  a -> a -> bool,
+    infix 4 (<):  a -> a -> bool,
+    infix 4 (>=):  a -> a -> bool,
+    infix 4 (<=):  a -> a -> bool,
 
-    let gt a b = match Cmp::cmp a b with
+    let (>) a b = match Cmp::cmp a b with
         Ordering::Greater -> true,
         _ -> false,
     ,
 
-    let lt a b = match Cmp::cmp a b with
+    let (<) a b = match Cmp::cmp a b with
         Ordering::Less -> true,
         _ -> false,
     ,
 
-    let le a b = match Cmp::cmp a b with
+    let (<=) a b = match Cmp::cmp a b with
         Ordering::Less | Ordering::Equal -> true,
         _ -> false,
     ,
 
-    let ge a b = match Cmp::cmp a b with
+    let (>=) a b = match Cmp::cmp a b with
         Ordering::Greater | Ordering::Equal -> true,
         _ -> false,
     ,
@@ -67,28 +67,8 @@ class {Cmp a, Add a, Sub a, Mul a, Div a, Pow a, Neg a} =>
         val from_real: real -> a,
 ;
 
-infixl 6 {a, Add a} => (+): a -> a -> a; 
-infixl 6 {a, Sub a} => (-): a -> a -> a; 
-infixl 7 {a, Mul a} => (*): a -> a -> a; 
-infixl 7 {a, Div a} => (/): a -> a -> a;
-infixl 7 {a, Div a} =>(%): a -> a -> a;
-infixr 2 {a, Or a} => (||): a -> a -> a; 
-infixr 3 {a, And a} => (&&): a -> a -> a; 
-infix 4 {a, Eq a} => (==): a -> a -> bool;
-infix 4 {a, Eq a} => (!=): a -> a -> bool;
-infix 4 {a, Cmp a} => (>): a -> a -> bool;
-infix 4 {a, Cmp a} => (<): a -> a -> bool;
-infix 4 {a, Cmp a} => (>=): a -> a -> bool;
-infix 4 {a, Cmp a} => (<=): a -> a -> bool;
-infixr 8 {a, Pow a} => (^): a -> int -> a;
-infixr 8 {a, Pow a} => (^^): a -> real -> a;
-infixr 0 {a, b} => ($): (a -> b) -> a -> b;
-infixr 9 {a, b, c} => (.): (b -> c) -> (a -> b) -> a -> c;
-prefix 10 {a, Neg a} => (-): a -> a;
-prefix 10 {a, Not a} => (!): a -> bool;
-
 instance Eq Ordering =
-    let eq a b = match (a,b) with
+    let (==) a b = match (a,b) with
         (Ordering::Less, Ordering::Less) 
         | (Ordering::Equal, Ordering::Equal) 
         | (Ordering::Greater, Ordering::Greater) -> true,

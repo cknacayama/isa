@@ -85,6 +85,15 @@ impl Display for Fixity {
 }
 
 impl Fixity {
+    pub const fn from_tk(tk: TokenKind) -> Option<Self> {
+        match tk {
+            TokenKind::KwInfix => Some(Self::Nonfix),
+            TokenKind::KwInfixl => Some(Self::Infixl),
+            TokenKind::KwInfixr => Some(Self::Infixr),
+            TokenKind::KwPrefix => Some(Self::Prefix),
+            _ => None,
+        }
+    }
     #[must_use]
     pub const fn is_right(self) -> bool {
         matches!(self, Self::Infixr)
@@ -95,7 +104,7 @@ impl Fixity {
         matches!(self, Self::Prefix)
     }
 
-    pub const fn minimum_airty(self) -> usize {
+    pub const fn minimum_arity(self) -> usize {
         match self {
             Self::Infixl | Self::Infixr | Self::Nonfix => 2,
             Self::Prefix => 1,
@@ -390,22 +399,39 @@ impl<T> Param<T> {
 
 #[derive(Debug, Clone)]
 pub struct LetBind<T> {
-    pub name:   Ident,
-    pub params: Box<[Param<T>]>,
-    pub expr:   Expr<T>,
+    pub operator: bool,
+    pub name:     Ident,
+    pub params:   Box<[Param<T>]>,
+    pub expr:     Expr<T>,
 }
 
 impl<T> LetBind<T> {
-    pub const fn new(name: Ident, params: Box<[Param<T>]>, expr: Expr<T>) -> Self {
-        Self { name, params, expr }
+    pub const fn new(operator: bool, name: Ident, params: Box<[Param<T>]>, expr: Expr<T>) -> Self {
+        Self {
+            operator,
+            name,
+            params,
+            expr,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct ValDeclaration {
+pub struct Val {
     pub params: Box<[Ty]>,
     pub set:    ClassConstraintSet,
     pub name:   Ident,
+    pub ty:     Ty,
+    pub span:   Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Operator {
+    pub fixity: Fixity,
+    pub prec:   u8,
+    pub params: Box<[Ty]>,
+    pub set:    ClassConstraintSet,
+    pub op:     Ident,
     pub ty:     Ty,
     pub span:   Span,
 }
@@ -416,22 +442,16 @@ pub enum StmtKind<T> {
 
     Let(LetBind<T>),
 
-    Operator {
-        fixity: Fixity,
-        prec:   u8,
-        params: Box<[Ty]>,
-        set:    ClassConstraintSet,
-        op:     Symbol,
-        ty:     Ty,
-    },
+    Operator(Operator),
 
-    Val(ValDeclaration),
+    Val(Val),
 
     Class {
         set:        ClassConstraintSet,
         name:       Ident,
-        instance:   Ident,
-        signatures: Box<[ValDeclaration]>,
+        instance:   Ty,
+        signatures: Box<[Val]>,
+        ops:        Box<[Operator]>,
         defaults:   Box<[LetBind<T>]>,
     },
 
@@ -529,7 +549,7 @@ impl<T> StmtKind<T> {
     pub const fn is_type_or_val_or_op(&self) -> bool {
         matches!(
             self,
-            Self::Type { .. } | Self::Alias { .. } | Self::Val { .. } | Self::Operator { .. }
+            Self::Type { .. } | Self::Alias { .. } | Self::Val(_) | Self::Operator(_)
         )
     }
 }
@@ -573,7 +593,20 @@ impl Substitute for Constructor<Ty> {
     }
 }
 
-impl Substitute for ValDeclaration {
+impl Substitute for Val {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        self.set.substitute(subs);
+        self.ty.substitute(subs);
+        for p in &mut self.params {
+            p.substitute(subs);
+        }
+    }
+}
+
+impl Substitute for Operator {
     fn substitute<S>(&mut self, subs: &mut S)
     where
         S: FnMut(&Ty) -> Option<Ty>,
@@ -605,15 +638,20 @@ impl Substitute for Stmt<()> {
             StmtKind::Val(val) => {
                 val.substitute(subs);
             }
-            StmtKind::Class { signatures, .. } => {
+            StmtKind::Class {
+                signatures, ops, ..
+            } => {
                 for sig in signatures {
                     sig.substitute(subs);
+                }
+                for op in ops {
+                    op.substitute(subs);
                 }
             }
             StmtKind::Instance { instance, .. } => {
                 instance.substitute(subs);
             }
-            StmtKind::Operator { ty, .. } => {
+            StmtKind::Operator(Operator { ty, .. }) => {
                 ty.substitute(subs);
             }
             StmtKind::Let(_) | StmtKind::Semi(_) => (),
@@ -688,9 +726,9 @@ impl Substitute for StmtKind<Ty> {
                     p.substitute(subs);
                 }
             }
-            Self::Operator {
+            Self::Operator(Operator {
                 params, set, ty, ..
-            } => {
+            }) => {
                 set.substitute(subs);
                 for p in params {
                     p.substitute(subs);
@@ -854,23 +892,14 @@ impl Display for Path {
     }
 }
 
-pub type UntypedModule = Module<()>;
-pub type UntypedExpr = Expr<()>;
-pub type UntypedLetBind = LetBind<()>;
-pub type UntypedPat = Pat<()>;
-pub type UntypedStmt = Stmt<()>;
-pub type UntypedMatchArm = MatchArm<()>;
-pub type UntypedParam = Param<()>;
-pub type UntypedConstructor = Constructor<()>;
-
-impl UntypedExpr {
+impl Expr<()> {
     #[must_use]
     pub const fn untyped(kind: ExprKind<()>, span: Span) -> Self {
         Self::new(kind, span, ())
     }
 }
 
-impl UntypedPat {
+impl Pat<()> {
     #[must_use]
     pub const fn untyped(kind: PatKind<()>, span: Span) -> Self {
         Self::new(kind, span, ())

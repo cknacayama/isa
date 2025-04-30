@@ -7,7 +7,7 @@ use ctor::{Ctor, CtorSet, IntRange, MaybeInfinite, RealRange};
 use pat::{PatMatrix, PatMatrixRow, PatOrWild, PatVector, Pattern, WitnessPat};
 
 use super::ast::{
-    Expr, ExprKind, ListPat, MatchArm, Pat, PatKind, RangePat, Stmt, StmtKind, mod_path,
+    Expr, ExprKind, ListPat, MatchArm, Operator, Pat, PatKind, RangePat, Stmt, StmtKind, mod_path,
 };
 use super::ctx::Ctx as TypeCtx;
 use super::error::MatchNonExhaustive;
@@ -271,7 +271,7 @@ impl TypeCtx {
             StmtKind::Val(_)
             | StmtKind::Alias { .. }
             | StmtKind::Type { .. }
-            | StmtKind::Operator { .. } => (),
+            | StmtKind::Operator(Operator { .. }) => (),
         }
 
         Ok(())

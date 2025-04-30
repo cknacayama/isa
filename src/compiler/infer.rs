@@ -276,6 +276,10 @@ impl ClassConstraintSet {
         self.constrs.push(class);
     }
 
+    pub fn pop(&mut self) -> Option<ClassConstraint> {
+        self.constrs.pop()
+    }
+
     pub const fn new() -> Self {
         Self {
             constrs: Vec::new(),

@@ -10,13 +10,13 @@ instance Functor Option =
 
 instance Applicative Option =
     let pure = Some,
-    let apply f x = match (f,x) with
+    let (<*>) f x = match (f,x) with
         (Some f, Some x) -> Some $ f x,
         _ -> None,
 ;
 
 instance Monad Option =
-    let bind opt f = match opt with
+    let (>>=) opt f = match opt with
         Some a -> f a,
         None -> None,
 ;

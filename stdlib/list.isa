@@ -35,19 +35,19 @@ instance Functor List =
 
 instance Applicative List =
     let pure a = [a],
-    let apply f a = match (f,a) with
+    let (<*>) f a = match (f,a) with
         ([f]restf,[a]resta) -> f a & (restf <*> resta),
         _ -> [],
 ;
 
 instance Monad List =
-    let bind a f = match a with
+    let (>>=) a f = match a with
         [] -> [],
         [a]rest -> f a ++ (rest >>= f),
 ;
 
 instance {a, Eq a} => Eq List a =
-    let eq a b = match (a,b) with
+    let (==) a b = match (a,b) with
         ([], []) -> true,
         ([a]resta, [b]restb) -> a == b && resta == restb,
         _ -> false,
