@@ -35,6 +35,7 @@ class Eq a =
 
 class {Eq a} => Cmp a =
     val cmp: a -> a -> Ordering,
+
     infix 4 (>):  a -> a -> bool,
     infix 4 (<):  a -> a -> bool,
     infix 4 (>=):  a -> a -> bool,
@@ -74,3 +75,9 @@ instance Eq Ordering =
         | (Ordering::Greater, Ordering::Greater) -> true,
         _ -> false,
 ;
+
+val {a, Cmp a} => max: a -> a -> a;
+let max x y = if x <= y then y else x;
+
+val {a, Cmp a} => min: a -> a -> a;
+let min x y = if x <= y then x else y;

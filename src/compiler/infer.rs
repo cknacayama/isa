@@ -24,6 +24,10 @@ impl Subs {
     pub const fn old(&self) -> u64 {
         self.old
     }
+
+    pub const fn subs(&self) -> &Ty {
+        &self.subs
+    }
 }
 
 pub trait Substitute {
@@ -36,6 +40,9 @@ pub trait Substitute {
     where
         Self: Sized,
     {
+        if &Ty::Var(subs.old) == subs.subs() {
+            return;
+        }
         self.substitute(&mut |t| match t {
             Ty::Var(id) if *id == subs.old => Some(subs.subs.clone()),
             Ty::Generic { var, args } if *var == subs.old => match subs.subs.clone() {

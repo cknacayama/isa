@@ -372,11 +372,11 @@ impl<T> ImportData<T> {
 
 #[derive(Debug, Clone)]
 pub struct OperatorData {
-    fixity: Fixity,
-    prec:   u8,
-    ty:     Ty,
-    set:    ClassConstraintSet,
-    span:   Span,
+    pub fixity: Fixity,
+    pub prec:   u8,
+    pub ty:     Ty,
+    pub set:    ClassConstraintSet,
+    pub span:   Span,
 }
 
 impl OperatorData {
@@ -702,10 +702,6 @@ impl Ctx {
             .map_or(&[], |data| data.constructors.as_slice())
     }
 
-    pub fn get_type_arity(&self, name: &Path) -> CheckResult<usize> {
-        self.get_ty_data(name).map(|data| data.params.len())
-    }
-
     pub fn insert_class(&mut self, name: Symbol, data: ClassData) -> CheckResult<()> {
         self.current_mut()?.insert_class(name, data);
         Ok(())
@@ -976,6 +972,13 @@ impl Ctx {
 
     pub fn assume_constraints(&mut self, set: &ClassConstraintSet) {
         for c in set.iter() {
+            let Ok(constrs) = self
+                .get_class(c.class())
+                .map(|data| data.constraints.clone())
+            else {
+                continue;
+            };
+            self.assume_constraint_tree(c.ty(), &constrs);
             let _ = self.assume_instance(
                 c.ty().clone(),
                 c.class(),
@@ -993,13 +996,11 @@ impl Ctx {
                 continue;
             };
             self.assume_constraint_tree(ty, &constrs);
-            for c in set.iter() {
-                let _ = self.assume_instance(
-                    ty.clone(),
-                    c.class(),
-                    InstanceData::new(ClassConstraintSet::new(), c.span()),
-                );
-            }
+            let _ = self.assume_instance(
+                ty.clone(),
+                c.class(),
+                InstanceData::new(ClassConstraintSet::new(), c.span()),
+            );
         }
     }
 

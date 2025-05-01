@@ -253,11 +253,14 @@ impl Checker {
     fn check_let_bind_with_val(
         &mut self,
         bind: LetBind<()>,
-        val_decl: &Ty,
-        val_set: Set,
+        val_decl: Ty,
+        mut val_set: Set,
         ty_span: Span,
     ) -> IsaResult<(Ty, Expr<Ty>, Box<[Param<Ty>]>, Set)> {
         self.ctx.push_scope();
+
+        let (val_decl, val_subs) = self.instantiate(val_decl);
+        val_set.substitute_many(&val_subs);
 
         let mut param_iter = val_decl.param_iter();
 
@@ -301,14 +304,9 @@ impl Checker {
 
         self.ctx.pop_scope();
 
-        let (val_ty, val_subs) = self.instantiate(val_decl.clone());
         let ty = expr.ty.clone();
-        let val_free = val_ty.free_type_variables();
 
-        let mut val_set = val_set;
-        val_set.substitute_many(&val_subs);
-
-        let constr = EqConstraint::new(val_ty, ty, expr.span);
+        let constr = EqConstraint::new(val_decl.clone(), ty, expr.span);
 
         let val_error = |ty: &Ty, span| {
             let fst = DiagnosticLabel::new(format!("expected `{val_decl}`"), bind.name.span);
@@ -330,7 +328,11 @@ impl Checker {
                 }
             })
             .and_then(|(subs, set)| {
-                if subs.iter().any(|s| val_free.contains(&s.old())) {
+                if subs.iter().any(|s| {
+                    val_subs
+                        .iter()
+                        .any(|v| v.subs().as_var().is_some_and(|v| v == s.old()))
+                }) {
                     expr.ty.substitute_many(&subs);
                     let ty = self.ctx.generalize(expr.ty.clone());
                     Err(val_error(&ty, expr.span))
@@ -371,7 +373,7 @@ impl Checker {
                 .or_else(|_| self.ctx.get_prefix(bind.name))?
                 .clone();
 
-            return self.check_let_bind_with_val(bind, op.ty(), op.set().clone(), op.span());
+            return self.check_let_bind_with_val(bind, op.ty, op.set, op.span);
         }
         if self.ctx.current_depth() == 1
             && let Ok(val) = self.ctx.current()?.get_val(bind.name)
@@ -379,7 +381,7 @@ impl Checker {
             let VarData {
                 ty, constrs, span, ..
             } = val.clone();
-            return self.check_let_bind_with_val(bind, &ty, constrs, span);
+            return self.check_let_bind_with_val(bind, ty, constrs, span);
         }
 
         self.ctx.push_scope();
@@ -543,12 +545,12 @@ impl Checker {
             .map(|p| p.as_var().unwrap())
             .collect::<Rc<_>>();
 
-        self.check_valid_type(&ty)?;
+        self.check_valid_type(ty)?;
         let arity = ty.function_arity();
         if !quant.is_empty() {
             *ty = Ty::Scheme {
-                quant: quant.clone(),
-                ty:    Rc::new(ty.clone()),
+                quant,
+                ty: Rc::new(ty.clone()),
             };
         }
 
@@ -763,12 +765,11 @@ impl Checker {
         ops: Box<[Operator]>,
         defaults: Box<[LetBind<()>]>,
         span: Span,
-    ) -> IsaResult<(Stmt<Ty>, Set)> {
-        self.ctx.assume_constraint_tree(&instance, &set);
+    ) -> IsaResult<Stmt<Ty>> {
+        self.ctx.assume_constraints(&set);
 
         let path = Path::from_ident(name);
-        let (defaults, def_set) =
-            self.check_instance_impls(&path, Set::new(), defaults, |_| None)?;
+        let defaults = self.check_instance_impls(&path, defaults, &Subs::new(0, Ty::Var(0)))?;
 
         let kind = StmtKind::Class {
             set,
@@ -779,20 +780,15 @@ impl Checker {
             defaults: defaults.into_boxed_slice(),
         };
 
-        Ok((Stmt::new(kind, span), def_set))
+        Ok(Stmt::new(kind, span))
     }
 
-    fn check_instance_impls<F>(
+    fn check_instance_impls(
         &mut self,
         class: &Path,
-        mut set: Set,
         impls: impl IntoIterator<Item = LetBind<()>>,
-        mut subs: F,
-    ) -> IsaResult<(Vec<LetBind<Ty>>, Set)>
-    where
-        F: FnMut(&Ty) -> Option<Ty>,
-    {
-        set.substitute(&mut subs);
+        subs: &Subs,
+    ) -> IsaResult<Vec<LetBind<Ty>>> {
         let impls = impls
             .into_iter()
             .map(|bind| {
@@ -815,16 +811,15 @@ impl Checker {
                             DiagnosticLabel::new("type class declared here", class_data.span());
                         IsaError::new("not a member", fst, vec![snd])
                     })?;
-                ty.substitute(&mut subs);
+                ty.substitute_eq(subs);
                 let name = bind.name;
                 let operator = bind.operator;
-                let (_, expr, params, bind_set) =
-                    self.check_let_bind_with_val(bind, &ty, member_set, ty_span)?;
-                set.extend(bind_set);
+                let (_, expr, params, _) =
+                    self.check_let_bind_with_val(bind, ty, member_set, ty_span)?;
                 Ok(LetBind::new(operator, name, params, expr))
             })
             .collect::<IsaResult<_>>()?;
-        Ok((impls, set))
+        Ok(impls)
     }
 
     fn check_instance(
@@ -835,7 +830,7 @@ impl Checker {
         instance: Ty,
         impls: Box<[LetBind<()>]>,
         span: Span,
-    ) -> IsaResult<(Stmt<Ty>, Set)> {
+    ) -> IsaResult<Stmt<Ty>> {
         let class_data = self.ctx.get_class(&class)?;
 
         let quant = params
@@ -883,54 +878,21 @@ impl Checker {
         }
 
         let instance_var = class_data.instance_var();
-        let mut arity_error = false;
 
         self.ctx.set_constraints(&class, scheme, set.clone());
         self.ctx.assume_constraints(&set);
-
-        let (impls, set) = if let Ty::Named {
-            name: ref instance_name,
-            ref args,
-        } = instance
-        {
-            let arity = self.ctx.get_type_arity(instance_name).unwrap();
-            let var_args_len = arity - args.len();
-            self.check_instance_impls(&class, set, impls, |ty| match ty {
-                Ty::Generic {
-                    var,
-                    args: var_args,
-                } if *var == instance_var => {
-                    if var_args.len() == var_args_len {
-                        let mut args = args.to_vec();
-                        args.extend_from_slice(var_args);
-                        Some(Ty::Named {
-                            name: instance_name.clone(),
-                            args: args.into(),
-                        })
-                    } else {
-                        arity_error = true;
-                        None
-                    }
-                }
-                Ty::Var(var) if *var == instance_var => Some(instance.clone()),
-                _ => None,
-            })
-        } else {
-            self.check_instance_impls(&class, set, impls, |ty| match ty {
-                Ty::Var(var) if *var == instance_var => Some(instance.clone()),
-                _ => None,
-            })
-        }?;
+        let impls =
+            self.check_instance_impls(&class, impls, &Subs::new(instance_var, instance.clone()))?;
 
         let kind = StmtKind::Instance {
             params,
-            set: set.clone(),
+            set,
             class,
             instance,
             impls: impls.into(),
         };
 
-        Ok((Stmt::new(kind, span), set))
+        Ok(Stmt::new(kind, span))
     }
 
     fn check_list_pat(&mut self, list: ListPat<()>, span: Span) -> IsaResult<Pat<Ty>> {
@@ -1373,10 +1335,12 @@ impl Checker {
 
                 (*name, stmt.span)
             }
-            StmtKind::Val(val) => {
+            StmtKind::Val(Val {
+                params, set, ty, ..
+            }) => {
                 let mut subs = Vec::new();
 
-                for param in &mut val.params {
+                for param in params {
                     let id = self.gen_id();
                     let mut new = Ty::Var(id);
                     std::mem::swap(param, &mut new);
@@ -1384,7 +1348,8 @@ impl Checker {
                     subs.push((old, id));
                 }
 
-                val.ty.substitute_param(&subs);
+                ty.substitute_param(&subs);
+                set.substitute_param(&subs);
 
                 return Ok(());
             }
@@ -1459,7 +1424,6 @@ impl Checker {
                     *name,
                     InstanceData::new(Set::new(), stmt.span),
                 );
-                self.ctx.assume_constraints(set);
 
                 (*name, stmt.span)
             }
@@ -1954,15 +1918,22 @@ impl Checker {
                 signatures,
                 defaults,
                 ops,
-            } => self.check_class(set, name, instance, signatures, ops, defaults, span),
+            } => {
+                let class =
+                    self.check_class(set, name, instance, signatures, ops, defaults, span)?;
+                Ok((class, Set::new()))
+            }
 
             StmtKind::Instance {
                 params,
                 set,
-                class: name,
+                class,
                 instance,
                 impls,
-            } => self.check_instance(params, set, name, instance, impls, span),
+            } => {
+                let instance = self.check_instance(params, set, class, instance, impls, span)?;
+                Ok((instance, Set::new()))
+            }
 
             StmtKind::Operator(Operator {
                 fixity,

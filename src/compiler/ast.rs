@@ -639,7 +639,10 @@ impl Substitute for Stmt<()> {
                 val.substitute(subs);
             }
             StmtKind::Class {
-                signatures, ops, ..
+                signatures,
+                ops,
+                set,
+                ..
             } => {
                 for sig in signatures {
                     sig.substitute(subs);
@@ -647,11 +650,14 @@ impl Substitute for Stmt<()> {
                 for op in ops {
                     op.substitute(subs);
                 }
+                set.substitute(subs);
             }
-            StmtKind::Instance { instance, .. } => {
+            StmtKind::Instance { instance, set, .. } => {
                 instance.substitute(subs);
+                set.substitute(subs);
             }
-            StmtKind::Operator(Operator { ty, .. }) => {
+            StmtKind::Operator(Operator { ty, set, .. }) => {
+                set.substitute(subs);
                 ty.substitute(subs);
             }
             StmtKind::Let(_) | StmtKind::Semi(_) => (),
