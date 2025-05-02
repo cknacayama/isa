@@ -327,7 +327,7 @@ impl Substitute for Rc<Ty> {
                     Rc::from(new_args)
                 };
                 Ty::Named {
-                    name: name.clone(),
+                    name: *name,
                     args,
                 }
             }

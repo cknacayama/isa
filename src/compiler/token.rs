@@ -3,19 +3,32 @@ use std::fmt::Display;
 use crate::global::{Symbol, symbol};
 use crate::span::{Span, Spanned};
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct Ident {
     pub ident: Symbol,
     pub span:  Span,
 }
 
-impl Eq for Ident {
+impl Default for Ident {
+    fn default() -> Self {
+        Self::zero()
+    }
 }
 
 impl Ident {
     pub const fn new(ident: Symbol, span: Span) -> Self {
         Self { ident, span }
     }
+
+    pub const fn zero() -> Self {
+        Self {
+            ident: Symbol::zero(),
+            span:  Span::zero(),
+        }
+    }
+}
+
+impl Eq for Ident {
 }
 
 impl PartialEq for Ident {

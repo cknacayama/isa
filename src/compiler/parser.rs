@@ -1,8 +1,6 @@
 use std::iter::Peekable;
 use std::rc::Rc;
 
-use smallvec::smallvec;
-
 use super::ast::{
     Constructor, Expr, ExprKind, Fixity, Import, ImportClause, ImportWildcard, LetBind, ListPat,
     MatchArm, Module, Operator, Param, Pat, PatKind, Path, RangePat, Stmt, StmtKind, Val,
@@ -152,7 +150,7 @@ impl<'a> Parser<'a> {
 
         while !self.check(TokenKind::RBrace) {
             let id = self.expect_id()?;
-            let mut segments = smallvec![id];
+            let mut path = Path::from_one(id);
             let mut wildcard = ImportWildcard::Nil;
             while self.next_if_match(TokenKind::ColonColon).is_some() {
                 let Some(tk) = self.peek().transpose()? else {
@@ -161,7 +159,9 @@ impl<'a> Parser<'a> {
                 match tk.data {
                     TokenKind::Ident(ident) => {
                         self.next();
-                        segments.push(Ident::new(ident, tk.span));
+                        if !path.push(Ident::new(ident, tk.span)) {
+                            return Err(Spanned::new(ParseError::PathToLong, self.last_span));
+                        }
                     }
                     TokenKind::Underscore => {
                         self.next();
@@ -176,7 +176,6 @@ impl<'a> Parser<'a> {
                     kind => return Err(Spanned::new(ParseError::ExpectedId(kind), tk.span)),
                 }
             }
-            let path = Path { segments };
             imports.push(Import { path, wildcard });
             if self.next_if_match(TokenKind::Comma).is_none() {
                 break;
@@ -316,7 +315,7 @@ impl<'a> Parser<'a> {
         let name = self.expect_id()?;
         let instance = self.expect_id()?;
         let instance = Ty::Named {
-            name: Path::from_ident(instance),
+            name: Path::from_one(instance),
             args: Rc::from([]),
         };
         let (signatures, defaults, ops) = if self.next_if_match(TokenKind::Eq).is_some() {
@@ -433,7 +432,7 @@ impl<'a> Parser<'a> {
         while !self.check(TokenKind::Eq) {
             let ident = self.expect_id()?;
             params.push(Ty::Named {
-                name: Path::from_ident(ident),
+                name: Path::from_one(ident),
                 args: Rc::from([]),
             });
         }
@@ -471,7 +470,7 @@ impl<'a> Parser<'a> {
             }) = self.peek().transpose()?
             {
                 self.next();
-                let name = Path::from_ident(Ident { ident, span });
+                let name = Path::from_one(Ident { ident, span });
                 let span = span.union(ident_span);
                 constrs.push(ClassConstraint::new(
                     id,
@@ -700,16 +699,22 @@ impl<'a> Parser<'a> {
 
     fn parse_path(&mut self) -> ParseResult<(Path, Span)> {
         let first = self.expect_id()?;
+        self.parse_path_from(first)
+    }
+
+    fn parse_path_from(&mut self, first: Ident) -> ParseResult<(Path, Span)> {
         let mut span = first.span;
-        let mut segments = smallvec![first];
+        let mut path = Path::from_one(first);
 
         while self.next_if_match(TokenKind::ColonColon).is_some() {
             let id = self.expect_id()?;
             span = span.union(id.span);
-            segments.push(id);
+            if !path.push(id) {
+                return Err(Spanned::new(ParseError::PathToLong, span));
+            }
         }
 
-        Ok((Path { segments }, span))
+        Ok((path, span))
     }
 
     fn parse_simple_type(&mut self) -> ParseResult<Spanned<Ty>> {
@@ -739,18 +744,11 @@ impl<'a> Parser<'a> {
             TokenKind::KwReal => Ok(Spanned::new(Ty::Real, span)),
             TokenKind::KwChar => Ok(Spanned::new(Ty::Char, span)),
             TokenKind::Ident(ident) => {
-                let mut span = span;
-                let mut segments = smallvec![Ident { ident, span }];
-
-                while self.next_if_match(TokenKind::ColonColon).is_some() {
-                    let id = self.expect_id()?;
-                    span = span.union(id.span);
-                    segments.push(id);
-                }
+                let (path, span) = self.parse_path_from(Ident { ident, span })?;
 
                 Ok(Spanned::new(
                     Ty::Named {
-                        name: Path { segments },
+                        name: path,
                         args: Rc::from([]),
                     },
                     span,
@@ -825,7 +823,7 @@ impl<'a> Parser<'a> {
         let params = std::iter::from_fn(|| {
             self.next_if_map(|tk| {
                 tk.data.as_ident().map(|ident| Ty::Named {
-                    name: Path::from_ident(Ident::new(ident, tk.span)),
+                    name: Path::from_one(Ident::new(ident, tk.span)),
                     args: Rc::from([]),
                 })
             })
@@ -1179,18 +1177,10 @@ impl<'a> Parser<'a> {
             }
             TokenKind::LBracket => self.parse_list_pat(span),
             TokenKind::Ident(ident) => {
-                let mut span = span;
-                let mut segments = smallvec![Ident { ident, span }];
-
-                while self.next_if_match(TokenKind::ColonColon).is_some() {
-                    let id = self.expect_id()?;
-                    span = span.union(id.span);
-                    segments.push(id);
-                }
-
+                let (name, span) = self.parse_path_from(Ident { ident, span })?;
                 Ok(Pat::untyped(
                     PatKind::Constructor {
-                        name: Path { segments },
+                        name,
                         args: Box::from([]),
                     },
                     span,

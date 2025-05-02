@@ -6,8 +6,20 @@ use rustc_hash::FxHashMap;
 
 use crate::span::{Span, SpanData};
 
-#[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(u32);
+
+impl Default for Symbol {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
+impl Symbol {
+    pub const fn zero() -> Self {
+        Self(0)
+    }
+}
 
 impl std::fmt::Debug for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

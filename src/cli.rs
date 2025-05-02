@@ -169,7 +169,7 @@ impl Config {
         let end_parse = Instant::now();
 
         let mut checker = Checker::default();
-        let (modules, _) = match checker.check_many_modules(modules) {
+        let modules = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
             Err(err) => {
                 self.report(&err, checker.ctx());

@@ -36,7 +36,7 @@ instance Functor List =
 instance Applicative List =
     let pure a = [a],
     let (<*>) f a = match (f,a) with
-        ([f]restf,[a]resta) -> f a & (restf <*> resta),
+        ([f]restf, [a]resta) -> f a & (restf <*> resta),
         _ -> [],
 ;
 

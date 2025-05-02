@@ -1,7 +1,6 @@
 use std::rc::Rc;
 
 use rustc_hash::FxHashMap;
-use smallvec::smallvec;
 
 use super::ast::{
     Constructor, Expr, ExprKind, Fixity, LetBind, ListPat, MatchArm, Module, Operator, Param, Pat,
@@ -425,19 +424,19 @@ impl Checker {
         Ok((ty, expr, typed_params, set))
     }
 
-    fn check_let_stmt(&mut self, bind: LetBind<()>, span: Span) -> IsaResult<(Stmt<Ty>, Set)> {
+    fn check_let_stmt(&mut self, bind: LetBind<()>, span: Span) -> IsaResult<Stmt<Ty>> {
         let name = bind.name;
         let operator = bind.operator;
 
         let (u1, expr, params, set) = self.check_let_bind(bind)?;
 
-        self.insert_let(name, u1, set.clone());
+        self.insert_let(name, u1, set);
 
         let bind = LetBind::new(operator, name, params, expr);
 
         let kind = StmtKind::Let(bind);
 
-        Ok((Stmt::new(kind, span), set))
+        Ok(Stmt::new(kind, span))
     }
 
     fn check_let(
@@ -508,7 +507,7 @@ impl Checker {
 
         let module = Ident::new(self.ctx.current_module().ident, name.span);
         let ty = Ty::Named {
-            name: Path::new(smallvec![module, name]),
+            name: Path::from_two(module, name),
             args: parameters.clone().into(),
         };
 
@@ -628,7 +627,7 @@ impl Checker {
         args: Box<[Pat<()>]>,
         span: Span,
     ) -> IsaResult<Pat<Ty>> {
-        let ctor = match (self.ctx.get_constructor(&name), name.segments.as_slice()) {
+        let ctor = match (self.ctx.get_constructor(&name), name.as_slice()) {
             (Ok(ctor), _) => ctor.clone(),
             (Err(_), [name]) if args.is_empty() => {
                 let var = self.gen_type_var();
@@ -690,7 +689,7 @@ impl Checker {
             self.check_val(val)?;
         }
 
-        let class = Path::new(smallvec![self.ctx.current_module(), name]);
+        let class = Path::from_two(self.ctx.current_module(), name);
         let instance = instance.as_var().unwrap();
 
         for Operator {
@@ -706,7 +705,7 @@ impl Checker {
             let var = self.gen_id();
             let mut params = params.to_vec();
             params.push(Ty::Var(var));
-            set.push(ClassConstraint::new(class.clone(), Ty::Var(var), *span));
+            set.push(ClassConstraint::new(class, Ty::Var(var), *span));
             let mut ty = ty.clone();
             ty.substitute_eq(&Subs::new(instance, Ty::Var(var)));
             self.check_operator(*fixity, *prec, &params, set, op.ident, &ty, *span)?;
@@ -759,7 +758,7 @@ impl Checker {
     ) -> IsaResult<Stmt<Ty>> {
         self.ctx.assume_constraints(&set);
 
-        let path = Path::from_ident(name);
+        let path = Path::from_one(name);
         let var = instance.as_var().unwrap();
         let defaults = self.check_instance_impls(&path, defaults, &Subs::new(var, Ty::Var(var)))?;
 
@@ -1082,27 +1081,25 @@ impl Checker {
         path: Path,
         span: Span,
     ) -> IsaResult<(Path, Ty, Set)> {
-        match path.segments.as_slice() {
-            [] => unreachable!(),
-
-            &[id] => {
+        match *path.as_slice() {
+            [id] => {
                 let VarData {
                     ty, mut constrs, ..
                 } = ctx.get_var(id)?.clone();
                 let (ty, subs) = ty.instantiate(generator);
                 constrs.substitute_many(&subs);
 
-                Ok((Path::from_ident(id), ty, constrs))
+                Ok((Path::from_one(id), ty, constrs))
             }
 
-            &[first, id] => {
+            [first, id] => {
                 if let Ok(ty) = ctx.get_constructor(&path) {
                     let (ty, _) = ty.clone().instantiate(generator);
                     return Ok((path, ty, Set::new()));
                 }
 
-                if let Ok((ty, set)) = ctx.get_class(&Path::from_ident(first)).and_then(|data| {
-                    Self::check_class_member(Path::from_ident(first), data, id, generator, span)
+                if let Ok((ty, set)) = ctx.get_class(&Path::from_one(first)).and_then(|data| {
+                    Self::check_class_member(Path::from_one(first), data, id, generator, span)
                 }) {
                     return Ok((path, ty, set));
                 }
@@ -1116,18 +1113,16 @@ impl Checker {
                 let (ty, subs) = ty.instantiate(generator);
                 constrs.substitute_many(&subs);
 
-                Ok((Path::from_ident(id), ty, constrs))
+                Ok((Path::from_one(id), ty, constrs))
             }
 
-            &[fst, snd, trd] => {
+            [fst, snd, trd] => {
                 if let Ok(ty) = ctx.get_constructor(&path) {
                     let (ty, _) = ty.clone().instantiate(generator);
                     return Ok((path, ty, Set::new()));
                 }
 
-                let class_path = Path {
-                    segments: smallvec![fst, snd],
-                };
+                let class_path = Path::from_two(fst, snd);
 
                 let data = ctx.get_class(&class_path)?;
 
@@ -1136,10 +1131,7 @@ impl Checker {
                 Ok((path, ty, set))
             }
 
-            _ => Err(IsaError::from(CheckError::new(
-                CheckErrorKind::InvalidPath(path),
-                span,
-            ))),
+            _ => unreachable!(),
         }
     }
 
@@ -1481,7 +1473,7 @@ impl Checker {
                 ty,
             } => {
                 let module = Ident::new(module.ident, name.span);
-                let path = Path::new(smallvec![module, *name]);
+                let path = Path::from_two(module, *name);
 
                 Some(self.check_valid_type(ty).map(|()| {
                     let vars = parameters
@@ -1734,7 +1726,7 @@ impl Checker {
     pub fn check_many_modules(
         &mut self,
         mut modules: Vec<Module<()>>,
-    ) -> IsaResult<(Vec<Module<Ty>>, Set)> {
+    ) -> IsaResult<Vec<Module<Ty>>> {
         for module in &mut modules {
             self.check_module_types(module)?;
         }
@@ -1782,7 +1774,6 @@ impl Checker {
         };
 
         let mut decl = Vec::new();
-        let mut set = Set::new();
 
         for module in &mut modules {
             self.ctx.set_current_module(module.name);
@@ -1796,15 +1787,11 @@ impl Checker {
                 self.check_for_signatures(stmt)?;
             }
 
-            let mut stmts = Vec::new();
-            for stmt in module
+            let stmts = module
                 .stmts
                 .extract_if(.., |e| e.kind.is_type_or_val_or_op())
-            {
-                let (stmt, stmt_set) = self.check_stmt(stmt)?;
-                stmts.push(stmt);
-                set.extend(stmt_set);
-            }
+                .map(|stmt| self.check_stmt(stmt))
+                .collect::<IsaResult<Vec<_>>>()?;
 
             decl.push(stmts);
         }
@@ -1824,29 +1811,26 @@ impl Checker {
             .into_iter()
             .zip(decl)
             .map(|(module, mut decl)| {
-                let (mut module, module_set) = self.check_module(module)?;
+                let mut module = self.check_module(module)?;
                 decl.extend(module.stmts);
                 module.stmts = decl;
-                set.extend(module_set);
                 Ok(module)
             })
             .collect::<IsaResult<_>>()?;
 
-        Ok((modules, set))
+        Ok(modules)
     }
 
-    fn check_module(&mut self, module: Module<()>) -> IsaResult<(Module<Ty>, Set)> {
+    fn check_module(&mut self, module: Module<()>) -> IsaResult<Module<Ty>> {
         self.ctx.push_scope();
 
         self.ctx.set_current_module(module.name);
 
         let mut stmts = Vec::new();
-        let mut set = Set::new();
 
         for stmt in module.stmts {
-            let (stmt, stmt_set) = self.check_stmt(stmt)?;
+            let stmt = self.check_stmt(stmt)?;
             stmts.push(stmt);
-            set.extend(stmt_set);
             self.subs.clear();
         }
 
@@ -1860,46 +1844,37 @@ impl Checker {
             module.span,
         );
 
-        Ok((typed, set))
+        Ok(typed)
     }
 
-    fn check_stmt(&mut self, stmt: Stmt<()>) -> IsaResult<(Stmt<Ty>, Set)> {
+    fn check_stmt(&mut self, stmt: Stmt<()>) -> IsaResult<Stmt<Ty>> {
         let span = stmt.span;
         match stmt.kind {
             StmtKind::Semi(expr) => {
-                let (expr, set) = self.check_expr(expr)?;
-                Ok((Stmt::new(StmtKind::Semi(expr), span), set))
+                let (expr, _) = self.check_expr(expr)?;
+                Ok(Stmt::new(StmtKind::Semi(expr), span))
             }
 
             StmtKind::Type {
                 name,
                 parameters,
                 constructors,
-            } => Ok((
-                self.check_type_definition(name, parameters, constructors, span)?,
-                Set::new(),
-            )),
+            } => self.check_type_definition(name, parameters, constructors, span),
 
             StmtKind::Alias {
                 name,
                 parameters,
                 ty,
-            } => Ok((
-                Stmt::new(
-                    StmtKind::Alias {
-                        name,
-                        parameters,
-                        ty,
-                    },
-                    span,
-                ),
-                Set::new(),
+            } => Ok(Stmt::new(
+                StmtKind::Alias {
+                    name,
+                    parameters,
+                    ty,
+                },
+                span,
             )),
 
-            StmtKind::Val(val) => {
-                let val = self.check_val_stmt(val, span)?;
-                Ok((val, Set::new()))
-            }
+            StmtKind::Val(val) => self.check_val_stmt(val, span),
 
             StmtKind::Let(bind) => self.check_let_stmt(bind, span),
 
@@ -1910,11 +1885,7 @@ impl Checker {
                 signatures,
                 defaults,
                 ops,
-            } => {
-                let class =
-                    self.check_class(set, name, instance, signatures, ops, defaults, span)?;
-                Ok((class, Set::new()))
-            }
+            } => self.check_class(set, name, instance, signatures, ops, defaults, span),
 
             StmtKind::Instance {
                 params,
@@ -1922,16 +1893,13 @@ impl Checker {
                 class,
                 instance,
                 impls,
-            } => {
-                let instance = self.check_instance(params, set, class, instance, impls, span)?;
-                Ok((instance, Set::new()))
-            }
+            } => self.check_instance(params, set, class, instance, impls, span),
 
             StmtKind::Operator(op) => {
                 self.check_operator_stmt(&op)?;
                 let kind = StmtKind::Operator(op);
 
-                Ok((Stmt::new(kind, span), Set::new()))
+                Ok(Stmt::new(kind, span))
             }
         }
     }

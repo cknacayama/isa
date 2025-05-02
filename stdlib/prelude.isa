@@ -16,11 +16,17 @@ let const a _ = a;
 val {a} => id: a -> a;
 let id a = a;
 
+val {a, b, c} => flip: (a -> b -> c) -> b -> a -> c;
+let flip f x y = f y x;
+
 infixr 0 {a, b} => ($): (a -> b) -> a -> b;
-let ($) f a = f a;
+let ($) f x = f x;
 
 infixr 9 {a, b, c} => (.): (b -> c) -> (a -> b) -> a -> c;
 let (.) f g x = f (g x);
+
+infixl 1 {a, b} => (|>): a -> (a -> b) -> b;
+let (|>) x f = f x;
 
 instance Add int = let (+) a b = a + b;
 instance Sub int = let (-) a b = a - b;

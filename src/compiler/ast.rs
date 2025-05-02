@@ -1,68 +1,130 @@
 use std::fmt::{Debug, Display};
 
-use smallvec::{SmallVec, smallvec};
-
 use super::super::span::Span;
 use super::infer::{ClassConstraintSet, Substitute};
 use super::token::{Ident, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug)]
 pub struct Path {
-    pub segments: SmallVec<[Ident; 2]>,
+    segments: [Ident; 3],
+    len:      u8,
+}
+
+impl std::hash::Hash for Path {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_slice().hash(state);
+    }
+}
+
+impl Eq for Path {
+}
+
+impl PartialEq for Path {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
 }
 
 impl Path {
-    pub const fn new(segments: SmallVec<[Ident; 2]>) -> Self {
-        Self { segments }
+    pub const fn push(&mut self, id: Ident) -> bool {
+        if self.len == 3 {
+            false
+        } else {
+            self.segments[self.len as usize] = id;
+            self.len += 1;
+            true
+        }
     }
 
-    pub fn from_ident(ident: Ident) -> Self {
+    pub fn as_slice(&self) -> &[Ident] {
+        &self.segments[..self.len as usize]
+    }
+
+    pub const fn from_slice(seg: &[Ident]) -> Option<Self> {
+        match *seg {
+            [fst] => Some(Self::from_one(fst)),
+            [fst, snd] => Some(Self::from_two(fst, snd)),
+            [fst, snd, trd] => Some(Self::from_three(fst, snd, trd)),
+            _ => None,
+        }
+    }
+
+    pub const fn from_one(ident: Ident) -> Self {
+        let zero = Ident::zero();
         Self {
-            segments: smallvec![ident],
+            segments: [ident, zero, zero],
+            len:      1,
+        }
+    }
+
+    pub const fn from_two(fst: Ident, snd: Ident) -> Self {
+        let zero = Ident::zero();
+        Self {
+            segments: [fst, snd, zero],
+            len:      2,
+        }
+    }
+
+    pub const fn from_three(fst: Ident, snd: Ident, trd: Ident) -> Self {
+        Self {
+            segments: [fst, snd, trd],
+            len:      3,
         }
     }
 
     pub fn span(&self) -> Span {
-        self.segments
+        self.as_slice()
             .iter()
             .map(|id| id.span)
             .reduce(Span::union)
             .unwrap()
     }
 
-    pub fn base_name(&self) -> Ident {
-        match self.segments.as_slice() {
-            [] => unreachable!(),
-            [.., segment] => *segment,
-        }
+    pub const fn base_name(&self) -> Ident {
+        self.segments[(self.len as usize) - 1]
     }
 
     pub fn is_ident(&self, name: Ident) -> bool {
-        match self.segments.as_slice() {
-            [segment] => *segment == name,
-            _ => false,
-        }
+        self.len == 1 && self.segments[0] == name
     }
 
-    pub fn as_ident(&self) -> Option<Ident> {
-        match self.segments.as_slice() {
-            [segment] => Some(*segment),
-            _ => None,
+    pub const fn as_ident(&self) -> Option<Ident> {
+        if self.len == 1 {
+            Some(self.segments[0])
+        } else {
+            None
         }
     }
 }
 
 macro_rules! mod_path {
-    ($($seg:ident)::+) => {{
-        use crate::global::symbol;
-        use smallvec::smallvec;
-        use crate::span::Span;
+    ($seg:ident) => {{
         use crate::compiler::ast::Path;
         use crate::compiler::token::Ident;
-        let segments = smallvec![$(Ident { ident: symbol!(stringify!($seg)), span: Span::default() }),+];
-        Path::new(segments)
+        use crate::global::symbol;
+        use crate::span::Span;
+        Path::from_one(Ident {
+            ident: symbol!(stringify!($seg)),
+            span:  Span::zero(),
+        })
+    }};
+    ($fst:ident::$snd:ident) => {{
+        use crate::compiler::ast::Path;
+        use crate::compiler::token::Ident;
+        use crate::global::symbol;
+        use crate::span::Span;
+        Path::from_two(
+            Ident {
+                ident: symbol!(stringify!($fst)),
+                span:  Span::zero(),
+            },
+            Ident {
+                ident: symbol!(stringify!($snd)),
+                span:  Span::zero(),
+            },
+        )
     }};
 }
 pub(crate) use mod_path;
@@ -886,7 +948,7 @@ impl Display for Ident {
 impl Display for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut first = true;
-        for segment in &self.segments {
+        for segment in self.as_slice() {
             if first {
                 first = false;
             } else {

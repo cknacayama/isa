@@ -382,7 +382,7 @@ fn unify_eq(
             if vars.len() <= named.len() =>
         {
             let var = *var;
-            let name = name.clone();
+            let name = *name;
             let vars = vars.clone();
             let named = named.clone();
             let parent = Rc::new(c);

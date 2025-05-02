@@ -46,8 +46,14 @@ impl SpanData {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span(u32);
+
+impl Default for Span {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
 
 impl Span {
     /// # Panics
@@ -61,6 +67,10 @@ impl Span {
     #[must_use]
     pub const fn index(self) -> usize {
         self.0 as usize
+    }
+
+    pub const fn zero() -> Self {
+        Self(0)
     }
 }
 

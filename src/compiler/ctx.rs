@@ -4,7 +4,6 @@ use std::rc::Rc;
 use std::{fmt, vec};
 
 use rustc_hash::FxHashMap;
-use smallvec::smallvec;
 
 use super::ast::{Constructor, Fixity, Import, ImportClause, ImportWildcard, Path, mod_path};
 use super::error::{CheckError, CheckErrorKind, CheckResult};
@@ -43,7 +42,7 @@ pub struct ModuleData {
 }
 
 impl ModuleData {
-    pub fn get_ty(&self, id: Ident) -> CheckResult<&ImportData<TyData>> {
+    fn get_ty(&self, id: Ident) -> CheckResult<&ImportData<TyData>> {
         self.types
             .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
@@ -61,13 +60,13 @@ impl ModuleData {
             .or_else(|_| self.get_constructor(id))
     }
 
-    pub fn get_let(&self, id: Ident) -> CheckResult<&VarData> {
+    fn get_let(&self, id: Ident) -> CheckResult<&VarData> {
         self.lets
             .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
-    pub fn get_constructor(&self, id: Ident) -> CheckResult<&VarData> {
+    fn get_constructor(&self, id: Ident) -> CheckResult<&VarData> {
         self.constructors
             .get(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
@@ -79,7 +78,7 @@ impl ModuleData {
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
     }
 
-    pub fn get_type_mut(&mut self, id: Ident) -> CheckResult<&mut ImportData<TyData>> {
+    fn get_type_mut(&mut self, id: Ident) -> CheckResult<&mut ImportData<TyData>> {
         self.types
             .get_mut(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
@@ -102,7 +101,7 @@ impl ModuleData {
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(id.ident), id.span))
     }
 
-    pub fn insert_type(&mut self, id: Symbol, data: TyData) -> Option<ImportData<TyData>> {
+    fn insert_type(&mut self, id: Symbol, data: TyData) -> Option<ImportData<TyData>> {
         self.types.insert(id, ImportData::Own(data))
     }
 
@@ -110,11 +109,11 @@ impl ModuleData {
         self.vals.insert(id, data)
     }
 
-    pub fn insert_constructor(&mut self, id: Symbol, data: VarData) -> Option<VarData> {
+    fn insert_constructor(&mut self, id: Symbol, data: VarData) -> Option<VarData> {
         self.constructors.insert(id, data)
     }
 
-    pub fn insert_class(&mut self, id: Symbol, data: ClassData) -> Option<ImportData<ClassData>> {
+    fn insert_class(&mut self, id: Symbol, data: ClassData) -> Option<ImportData<ClassData>> {
         self.classes.insert(id, ImportData::Own(data))
     }
 
@@ -131,8 +130,7 @@ pub trait Generator {
     fn gen_id(&mut self) -> TyId;
 
     fn gen_type_var(&mut self) -> Ty {
-        let id = self.gen_id();
-        Ty::Var(id)
+        Ty::Var(self.gen_id())
     }
 }
 
@@ -437,7 +435,7 @@ impl Ctx {
         self.current_module = module;
     }
 
-    pub fn get(&self, id: Ident) -> CheckResult<&VarData> {
+    fn get(&self, id: Ident) -> CheckResult<&VarData> {
         self.env
             .iter()
             .rev()
@@ -498,7 +496,7 @@ impl Ctx {
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotModule, id))
     }
 
-    pub fn get_module_mut(&mut self, id: Ident) -> CheckResult<&mut ModuleData> {
+    fn get_module_mut(&mut self, id: Ident) -> CheckResult<&mut ModuleData> {
         self.modules
             .get_mut(&id.ident)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotModule, id))
@@ -613,7 +611,7 @@ impl Ctx {
     }
 
     pub fn get_constructor(&self, id: &Path) -> CheckResult<&Ty> {
-        match *id.segments.as_slice() {
+        match *id.as_slice() {
             [id] => {
                 let current = self.current()?;
                 current.get_constructor(id).map(VarData::ty)
@@ -632,10 +630,7 @@ impl Ctx {
                 data.find_constructor(id).map(|c| &c.ty)
             }
 
-            _ => Err(CheckError::new(
-                CheckErrorKind::InvalidPath(id.clone()),
-                id.span(),
-            )),
+            _ => unreachable!(),
         }
     }
 
@@ -680,7 +675,7 @@ impl Ctx {
         self.get_data_from_module(module, id, ModuleData::get_class)
     }
 
-    pub fn get_class_mut(&mut self, name: &Path) -> CheckResult<&mut ClassData> {
+    fn get_class_mut(&mut self, name: &Path) -> CheckResult<&mut ClassData> {
         let (mut module, id) = self.get_module_and_ident(name)?;
 
         let class = self.get_from_module(module, id, ModuleData::get_class)?;
@@ -708,14 +703,14 @@ impl Ctx {
     }
 
     fn get_module_and_ident(&self, path: &Path) -> CheckResult<(Ident, Ident)> {
-        match *path.segments.as_slice() {
+        match *path.as_slice() {
             [id] => {
                 let cur = Ident::new(self.current_module.ident, id.span);
                 Ok((cur, id))
             }
             [module, id] => Ok((module, id)),
             _ => Err(CheckError::new(
-                CheckErrorKind::InvalidPath(path.clone()),
+                CheckErrorKind::InvalidPath(*path),
                 path.span(),
             )),
         }
@@ -727,7 +722,7 @@ impl Ctx {
         let module = data
             .as_import()
             .map_or(module, |id| Ident::new(id.ident, module.span));
-        Ok(Path::new(smallvec![module, ty]))
+        Ok(Path::from_two(module, ty))
     }
 
     fn import_from_module(&mut self, from: Ident, id: Ident) -> CheckResult<bool> {
@@ -754,9 +749,7 @@ impl Ctx {
             return Ok(new);
         }
 
-        let path = Path {
-            segments: smallvec![from, id],
-        };
+        let path = Path::from_two(from, id);
         let span = from.span.union(id.span);
 
         Err(CheckError::new(CheckErrorKind::InvalidImport(path), span))
@@ -769,26 +762,35 @@ impl Ctx {
                 Err(err) => (false, vec![err]),
             },
             ImportWildcard::Clause(clause) => {
-                let [module] = *import.path.segments.as_slice() else {
+                let [module] = *import.path.as_slice() else {
                     return (
                         false,
                         vec![CheckError::new(
-                            CheckErrorKind::InvalidImport(import.path.clone()),
+                            CheckErrorKind::InvalidImport(import.path),
                             import.path.span(),
                         )],
                     );
                 };
-                let clause = clause
-                    .into_iter()
-                    .map(|mut import| {
-                        let mut path = Path::new(smallvec![module]);
-                        path.segments.extend(import.path.segments);
+                let mut new_clause = Vec::new();
+                let mut errors = Vec::new();
+                for mut import in clause {
+                    let mut path = vec![module];
+                    path.extend(import.path.as_slice());
+                    if let Some(path) = Path::from_slice(&path) {
                         import.path = path;
-                        import
-                    })
-                    .collect();
-                let clause = ImportClause(clause);
-                self.import_clause(clause)
+                        new_clause.push(import);
+                    } else {
+                        let span = import.path.span();
+                        errors.push(CheckError::new(
+                            CheckErrorKind::InvalidPath(import.path),
+                            span,
+                        ));
+                    }
+                }
+                let clause = ImportClause(new_clause.into_boxed_slice());
+                let (res, mut errs) = self.import_clause(clause);
+                errs.extend(errors);
+                (res, errs)
             }
             ImportWildcard::Wildcard => match self.import_wildcard(&import.path) {
                 Ok(ok) => (ok, Vec::new()),
@@ -798,7 +800,7 @@ impl Ctx {
     }
 
     fn import_wildcard(&mut self, path: &Path) -> CheckResult<bool> {
-        if let [module] = *path.segments.as_slice() {
+        if let [module] = *path.as_slice() {
             let module_data = self.get_module(module)?;
 
             let classes = module_data
@@ -882,7 +884,7 @@ impl Ctx {
     }
 
     fn import_single(&mut self, path: &Path) -> CheckResult<bool> {
-        match *path.segments.as_slice() {
+        match *path.as_slice() {
             [module, id] => self.import_from_module(module, id),
 
             [module, ty, ctor] => {
@@ -897,7 +899,7 @@ impl Ctx {
             }
 
             _ => Err(CheckError::new(
-                CheckErrorKind::InvalidImport(path.clone()),
+                CheckErrorKind::InvalidImport(*path),
                 path.span(),
             )),
         }
@@ -922,7 +924,7 @@ impl Ctx {
         let span = data.span;
         match class_data.instances.insert(ty.clone(), data) {
             Some(previous) => Err(CheckError::new(
-                CheckErrorKind::MultipleInstances(Path::from_ident(class), ty, previous.span),
+                CheckErrorKind::MultipleInstances(Path::from_one(class), ty, previous.span),
                 span,
             )),
             None => Ok(()),
@@ -945,7 +947,7 @@ impl Ctx {
             && c.constrs.is_empty()
         {
             return Err(CheckError::new(
-                CheckErrorKind::MultipleInstances(class.clone(), instance, *span),
+                CheckErrorKind::MultipleInstances(*class, instance, *span),
                 data.span,
             ));
         }
@@ -954,7 +956,7 @@ impl Ctx {
             set.iter().all(|c| c.ty().is_var()) && data.set().iter().all(|c| set.contains(c))
         }) {
             return Err(CheckError::new(
-                CheckErrorKind::MultipleInstances(class.clone(), instance, *span),
+                CheckErrorKind::MultipleInstances(*class, instance, *span),
                 data.span,
             ));
         }
@@ -1063,7 +1065,7 @@ impl Ctx {
 
         instance.ok_or_else(|| {
             CheckError::new(
-                CheckErrorKind::NotInstance(ty.clone(), class.clone()),
+                CheckErrorKind::NotInstance(ty.clone(), *class),
                 class.span(),
             )
         })
@@ -1086,7 +1088,7 @@ impl Ctx {
         let instance = class_data.instances.get_mut(&ty);
 
         instance.ok_or_else(|| {
-            CheckError::new(CheckErrorKind::NotInstance(ty, class.clone()), class.span())
+            CheckError::new(CheckErrorKind::NotInstance(ty, *class), class.span())
         })
     }
 
@@ -1161,7 +1163,7 @@ impl Ctx {
         if sets.is_empty() {
             Ok(vec![(
                 span,
-                ClassConstraintSet::from(ClassConstraint::new(class.clone(), ty.clone(), span)),
+                ClassConstraintSet::from(ClassConstraint::new(*class, ty.clone(), span)),
             )])
         } else {
             Ok(sets)
