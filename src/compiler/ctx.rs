@@ -10,7 +10,7 @@ use super::ast::{Constructor, Fixity, Import, ImportClause, ImportWildcard, Path
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::token::Ident;
-use super::types::Ty;
+use super::types::{Ty, TyId};
 use crate::global::{Symbol, symbol};
 use crate::span::Span;
 
@@ -128,7 +128,7 @@ impl ModuleData {
 }
 
 pub trait Generator {
-    fn gen_id(&mut self) -> u64;
+    fn gen_id(&mut self) -> TyId;
 
     fn gen_type_var(&mut self) -> Ty {
         let id = self.gen_id();
@@ -137,7 +137,7 @@ pub trait Generator {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct IdGenerator(u64);
+pub struct IdGenerator(u32);
 
 impl IdGenerator {
     pub const fn new() -> Self {
@@ -152,10 +152,10 @@ impl Default for IdGenerator {
 }
 
 impl Generator for IdGenerator {
-    fn gen_id(&mut self) -> u64 {
+    fn gen_id(&mut self) -> TyId {
         let id = self.0;
         self.0 += 1;
-        id
+        TyId::new(id)
     }
 }
 
@@ -189,14 +189,14 @@ pub trait CtxFmt {
 
 #[derive(Debug, Clone, Default)]
 pub struct TyData {
-    params:       Rc<[u64]>,
+    params:       Rc<[TyId]>,
     constructors: Vec<Constructor<Ty>>,
     span:         Span,
 }
 
 impl TyData {
     #[must_use]
-    const fn new(params: Rc<[u64]>, constructors: Vec<Constructor<Ty>>, span: Span) -> Self {
+    const fn new(params: Rc<[TyId]>, constructors: Vec<Constructor<Ty>>, span: Span) -> Self {
         Self {
             params,
             constructors,
@@ -215,24 +215,24 @@ impl TyData {
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotConstructorName, ctor))
     }
 
-    fn params(&self) -> &[u64] {
+    fn params(&self) -> &[TyId] {
         &self.params
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct AliasData {
-    params: Rc<[u64]>,
+    params: Rc<[TyId]>,
     ty:     Ty,
 }
 
 impl AliasData {
     #[must_use]
-    pub const fn new(params: Rc<[u64]>, ty: Ty) -> Self {
+    pub const fn new(params: Rc<[TyId]>, ty: Ty) -> Self {
         Self { params, ty }
     }
 
-    pub fn params(&self) -> &[u64] {
+    pub fn params(&self) -> &[TyId] {
         &self.params
     }
 
@@ -300,14 +300,14 @@ pub struct MemberData {
 #[derive(Debug, Clone)]
 pub struct ClassData {
     constraints:  ClassConstraintSet,
-    instance_var: u64,
+    instance_var: TyId,
     signatures:   FxHashMap<Ident, MemberData>,
     instances:    FxHashMap<Ty, InstanceData>,
     span:         Span,
 }
 
 impl ClassData {
-    pub fn new(constraints: ClassConstraintSet, instance_var: u64, span: Span) -> Self {
+    pub fn new(constraints: ClassConstraintSet, instance_var: TyId, span: Span) -> Self {
         Self {
             constraints,
             instance_var,
@@ -321,7 +321,7 @@ impl ClassData {
         self.signatures.extend(iter);
     }
 
-    pub const fn instance_var(&self) -> u64 {
+    pub const fn instance_var(&self) -> TyId {
         self.instance_var
     }
 
@@ -525,7 +525,7 @@ impl Ctx {
         self.env.pop()
     }
 
-    fn free_type_variables(&self) -> Vec<u64> {
+    fn free_type_variables(&self) -> Vec<TyId> {
         self.env
             .iter()
             .skip(1)
@@ -571,7 +571,7 @@ impl Ctx {
         }
     }
 
-    pub fn insert_ty(&mut self, name: Ident, params: Rc<[u64]>) -> CheckResult<()> {
+    pub fn insert_ty(&mut self, name: Ident, params: Rc<[TyId]>) -> CheckResult<()> {
         let module = self.current_mut()?;
 
         module
@@ -1204,7 +1204,7 @@ struct TyVarFormatter<T>
 where
     T: Iterator<Item = char>,
 {
-    vars:  FxHashMap<u64, char>,
+    vars:  FxHashMap<TyId, char>,
     chars: T,
 }
 
@@ -1212,7 +1212,7 @@ impl<T> TyVarFormatter<T>
 where
     T: Iterator<Item = char>,
 {
-    fn get(&mut self, var: u64) -> char {
+    fn get(&mut self, var: TyId) -> char {
         *self
             .vars
             .entry(var)

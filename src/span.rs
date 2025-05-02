@@ -46,7 +46,7 @@ impl SpanData {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct Span(u32);
 
 impl Span {
@@ -70,10 +70,19 @@ impl Display for SpanData {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 pub struct Spanned<T> {
     pub data: T,
     pub span: Span,
+}
+
+impl<T: Eq> Eq for Spanned<T> {
+}
+
+impl<T: PartialEq> PartialEq for Spanned<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
 }
 
 impl<T: Debug> Debug for Spanned<T> {

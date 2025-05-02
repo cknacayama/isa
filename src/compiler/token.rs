@@ -3,10 +3,13 @@ use std::fmt::Display;
 use crate::global::{Symbol, symbol};
 use crate::span::{Span, Spanned};
 
-#[derive(Clone, Copy, Debug, Eq, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Ident {
     pub ident: Symbol,
     pub span:  Span,
+}
+
+impl Eq for Ident {
 }
 
 impl Ident {

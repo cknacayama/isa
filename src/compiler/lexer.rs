@@ -2,14 +2,14 @@ use std::str::Chars;
 
 use super::error::LexError;
 use super::token::{Token, TokenKind};
-use crate::global::{intern_span, symbol};
+use crate::global::{intern_span, owned_symbol};
 use crate::span::{SpanData, Spanned};
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
     file_id: usize,
-    input:   &'a str,
     chars:   Chars<'a>,
+    input:   &'a str,
     start:   usize,
     cur:     usize,
 }
@@ -60,16 +60,14 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn eat_while<P>(&mut self, mut pred: P)
+    fn eat_while<P>(&mut self, pred: P)
     where
-        P: FnMut(char) -> bool,
+        P: Fn(char) -> bool,
     {
-        while let Some(c) = self.peek() {
-            if pred(c) {
-                self.bump();
-            } else {
-                break;
-            }
+        while let Some(c) = self.peek()
+            && pred(c)
+        {
+            self.bump();
         }
     }
 
@@ -178,7 +176,7 @@ impl<'a> Lexer<'a> {
             return Err(self.make_err(LexError::UnterminatedString));
         }
 
-        let kind = TokenKind::String(symbol!(&s));
+        let kind = TokenKind::String(owned_symbol!(s));
 
         Ok(self.make_token(kind))
     }

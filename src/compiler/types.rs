@@ -6,18 +6,27 @@ use super::infer::{Subs, Substitute};
 use super::token::Ident;
 use crate::span::Span;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TyId(u32);
+
+impl TyId {
+    pub const fn new(id: u32) -> Self {
+        Self(id)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
     Int,
     Bool,
     Char,
     Real,
-    Var(u64),
+    Var(TyId),
     Tuple(Rc<[Ty]>),
     Fn { param: Rc<Ty>, ret: Rc<Ty> },
-    Scheme { quant: Rc<[u64]>, ty: Rc<Ty> },
+    Scheme { quant: Rc<[TyId]>, ty: Rc<Ty> },
     Named { name: Path, args: Rc<[Ty]> },
-    Generic { var: u64, args: Rc<[Ty]> },
+    Generic { var: TyId, args: Rc<[Ty]> },
 }
 
 impl From<Rc<Self>> for Ty {
@@ -34,7 +43,7 @@ impl From<&Rc<Self>> for Ty {
 
 impl Ty {
     #[must_use]
-    pub fn occurs(&self, var: u64) -> bool {
+    pub fn occurs(&self, var: TyId) -> bool {
         match self {
             Self::Fn { param, ret } => param.occurs(var) || ret.occurs(var),
             Self::Var(n) => *n == var,
@@ -166,7 +175,7 @@ impl Ty {
     }
 
     #[must_use]
-    pub const fn as_var(&self) -> Option<u64> {
+    pub const fn as_var(&self) -> Option<TyId> {
         if let Self::Var(v) = self {
             Some(*v)
         } else {
@@ -174,7 +183,7 @@ impl Ty {
         }
     }
 
-    fn free_type_variables_inner(&self, free: &mut Vec<u64>) {
+    fn free_type_variables_inner(&self, free: &mut Vec<TyId>) {
         match self {
             Self::Int | Self::Bool | Self::Char | Self::Real => (),
             Self::Named { args, .. } if args.is_empty() => (),
@@ -214,7 +223,7 @@ impl Ty {
     }
 
     #[must_use]
-    pub fn free_type_variables(&self) -> Vec<u64> {
+    pub fn free_type_variables(&self) -> Vec<TyId> {
         let mut free = Vec::new();
         self.free_type_variables_inner(&mut free);
         free

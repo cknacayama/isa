@@ -5,23 +5,23 @@ use super::ast::Path;
 use super::ctx::Ctx;
 use super::error::Uninferable;
 use super::token::Ident;
-use super::types::Ty;
+use super::types::{Ty, TyId};
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
 pub struct Subs {
-    old:  u64,
+    old:  TyId,
     subs: Ty,
 }
 
 impl Subs {
     #[must_use]
-    pub const fn new(old: u64, new: Ty) -> Self {
+    pub const fn new(old: TyId, new: Ty) -> Self {
         Self { old, subs: new }
     }
 
     #[must_use]
-    pub const fn old(&self) -> u64 {
+    pub const fn old(&self) -> TyId {
         self.old
     }
 
@@ -74,7 +74,7 @@ pub trait Substitute {
         }
     }
 
-    fn substitute_param(&mut self, subs: &[(Ident, u64)])
+    fn substitute_param(&mut self, subs: &[(Ident, TyId)])
     where
         Self: Sized,
     {
@@ -197,11 +197,14 @@ impl From<EqConstraint> for EqConstraintSet {
     }
 }
 
-#[derive(Debug, Clone, Eq)]
+#[derive(Debug, Clone)]
 pub struct ClassConstraint {
     class: Path,
     ty:    Ty,
     span:  Span,
+}
+
+impl Eq for ClassConstraint {
 }
 
 impl PartialEq for ClassConstraint {
@@ -265,7 +268,7 @@ impl Constraint {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct ClassConstraintSet {
     pub constrs: Vec<ClassConstraint>,
 }

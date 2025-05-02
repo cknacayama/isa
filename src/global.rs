@@ -2,7 +2,8 @@ use std::cell::RefCell;
 use std::fmt::Display;
 use std::ops::Range;
 
-use crate::IndexSet;
+use rustc_hash::FxHashMap;
+
 use crate::span::{Span, SpanData};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
@@ -69,11 +70,21 @@ macro_rules! symbol {
         crate::global::intern_symbol($sym)
     };
 }
-pub(crate) use symbol;
+macro_rules! owned_symbol {
+    ($sym:expr) => {
+        crate::global::intern_owned_symbol($sym)
+    };
+}
+pub(crate) use {owned_symbol, symbol};
 
 #[must_use]
 pub fn intern_symbol(symbol: &str) -> Symbol {
     GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern(symbol))
+}
+
+#[must_use]
+pub fn intern_owned_symbol(symbol: String) -> Symbol {
+    GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern_owned(symbol))
 }
 
 #[must_use]
@@ -83,45 +94,83 @@ pub fn intern_span(span: SpanData) -> Span {
 
 #[derive(Debug, Clone)]
 struct SymbolInterner {
-    symbols: IndexSet<&'static str>,
+    indexes: FxHashMap<&'static str, u32>,
+    symbols: Vec<&'static str>,
+}
+
+macro_rules! default_symbols {
+    [$($symbol:literal),+ $(,)?] => {{
+        const SYMBOLS_LEN: usize = [$($symbol),+].len();
+        const SYMBOLS: [&'static str; SYMBOLS_LEN] = [$($symbol),+];
+        let mut indexes = FxHashMap::default();
+        indexes.reserve(SYMBOLS_LEN);
+        let mut i = 0usize;
+        while i < SYMBOLS_LEN {
+            #[allow(clippy::cast_possible_truncation)]
+            indexes.insert(SYMBOLS[i], i as u32);
+            i += 1;
+        }
+        let symbols = Vec::from(SYMBOLS);
+        SymbolInterner {
+            indexes,
+            symbols,
+        }
+    }};
 }
 
 impl Default for SymbolInterner {
     fn default() -> Self {
-        let mut symbols = IndexSet::default();
-        symbols.insert_full("");
-        Self { symbols }
+        default_symbols![
+            "", "+", "-", "/", "*", "^", "^^", "!", "==", "!=", ">", ">=", "<", "<=", ">>", ">>=",
+            "$", ".", "List", "Option", "Result", "Add", "Sub", "Mul", "Div", "Pow", "Neg", "Eq",
+            "Cmp", "Number", "And", "Or", "Not", "Nil", "Cons", "Some", "None",
+        ]
     }
 }
 
 impl SymbolInterner {
     fn get(&self, symbol: Symbol) -> Option<&'static str> {
-        self.symbols.get_index(symbol.0 as usize).copied()
+        self.symbols.get(symbol.0 as usize).copied()
     }
 
     fn intern(&mut self, symbol: &str) -> Symbol {
-        if let Some(idx) = self.symbols.get_index_of(symbol) {
-            Symbol(idx.try_into().unwrap())
+        if let Some(idx) = self.indexes.get(symbol) {
+            Symbol(*idx)
         } else {
             let symbol = Box::leak(Box::from(symbol));
-            let (idx, _) = self.symbols.insert_full(symbol);
-            Symbol(idx.try_into().unwrap())
+            let idx = self.symbols.len().try_into().unwrap();
+            self.symbols.push(symbol);
+            self.indexes.insert(symbol, idx);
+            Symbol(idx)
+        }
+    }
+
+    fn intern_owned(&mut self, symbol: String) -> Symbol {
+        if let Some(idx) = self.indexes.get(symbol.as_str()) {
+            Symbol(*idx)
+        } else {
+            let symbol = Box::leak(symbol.into_boxed_str());
+            let idx = self.symbols.len().try_into().unwrap();
+            self.symbols.push(symbol);
+            self.indexes.insert(symbol, idx);
+            Symbol(idx)
         }
     }
 }
 
 #[derive(Debug, Clone, Default)]
 struct SpanInterner {
-    spans: IndexSet<SpanData>,
+    spans: Vec<SpanData>,
 }
 
 impl SpanInterner {
     fn get(&self, span: Span) -> Option<SpanData> {
-        self.spans.get_index(span.index()).copied()
+        self.spans.get(span.index()).copied()
     }
 
     fn intern(&mut self, span: SpanData) -> Span {
-        let (idx, _) = self.spans.insert_full(span);
+        let idx = self.spans.len();
+        self.spans.push(span);
         Span::new(idx)
     }
 }

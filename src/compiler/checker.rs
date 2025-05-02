@@ -18,7 +18,7 @@ use super::infer::{
     Substitute,
 };
 use super::token::Ident;
-use super::types::Ty;
+use super::types::{Ty, TyId};
 use crate::compiler::ctx::OperatorData;
 use crate::global::Symbol;
 use crate::span::Span;
@@ -68,7 +68,7 @@ impl Checker {
             .insert_var(id.ident, VarData::new(ty, Set::from(set), id.span))
     }
 
-    fn gen_id(&mut self) -> u64 {
+    fn gen_id(&mut self) -> TyId {
         self.generator.gen_id()
     }
 
@@ -470,7 +470,7 @@ impl Checker {
     fn check_constructor(
         &self,
         constructor: Constructor<()>,
-        quant: Rc<[u64]>,
+        quant: Rc<[TyId]>,
         mut ret: Ty,
     ) -> IsaResult<Constructor<Ty>> {
         for param in constructor.params.iter().rev() {
@@ -537,7 +537,7 @@ impl Checker {
         params: &[Ty],
         set: &Set,
         op: Symbol,
-        ty: &mut Ty,
+        ty: &Ty,
         span: Span,
     ) -> IsaResult<()> {
         let quant = params
@@ -547,14 +547,16 @@ impl Checker {
 
         self.check_valid_type(ty)?;
         let arity = ty.function_arity();
-        if !quant.is_empty() {
-            *ty = Ty::Scheme {
+        let ty = if quant.is_empty() {
+            ty.clone()
+        } else {
+            Ty::Scheme {
                 quant,
                 ty: Rc::new(ty.clone()),
-            };
-        }
+            }
+        };
 
-        let data = OperatorData::new(fixity, prec, ty.clone(), set.clone(), span);
+        let data = OperatorData::new(fixity, prec, ty, set.clone(), span);
         let min = fixity.minimum_arity();
         if arity < min {
             let fst = DiagnosticLabel::new("invalid operator type", span);
@@ -578,29 +580,16 @@ impl Checker {
         }
     }
 
-    fn check_operator_stmt(
-        &mut self,
-        fixity: Fixity,
-        prec: u8,
-        params: Box<[Ty]>,
-        set: Set,
-        op: Ident,
-        mut ty: Ty,
-        span: Span,
-    ) -> IsaResult<Stmt<Ty>> {
-        self.check_operator(fixity, prec, &params, &set, op.ident, &mut ty, span)?;
-
-        let kind = StmtKind::Operator(Operator {
-            fixity,
-            prec,
-            params,
-            set,
-            op,
-            ty,
-            span,
-        });
-
-        Ok(Stmt::new(kind, span))
+    fn check_operator_stmt(&mut self, op: &Operator) -> IsaResult<()> {
+        self.check_operator(
+            op.fixity,
+            op.prec,
+            &op.params,
+            &op.set,
+            op.op.ident,
+            &op.ty,
+            op.span,
+        )
     }
 
     fn check_val(&self, val: &mut Val) -> IsaResult<()> {
@@ -700,8 +689,10 @@ impl Checker {
         for val in signatures.iter_mut() {
             self.check_val(val)?;
         }
+
         let class = Path::new(smallvec![self.ctx.current_module(), name]);
         let instance = instance.as_var().unwrap();
+
         for Operator {
             fixity,
             prec,
@@ -718,7 +709,7 @@ impl Checker {
             set.push(ClassConstraint::new(class.clone(), Ty::Var(var), *span));
             let mut ty = ty.clone();
             ty.substitute_eq(&Subs::new(instance, Ty::Var(var)));
-            self.check_operator(*fixity, *prec, &params, set, op.ident, &mut ty, *span)?;
+            self.check_operator(*fixity, *prec, &params, set, op.ident, &ty, *span)?;
             set.pop();
         }
 
@@ -769,7 +760,8 @@ impl Checker {
         self.ctx.assume_constraints(&set);
 
         let path = Path::from_ident(name);
-        let defaults = self.check_instance_impls(&path, defaults, &Subs::new(0, Ty::Var(0)))?;
+        let var = instance.as_var().unwrap();
+        let defaults = self.check_instance_impls(&path, defaults, &Subs::new(var, Ty::Var(var)))?;
 
         let kind = StmtKind::Class {
             set,
@@ -1935,17 +1927,11 @@ impl Checker {
                 Ok((instance, Set::new()))
             }
 
-            StmtKind::Operator(Operator {
-                fixity,
-                prec,
-                params,
-                set,
-                op,
-                ty,
-                span,
-            }) => {
-                let op = self.check_operator_stmt(fixity, prec, params, set, op, ty, span)?;
-                Ok((op, Set::new()))
+            StmtKind::Operator(op) => {
+                self.check_operator_stmt(&op)?;
+                let kind = StmtKind::Operator(op);
+
+                Ok((Stmt::new(kind, span), Set::new()))
             }
         }
     }
