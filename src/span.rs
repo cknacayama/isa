@@ -125,11 +125,4 @@ impl<T> Spanned<T> {
     {
         Spanned::new(f(self.data), self.span)
     }
-
-    pub fn from<U>(other: Spanned<U>) -> Self
-    where
-        T: From<U>,
-    {
-        other.map(From::from)
-    }
 }

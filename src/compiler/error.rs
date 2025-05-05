@@ -8,7 +8,7 @@ use super::infer::{Constraint, Subs};
 use super::token::{Ident, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
-use crate::span::Span;
+use crate::span::{Span, Spanned};
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
@@ -55,6 +55,12 @@ pub enum ParseError {
 impl From<LexError> for ParseError {
     fn from(value: LexError) -> Self {
         Self::LexError(value)
+    }
+}
+
+impl From<Spanned<LexError>> for Spanned<ParseError> {
+    fn from(value: Spanned<LexError>) -> Self {
+        value.map(ParseError::from)
     }
 }
 

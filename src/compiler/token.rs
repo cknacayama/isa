@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use crate::global::{Symbol, symbol};
+use crate::global::Symbol;
 use crate::span::{Span, Spanned};
 
 #[derive(Clone, Copy, Debug)]
@@ -133,7 +133,7 @@ impl TokenKind {
             "in" => Self::KwIn,
             "with" => Self::KwWith,
             "module" => Self::KwModule,
-            _ => Self::Ident(symbol!(s)),
+            _ => Self::Ident(Symbol::intern(s)),
         }
     }
 
@@ -152,7 +152,7 @@ impl TokenKind {
             "..=" => Self::DotDotEq,
             "->" => Self::Arrow,
             "=>" => Self::Rocket,
-            _ => Self::Operator(symbol!(op)),
+            _ => Self::Operator(Symbol::intern(op)),
         }
     }
 

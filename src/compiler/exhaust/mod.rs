@@ -12,7 +12,7 @@ use super::ast::{
 use super::ctx::Ctx as TypeCtx;
 use super::error::MatchNonExhaustive;
 use super::types::Ty;
-use crate::global::symbol;
+use crate::global::Symbol;
 
 #[derive(Debug)]
 pub struct Ctx<'a> {
@@ -90,13 +90,13 @@ impl Pattern {
         match &pat.kind {
             PatKind::List(list) => {
                 let list_ty = ctx.get_constructors_for_ty(&mod_path!(list::List));
-                let nil = symbol!("Nil");
+                let nil = Symbol::intern("Nil");
                 let nil_idx = list_ty.iter().position(|c| c.name.ident == nil).unwrap();
                 match list {
                     ListPat::Nil => Self::new(Ctor::Type(nil_idx), Vec::new()),
                     ListPat::Single(pat) => {
                         let pat = Self::from_ast_pat(pat, ctx);
-                        let cons = symbol!("Cons");
+                        let cons = Symbol::intern("Cons");
                         let cons_idx = list_ty.iter().position(|c| c.name.ident == cons).unwrap();
                         let fields =
                             vec![(0, pat), (1, Self::new(Ctor::Type(nil_idx), Vec::new()))];
@@ -105,7 +105,7 @@ impl Pattern {
                     ListPat::Cons(pat, pat1) => {
                         let pat = Self::from_ast_pat(pat, ctx);
                         let pat1 = Self::from_ast_pat(pat1, ctx);
-                        let cons = symbol!("Cons");
+                        let cons = Symbol::intern("Cons");
                         let cons_idx = list_ty.iter().position(|c| c.name.ident == cons).unwrap();
                         let fields = vec![(0, pat), (1, pat1)];
                         Self::new(Ctor::Type(cons_idx), fields)

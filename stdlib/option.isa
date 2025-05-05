@@ -1,4 +1,4 @@
-module @option with {monad::_, option::Option::_}
+module @option with {monad::_, option::Option::_, prelude::panic}
 
 type Option a = None | Some a;
 
@@ -19,4 +19,10 @@ instance Monad Option =
     let (>>=) opt f = match opt with
         Some a -> f a,
         None -> None,
+;
+
+val {a} unwrap: Option a -> a;
+let unwrap opt = match opt with
+    Some a -> a,
+    None -> panic "unwrap failed",
 ;

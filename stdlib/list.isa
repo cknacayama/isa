@@ -1,27 +1,39 @@
-module @list with {ops::_, monad::_, option::_}
+module @list with {
+    ops::_,
+    monad::_,
+    option::_,
+    prelude::panic
+}
 
 type List a = Nil | Cons a (List a);
 
-val {a} => lenght: List a -> int;
+val {a} at: List a -> int -> Option a;
+let at list idx = match (list, idx) with
+    ([], _) | (_, ..0) -> None,
+    ([a]_, 0) -> Some a,
+    ([_]list, idx) -> at list $ idx - 1,
+;
+
+val {a} lenght: List a -> int;
 let lenght a = match a with
     [] -> 0,
     [_]rest -> 1 + lenght rest
 ;
 
-val {a} => head: List a -> Option a;
+val {a} head: List a -> Option a;
 let head a = match a with
     [] -> None,
     [a]_ -> Some a,
 ;
 
-val {a} => last: List a -> Option a;
+val {a} last: List a -> Option a;
 let last a = match a with
     [] -> None,
     [a] -> Some a,
     [_]rest -> last rest,
 ;
 
-val {a} => tail: List a -> List a;
+val {a} tail: List a -> List a;
 let tail a = match a with
     [] -> [],
     [_]rest -> rest,
@@ -46,12 +58,22 @@ instance Monad List =
         [a]rest -> f a ++ (rest >>= f),
 ;
 
-instance {a, Eq a} => Eq List a =
+instance {a, Eq a} Eq List a =
     let (==) a b = match (a,b) with
         ([], []) -> true,
         ([a]resta, [b]restb) -> a == b && resta == restb,
         _ -> false,
 ;
 
-infixr 5 {a} => (++): List a -> List a -> List a;
-infixr 5 {a} => (&): a -> List a -> List a;
+infixr 5 {a} (++): List a -> List a -> List a;
+let (++) a b = match (a,b) with
+    (a, []) -> a,
+    (a, [b]restb) -> a ++ b & restb,
+;
+
+infixr 5 {a} (&): a -> List a -> List a;
+let (&) = List::Cons;
+
+// partial function (panics on out of bounds index)
+infixl 9 {a} (!!): List a -> int -> a;
+let (!!) list idx = option::unwrap $ at list idx;

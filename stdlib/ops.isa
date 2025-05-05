@@ -33,7 +33,7 @@ class Eq a =
     let (!=) a = (!) . (==) a,
 ;
 
-class {Eq a} => Cmp a =
+class {Eq a} Cmp a =
     val cmp: a -> a -> Ordering,
 
     infix 4 (>):  a -> a -> bool,
@@ -62,7 +62,7 @@ class {Eq a} => Cmp a =
     ,
 ;
 
-class {Cmp a, Add a, Sub a, Mul a, Div a, Pow a, Neg a} => 
+class {Cmp a, Add a, Sub a, Mul a, Div a, Pow a, Neg a} 
     Number a = 
         val from_int: int -> a,
         val from_real: real -> a,
@@ -76,8 +76,8 @@ instance Eq Ordering =
         _ -> false,
 ;
 
-val {a, Cmp a} => max: a -> a -> a;
+val {a, Cmp a} max: a -> a -> a;
 let max x y = if x <= y then y else x;
 
-val {a, Cmp a} => min: a -> a -> a;
+val {a, Cmp a} min: a -> a -> a;
 let min x y = if x <= y then x else y;

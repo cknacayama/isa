@@ -103,25 +103,25 @@ macro_rules! mod_path {
     ($seg:ident) => {{
         use crate::compiler::ast::Path;
         use crate::compiler::token::Ident;
-        use crate::global::symbol;
+        use crate::global::Symbol;
         use crate::span::Span;
         Path::from_one(Ident {
-            ident: symbol!(stringify!($seg)),
+            ident: Symbol::intern(stringify!($seg)),
             span:  Span::zero(),
         })
     }};
     ($fst:ident::$snd:ident) => {{
         use crate::compiler::ast::Path;
         use crate::compiler::token::Ident;
-        use crate::global::symbol;
+        use crate::global::Symbol;
         use crate::span::Span;
         Path::from_two(
             Ident {
-                ident: symbol!(stringify!($fst)),
+                ident: Symbol::intern(stringify!($fst)),
                 span:  Span::zero(),
             },
             Ident {
-                ident: symbol!(stringify!($snd)),
+                ident: Symbol::intern(stringify!($snd)),
                 span:  Span::zero(),
             },
         )

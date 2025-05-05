@@ -19,6 +19,10 @@ impl Symbol {
     pub const fn zero() -> Self {
         Self(0)
     }
+
+    pub fn intern(symbol: &str) -> Self {
+        GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern(symbol))
+    }
 }
 
 impl std::fmt::Debug for Symbol {
@@ -40,12 +44,16 @@ impl Display for Symbol {
 }
 
 impl Span {
+    pub fn intern(span: SpanData) -> Self {
+        GLOBAL_DATA.with_borrow_mut(|e| e.spans.intern(span))
+    }
+
     #[must_use]
     pub fn union(self, other: Self) -> Self {
         let (self_data, other_data) =
             GLOBAL_DATA.with_borrow(|e| (e.spans.get(self).unwrap(), e.spans.get(other).unwrap()));
         let new_data = self_data.union(&other_data);
-        intern_span(new_data)
+        Span::intern(new_data)
     }
 
     pub fn file_id(self) -> usize {
@@ -77,31 +85,9 @@ thread_local! {
     static GLOBAL_DATA: RefCell<GlobalEnv> = RefCell::new(GlobalEnv::new());
 }
 
-macro_rules! symbol {
-    ($sym:expr) => {
-        crate::global::intern_symbol($sym)
-    };
-}
-macro_rules! owned_symbol {
-    ($sym:expr) => {
-        crate::global::intern_owned_symbol($sym)
-    };
-}
-pub(crate) use {owned_symbol, symbol};
-
-#[must_use]
-pub fn intern_symbol(symbol: &str) -> Symbol {
-    GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern(symbol))
-}
-
 #[must_use]
 pub fn intern_owned_symbol(symbol: String) -> Symbol {
     GLOBAL_DATA.with_borrow_mut(|e| e.symbols.intern_owned(symbol))
-}
-
-#[must_use]
-pub fn intern_span(span: SpanData) -> Span {
-    GLOBAL_DATA.with_borrow_mut(|e| e.spans.intern(span))
 }
 
 #[derive(Debug, Clone)]

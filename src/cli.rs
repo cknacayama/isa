@@ -7,10 +7,13 @@ use codespan_reporting::files::{Files, SimpleFile};
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use codespan_reporting::{files, term};
 
+use crate::compiler::ast::Module;
 use crate::compiler::checker::Checker;
 use crate::compiler::ctx::Ctx;
+use crate::compiler::error::ParseError;
 use crate::compiler::exhaust::check_matches;
-use crate::compiler::parser::Parser;
+use crate::compiler::lexer::{LexResult, Lexer};
+use crate::compiler::parser::{ParseResult, Parser};
 use crate::report::Report;
 
 /// TODO: add more options
@@ -148,23 +151,28 @@ impl Config {
         let _ = term::emit(&mut writer.lock(), &config, &self.files, &diagnostic);
     }
 
+    fn parse(&self) -> ParseResult<Vec<Module<()>>> {
+        let mut modules = Vec::new();
+        for (id, file) in self.files.files.iter().enumerate() {
+            let lexer = Lexer::new(id, file.source());
+            let tokens = lexer.collect::<LexResult<_>>()?;
+            let mut parser = Parser::new(tokens);
+            let cur_modules = parser.parse_all()?;
+            modules.extend(cur_modules);
+        }
+        Ok(modules)
+    }
+
     fn compile(&self) -> bool {
         let start = Instant::now();
 
-        let mut modules = Vec::new();
-
-        for (id, file) in self.files.files.iter().enumerate() {
-            let mut parser = Parser::from_input(id, file.source());
-            let cur_modules = match parser.parse_all() {
-                Ok(expr) if !expr.is_empty() => expr,
-                Err(err) => {
-                    self.report(&err, &Ctx::default());
-                    return true;
-                }
-                _ => return false,
-            };
-            modules.extend(cur_modules);
-        }
+        let modules = match self.parse() {
+            Ok(modules) => modules,
+            Err(err) => {
+                self.report(&err, &Ctx::default());
+                return true;
+            }
+        };
 
         let end_parse = Instant::now();
 

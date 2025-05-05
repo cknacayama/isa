@@ -166,7 +166,7 @@ impl Ty {
         }
     }
 
-    pub fn get_ident(&self) -> Option<Ident> {
+    pub const fn get_ident(&self) -> Option<Ident> {
         if let Self::Named { name, .. } = self {
             name.as_ident()
         } else {
@@ -255,7 +255,9 @@ impl Substitute for Ty {
                 ret.substitute(subs);
             }
             Self::Scheme { ty, .. } => {
+                let before = ty.clone();
                 ty.substitute(subs);
+                dbg!(&before == ty);
             }
             Self::Generic { args, .. } | Self::Named { args, .. } | Self::Tuple(args) => {
                 let mut new = args.to_vec();
@@ -326,10 +328,7 @@ impl Substitute for Rc<Ty> {
                 } else {
                     Rc::from(new_args)
                 };
-                Ty::Named {
-                    name: *name,
-                    args,
-                }
+                Ty::Named { name: *name, args }
             }
             Ty::Generic { var, args } => {
                 let mut new_args = args.to_vec();

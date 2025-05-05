@@ -19,6 +19,7 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 too_many_lines = "allow"
 type_complexity = "allow"
+too_many_arguments = "allow"
 
 # false positive
 needless_collect = "allow"

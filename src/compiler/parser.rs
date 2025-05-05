@@ -1,4 +1,3 @@
-use std::iter::Peekable;
 use std::rc::Rc;
 
 use super::ast::{
@@ -7,84 +6,71 @@ use super::ast::{
 };
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};
-use super::lexer::Lexer;
 use super::token::{Ident, Token, TokenKind};
 use super::types::Ty;
-use crate::global::symbol;
+use crate::global::Symbol;
 use crate::span::{Span, Spanned};
 
 pub type ParseResult<T> = Result<T, Spanned<ParseError>>;
 
 #[derive(Debug)]
-pub struct Parser<'a> {
-    lexer:     Peekable<Lexer<'a>>,
+pub struct Parser {
+    tokens:    Vec<Token>,
+    cur:       usize,
     last_span: Span,
 }
 
-impl<'a> Parser<'a> {
+impl Parser {
     #[must_use]
-    pub fn from_input(file_id: usize, input: &'a str) -> Self {
-        Self::new(Lexer::new(file_id, input))
-    }
-
-    #[must_use]
-    pub fn new(lexer: Lexer<'a>) -> Self {
+    pub fn new(tokens: Vec<Token>) -> Self {
         Self {
-            lexer:     lexer.peekable(),
+            tokens,
+            cur: 0,
             last_span: Span::default(),
         }
     }
 
     fn check(&mut self, t: TokenKind) -> bool {
-        self.peek()
-            .is_some_and(|tk| tk.map(|tk| tk.data == t).unwrap_or(false))
+        self.peek().is_some_and(|tk| tk.data == t)
     }
 
-    fn peek(&mut self) -> Option<ParseResult<Token>> {
-        self.lexer.peek().map(|res| match res {
-            Ok(t) => {
-                self.last_span = t.span;
-                Ok(*t)
-            }
-            Err(e) => {
-                self.last_span = e.span;
-                Err(Spanned::from(*e))
-            }
-        })
+    fn peek(&mut self) -> Option<Token> {
+        self.tokens
+            .get(self.cur)
+            .inspect(|tk| self.last_span = tk.span)
+            .copied()
     }
 
-    fn peek_and<P>(&mut self, p: P) -> ParseResult<bool>
+    fn peek_and<P>(&mut self, p: P) -> bool
     where
         P: FnOnce(TokenKind) -> bool,
     {
-        Ok(self.peek_kind()?.is_some_and(p))
+        self.peek_kind().is_some_and(p)
     }
 
-    fn peek_kind(&mut self) -> ParseResult<Option<TokenKind>> {
-        Ok(self.peek().transpose()?.map(|tk| tk.data))
+    fn peek_kind(&mut self) -> Option<TokenKind> {
+        self.peek().map(|tk| tk.data)
     }
 
-    fn next(&mut self) -> Option<ParseResult<Token>> {
-        self.lexer.next().map(|res| match res {
-            Ok(t) => {
-                self.last_span = t.span;
-                Ok(t)
-            }
-            Err(e) => {
-                self.last_span = e.span;
-                Err(Spanned::from(e))
-            }
-        })
+    const fn eat(&mut self) {
+        self.cur += 1;
+    }
+
+    #[must_use]
+    fn next(&mut self) -> Option<Token> {
+        let tk = self.peek()?;
+        self.cur += 1;
+        Some(tk)
     }
 
     fn next_or_eof(&mut self) -> ParseResult<Token> {
         self.next()
-            .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, self.last_span))?
+            .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, self.last_span))
     }
 
     fn next_if_match(&mut self, tk: TokenKind) -> Option<Span> {
         if self.check(tk) {
-            Some(self.next().unwrap().unwrap().span)
+            Some(self.next().unwrap().span)
         } else {
             None
         }
@@ -94,10 +80,10 @@ impl<'a> Parser<'a> {
     where
         F: FnOnce(Token) -> Option<T>,
     {
-        let token = self.peek()?.ok()?;
+        let token = self.peek()?;
 
         f(token).inspect(|_| {
-            self.next();
+            self.eat();
         })
     }
 
@@ -153,18 +139,18 @@ impl<'a> Parser<'a> {
             let mut path = Path::from_one(id);
             let mut wildcard = ImportWildcard::Nil;
             while self.next_if_match(TokenKind::ColonColon).is_some() {
-                let Some(tk) = self.peek().transpose()? else {
+                let Some(tk) = self.peek() else {
                     return Err(Spanned::new(ParseError::UnexpectedEof, self.last_span));
                 };
                 match tk.data {
                     TokenKind::Ident(ident) => {
-                        self.next();
+                        self.eat();
                         if !path.push(Ident::new(ident, tk.span)) {
                             return Err(Spanned::new(ParseError::PathToLong, self.last_span));
                         }
                     }
                     TokenKind::Underscore => {
-                        self.next();
+                        self.eat();
                         wildcard = ImportWildcard::Wildcard;
                         break;
                     }
@@ -231,7 +217,7 @@ impl<'a> Parser<'a> {
 
         let stmt = match self
             .peek()
-            .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, span))??
+            .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, span))?
             .data
         {
             TokenKind::KwType => self.parse_type_definition(),
@@ -283,7 +269,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_operator(&mut self, fixity: Fixity) -> ParseResult<Operator> {
-        let span = self.next().unwrap().unwrap().span;
+        let span = self.next().unwrap().span;
         let Spanned {
             data: prec,
             span: prec_span,
@@ -323,7 +309,7 @@ impl<'a> Parser<'a> {
             let mut ops = Vec::new();
             let mut defaults = Vec::new();
             loop {
-                match self.peek_kind()? {
+                match self.peek_kind() {
                     Some(TokenKind::KwVal) => {
                         let val = self.parse_val()?;
                         span = span.union(val.span);
@@ -353,7 +339,7 @@ impl<'a> Parser<'a> {
                 return Err(Spanned::new(
                     ParseError::ExpectedToken {
                         expected: TokenKind::KwVal,
-                        got:      self.peek().transpose()?.map(|tk| tk.data),
+                        got:      self.peek().map(|tk| tk.data),
                     },
                     span,
                 ));
@@ -403,7 +389,7 @@ impl<'a> Parser<'a> {
                 return Err(Spanned::new(
                     ParseError::ExpectedToken {
                         expected: TokenKind::KwLet,
-                        got:      self.peek().transpose()?.map(|tk| tk.data),
+                        got:      self.peek().map(|tk| tk.data),
                     },
                     span,
                 ));
@@ -467,9 +453,9 @@ impl<'a> Parser<'a> {
             if let Some(Token {
                 data: TokenKind::Ident(ident),
                 span: ident_span,
-            }) = self.peek().transpose()?
+            }) = self.peek()
             {
-                self.next();
+                self.eat();
                 let name = Path::from_one(Ident { ident, span });
                 let span = span.union(ident_span);
                 constrs.push(ClassConstraint::new(
@@ -495,7 +481,6 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(TokenKind::RBrace)?;
-        self.expect(TokenKind::Rocket)?;
 
         Ok((ClassConstraintSet { constrs }, params.into_boxed_slice()))
     }
@@ -549,12 +534,12 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_prefix(&mut self) -> ParseResult<Expr<()>> {
-        match self.peek().transpose()? {
+        match self.peek() {
             Some(Token {
                 data: TokenKind::Operator(op),
                 span,
             }) => {
-                self.next();
+                self.eat();
                 let expr = self.parse_prefix()?;
                 let op = Ident::new(op, span);
                 let span = span.union(expr.span);
@@ -573,7 +558,7 @@ impl<'a> Parser<'a> {
     fn parse_call(&mut self) -> ParseResult<Expr<()>> {
         let mut expr = self.parse_prim()?;
 
-        while self.peek_and(|tk| tk.can_start_expr())? {
+        while self.peek_and(|tk| tk.can_start_expr()) {
             let arg = self.parse_prim()?;
             let span = expr.span.union(arg.span);
             expr = Expr::untyped(
@@ -592,7 +577,7 @@ impl<'a> Parser<'a> {
         let last_span = self.last_span;
         let Token { data, span } = self
             .peek()
-            .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, last_span))??;
+            .ok_or_else(|| Spanned::new(ParseError::UnexpectedEof, last_span))?;
 
         match data {
             TokenKind::KwLet => self.parse_let(),
@@ -602,19 +587,19 @@ impl<'a> Parser<'a> {
             TokenKind::LBracket => self.parse_list(),
             TokenKind::LParen => self.parse_tuple_or_operator(),
             TokenKind::Integer(lit) => {
-                self.next();
+                self.eat();
                 Ok(Expr::untyped(ExprKind::Int(lit), span))
             }
             TokenKind::Real(lit) => {
-                self.next();
+                self.eat();
                 Ok(Expr::untyped(ExprKind::Real(lit), span))
             }
             TokenKind::Char(lit) => {
-                self.next();
+                self.eat();
                 Ok(Expr::untyped(ExprKind::Char(lit), span))
             }
             TokenKind::String(s) => {
-                self.next();
+                self.eat();
                 Ok(Expr::untyped(ExprKind::String(s), span))
             }
             TokenKind::Ident(_) => {
@@ -622,11 +607,11 @@ impl<'a> Parser<'a> {
                 Ok(Expr::untyped(ExprKind::Path(path), span))
             }
             TokenKind::KwTrue => {
-                self.next();
+                self.eat();
                 Ok(Expr::untyped(ExprKind::Bool(true), span))
             }
             TokenKind::KwFalse => {
-                self.next();
+                self.eat();
                 Ok(Expr::untyped(ExprKind::Bool(false), span))
             }
             kind => Err(Spanned::new(ParseError::ExpectedExpr(kind), span)),
@@ -765,7 +750,7 @@ impl<'a> Parser<'a> {
             Ty::Named { name, args } if args.is_empty() => {
                 let mut span = simple.span;
                 let mut params = Vec::new();
-                while self.peek_and(|tk| tk.can_start_type())? {
+                while self.peek_and(|tk| tk.can_start_type()) {
                     let ty = self.parse_simple_type()?;
                     span = span.union(ty.span);
                     params.push(ty.data);
@@ -802,7 +787,7 @@ impl<'a> Parser<'a> {
 
         let mut params = Vec::new();
 
-        while self.peek_and(|tk| tk.can_start_type())? {
+        while self.peek_and(|tk| tk.can_start_type()) {
             let ty = self.parse_simple_type()?;
             span = span.union(ty.span);
             params.push(ty.data);
@@ -869,7 +854,7 @@ impl<'a> Parser<'a> {
 
         let mut arms = Vec::new();
 
-        while self.peek_and(|tk| tk.can_start_pat())? {
+        while self.peek_and(|tk| tk.can_start_pat()) {
             let arm = self.parse_match_arm()?;
             arms.push(arm.data);
             span = span.union(arm.span);
@@ -910,18 +895,15 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn try_parse_char(&mut self) -> Option<ParseResult<Spanned<u8>>> {
-        match self.peek()? {
-            Ok(Token {
-                data: TokenKind::Char(c),
-                span,
-            }) => {
-                self.next();
-                Some(Ok(Spanned::new(c, span)))
-            }
-            Err(err) => Some(Err(err)),
-            _ => None,
-        }
+    fn try_parse_char(&mut self) -> Option<Spanned<u8>> {
+        let Token {
+            data: TokenKind::Char(c),
+            span,
+        } = self.peek()?
+        else {
+            return None;
+        };
+        Some(Spanned::new(c, span))
     }
 
     fn try_parse_number<T, Parse>(&mut self, parse: Parse) -> Option<ParseResult<Spanned<T>>>
@@ -930,7 +912,7 @@ impl<'a> Parser<'a> {
         Parse: FnOnce(Token) -> Option<Spanned<T>>,
     {
         let Some(span) = self.next_if_map(|tk| match tk.data {
-            TokenKind::Operator(op) if op == symbol!("-") => Some(tk.span),
+            TokenKind::Operator(op) if op == Symbol::intern("-") => Some(tk.span),
             _ => None,
         }) else {
             return self.next_if_map(parse).map(Result::Ok);
@@ -938,7 +920,7 @@ impl<'a> Parser<'a> {
 
         let Some(int) = self.next_if_map(parse) else {
             return Some(Err(Spanned::new(
-                ParseError::ExpectedPattern(TokenKind::Operator(symbol!("-"))),
+                ParseError::ExpectedPattern(TokenKind::Operator(Symbol::intern("-"))),
                 span,
             )));
         };
@@ -1029,18 +1011,13 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_char_range_pat(&mut self, lhs: u8, lhs_span: Span) -> ParseResult<Pat<()>> {
-        self.parse_range_pat(
-            lhs,
-            lhs_span,
-            PatKind::Char,
-            PatKind::CharRange,
-            Self::try_parse_char,
-        )
+        self.parse_range_pat(lhs, lhs_span, PatKind::Char, PatKind::CharRange, |this| {
+            this.try_parse_char().map(Result::Ok)
+        })
     }
 
     fn parse_to_range_pat(&mut self, span: Span) -> ParseResult<Pat<()>> {
         if let Some(char) = self.try_parse_char() {
-            let char = char?;
             let span = span.union(char.span);
             return Ok(Pat::untyped(
                 PatKind::CharRange(RangePat::To(char.data)),
@@ -1050,7 +1027,7 @@ impl<'a> Parser<'a> {
 
         let minus = self
             .next_if_map(|tk| match tk.data {
-                TokenKind::Operator(op) if op == symbol!("-") => Some(tk.span),
+                TokenKind::Operator(op) if op == Symbol::intern("-") => Some(tk.span),
                 _ => None,
             })
             .is_some();
@@ -1080,7 +1057,6 @@ impl<'a> Parser<'a> {
 
     fn parse_to_inclusive_range_pat(&mut self, span: Span) -> ParseResult<Pat<()>> {
         if let Some(char) = self.try_parse_char() {
-            let char = char?;
             let span = span.union(char.span);
             return Ok(Pat::untyped(
                 PatKind::CharRange(RangePat::ToInclusive(char.data)),
@@ -1090,7 +1066,7 @@ impl<'a> Parser<'a> {
 
         let minus = self
             .next_if_map(|tk| match tk.data {
-                TokenKind::Operator(op) if op == symbol!("-") => Some(tk.span),
+                TokenKind::Operator(op) if op == Symbol::intern("-") => Some(tk.span),
                 _ => None,
             })
             .is_some();
@@ -1120,11 +1096,10 @@ impl<'a> Parser<'a> {
 
     fn parse_simple_pat(&mut self) -> ParseResult<Pat<()>> {
         if let Some(c) = self.try_parse_char() {
-            let c = c?;
             return self.parse_char_range_pat(c.data, c.span);
         }
         let minus = self.next_if_map(|tk| match tk.data {
-            TokenKind::Operator(op) if op == symbol!("-") => Some(tk.span),
+            TokenKind::Operator(op) if op == Symbol::intern("-") => Some(tk.span),
             _ => None,
         });
         if let Some(int) = self.try_parse_integer() {
@@ -1143,7 +1118,7 @@ impl<'a> Parser<'a> {
         }
         if let Some(span) = minus {
             return Err(Spanned::new(
-                ParseError::ExpectedPattern(TokenKind::Operator(symbol!("-"))),
+                ParseError::ExpectedPattern(TokenKind::Operator(Symbol::intern("-"))),
                 span,
             ));
         }
@@ -1199,7 +1174,7 @@ impl<'a> Parser<'a> {
         let head = self.parse_pat()?;
         let span = span.union(self.expect(TokenKind::RBracket)?);
 
-        let (kind, span) = if self.peek_and(|tk| tk.can_start_pat())? {
+        let (kind, span) = if self.peek_and(|tk| tk.can_start_pat()) {
             let rest = self.parse_pat()?;
             let span = span.union(rest.span);
             (ListPat::Cons(Box::new(head), Box::new(rest)), span)
@@ -1219,7 +1194,7 @@ impl<'a> Parser<'a> {
 
         let mut span = simple.span;
         let mut args = Vec::new();
-        while self.peek_and(|tk| tk.can_start_pat())? {
+        while self.peek_and(|tk| tk.can_start_pat()) {
             let pat = self.parse_simple_pat()?;
             span = span.union(pat.span);
             args.push(pat);

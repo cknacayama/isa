@@ -10,7 +10,7 @@ use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::token::Ident;
 use super::types::{Ty, TyId};
-use crate::global::{Symbol, symbol};
+use crate::global::Symbol;
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
@@ -1087,9 +1087,8 @@ impl Ctx {
 
         let instance = class_data.instances.get_mut(&ty);
 
-        instance.ok_or_else(|| {
-            CheckError::new(CheckErrorKind::NotInstance(ty, *class), class.span())
-        })
+        instance
+            .ok_or_else(|| CheckError::new(CheckErrorKind::NotInstance(ty, *class), class.span()))
     }
 
     fn zip_args(lhs: &Ty, rhs: &Ty) -> Option<Vec<(Ty, Ty)>> {

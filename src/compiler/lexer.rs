@@ -2,8 +2,9 @@ use std::str::Chars;
 
 use super::error::LexError;
 use super::token::{Token, TokenKind};
-use crate::global::{intern_span, owned_symbol};
-use crate::span::{SpanData, Spanned};
+use crate::span::{Span, SpanData, Spanned};
+
+const EOF: char = '\0';
 
 #[derive(Debug)]
 pub struct Lexer<'a> {
@@ -28,14 +29,18 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn peek(&self) -> Option<char> {
-        self.chars.clone().next()
+    fn first(&self) -> char {
+        self.chars.clone().next().unwrap_or(EOF)
     }
 
-    fn peek_next(&self) -> Option<char> {
+    fn second(&self) -> char {
         let mut iter = self.chars.clone();
         iter.next();
-        iter.next()
+        iter.next().unwrap_or(EOF)
+    }
+
+    fn is_eof(&self) -> bool {
+        self.chars.as_str().is_empty()
     }
 
     fn bump(&mut self) -> Option<char> {
@@ -45,18 +50,17 @@ impl<'a> Lexer<'a> {
 
     fn bump_twice(&mut self) -> Option<(char, char)> {
         self.cur += 2;
-        self.chars
-            .next()
-            .and_then(|c1| self.chars.next().map(|c2| (c1, c2)))
+        let c1 = self.chars.next()?;
+        let c2 = self.chars.next()?;
+        Some((c1, c2))
     }
 
     fn match_cur(&mut self, to_match: char) -> bool {
-        match self.peek() {
-            Some(c) if c == to_match => {
-                self.bump();
-                true
-            }
-            _ => false,
+        if self.first() == to_match {
+            self.bump();
+            true
+        } else {
+            false
         }
     }
 
@@ -64,29 +68,27 @@ impl<'a> Lexer<'a> {
     where
         P: Fn(char) -> bool,
     {
-        while let Some(c) = self.peek()
-            && pred(c)
-        {
+        while pred(self.first()) && !self.is_eof() {
             self.bump();
         }
     }
 
     fn make_token(&self, kind: TokenKind) -> Token {
         let span = SpanData::new(self.file_id, self.start, self.cur).unwrap();
-        let span = intern_span(span);
+        let span = Span::intern(span);
         Token::new(kind, span)
     }
 
     fn make_err(&self, kind: LexError) -> Spanned<LexError> {
         let span = SpanData::new(self.file_id, self.start, self.cur).unwrap();
-        let span = intern_span(span);
+        let span = Span::intern(span);
         Spanned::new(kind, span)
     }
 
     fn skip_whitespace(&mut self) {
-        while let Some(c) = self.peek() {
-            match c {
-                '/' if self.peek_next().is_some_and(|c| c == '/') => {
+        while !self.is_eof() {
+            match self.first() {
+                '/' if self.second() == '/' => {
                     self.bump_twice();
                     self.eat_while(|c| c != '\n');
                 }
@@ -101,9 +103,7 @@ impl<'a> Lexer<'a> {
     fn number(&mut self) -> Token {
         self.eat_while(|c| c.is_ascii_digit());
 
-        if self.peek().is_some_and(|c| c == '.')
-            && self.peek_next().is_some_and(|c| c.is_ascii_digit())
-        {
+        if self.first() == '.' && self.second().is_ascii_digit() {
             self.bump_twice();
             self.eat_while(|c| c.is_ascii_digit());
             let s = &self.input[self.start..self.cur];
@@ -156,7 +156,7 @@ impl<'a> Lexer<'a> {
     fn string(&mut self) -> LexResult<Token> {
         let mut s = String::new();
 
-        while self.peek().is_some_and(|c| c != '"') {
+        while self.first() != '"' {
             let c = self.bump().unwrap();
             if c == '\\' {
                 let c = self
@@ -176,7 +176,7 @@ impl<'a> Lexer<'a> {
             return Err(self.make_err(LexError::UnterminatedString));
         }
 
-        let kind = TokenKind::String(owned_symbol!(s));
+        let kind = TokenKind::String(crate::global::intern_owned_symbol(s));
 
         Ok(self.make_token(kind))
     }
@@ -212,19 +212,6 @@ impl<'a> Lexer<'a> {
                     Some(Ok(self.make_token(TokenKind::$tk2)))
                 } else {
                     Some(Ok(self.make_token(TokenKind::$tk)))
-                }
-            }};
-            ($tk:ident, $c2:literal => $tk2:ident, $c3:literal => $tk3:ident) => {{
-                match self.peek() {
-                    Some($c2) => {
-                        self.bump();
-                        Some(Ok(self.make_token(TokenKind::$tk2)))
-                    }
-                    Some($c3) => {
-                        self.bump();
-                        Some(Ok(self.make_token(TokenKind::$tk3)))
-                    }
-                    _ => Some(Ok(self.make_token(TokenKind::$tk))),
                 }
             }};
         }

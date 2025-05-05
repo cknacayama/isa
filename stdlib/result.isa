@@ -2,13 +2,13 @@ module @result with {monad::_, result::Result::_}
 
 type Result e a = Err e | Ok a;
 
-instance {e} => Functor Result e =
+instance {e} Functor Result e =
     let fmap f res = match res with
         Ok a -> Ok $ f a,
         Err e -> Err e,
 ;
 
-instance {e} => Applicative Result e =
+instance {e} Applicative Result e =
     let pure = Ok,
     let (<*>) f x = match (f,x) with
         (Ok f, Ok x) -> Ok $ f x,
@@ -16,7 +16,7 @@ instance {e} => Applicative Result e =
         (_, Err e) -> Err e,
 ;
 
-instance {e} => Monad Result e =
+instance {e} Monad Result e =
     let (>>=) res f = match res with
         Ok a -> f a,
         Err e -> Err e,
