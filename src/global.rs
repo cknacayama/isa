@@ -53,7 +53,7 @@ impl Span {
         let (self_data, other_data) =
             GLOBAL_DATA.with_borrow(|e| (e.spans.get(self).unwrap(), e.spans.get(other).unwrap()));
         let new_data = self_data.union(&other_data);
-        Span::intern(new_data)
+        Self::intern(new_data)
     }
 
     pub fn file_id(self) -> usize {

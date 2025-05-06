@@ -29,20 +29,20 @@ let (.) f g x = f (g x);
 infixl 1 {a, b} (|>): a -> (a -> b) -> b;
 let (|>) x f = f x;
 
-instance Add int = let (+) a b = a + b;
-instance Sub int = let (-) a b = a - b;
-instance Mul int = let (*) a b = a * b;
-instance Div int = 
+instance int: Add = let (+) a b = a + b;
+instance int: Sub = let (-) a b = a - b;
+instance int: Mul = let (*) a b = a * b;
+instance int: Div = 
     let (/) a b = a / b,
     let (%) a b = a % b,
 ;
-instance Pow int =
+instance int: Pow =
     let (^) a b = a ^ b,
     let (^^) a b = a ^^ b,
 ;
-instance Neg int = let (-) a = -a;
-instance Eq int = let (==) a b = a == b;
-instance Cmp int = 
+instance int: Neg = let (-) a = -a;
+instance int: Eq = let (==) a b = a == b;
+instance int: Cmp = 
     let cmp a b =
         if a == b then
             Ordering::Equal
@@ -51,25 +51,25 @@ instance Cmp int =
         else
             Ordering::Less
 ;
-instance Number int = 
+instance int: Number = 
     let from_int a = a,
     let from_real a = real_to_int a,
 ;
 
-instance Add real = let (+) a b = a + b;
-instance Sub real = let (-) a b = a - b;
-instance Mul real = let (*) a b = a * b;
-instance Div real = 
+instance real: Add = let (+) a b = a + b;
+instance real: Sub = let (-) a b = a - b;
+instance real: Mul = let (*) a b = a * b;
+instance real: Div = 
     let (/) a b = a / b,
     let (%) a b = a % b,
 ;
-instance Pow real =
+instance real: Pow =
     let (^) a b = a ^ b,
     let (^^) a b = a ^^ b,
 ;
-instance Neg real = let (-) a = -a;
-instance Eq real = let (==) a b = a == b;
-instance Cmp real = 
+instance real: Neg = let (-) a = -a;
+instance real: Eq = let (==) a b = a == b;
+instance real: Cmp = 
     let cmp a b =
         if a == b then
             Ordering::Equal
@@ -78,14 +78,14 @@ instance Cmp real =
         else
             Ordering::Less
 ;
-instance Number real = 
+instance real: Number = 
     let from_int a = int_to_real a,
     let from_real a = a,
 ;
 
-instance And bool = let (&&) a b = a && b;
-instance Or bool = let (||) a b = a || b;
-instance Not bool = let (!) a = !a;
+instance bool: And = let (&&) a b = a && b;
+instance bool: Or = let (||) a b = a || b;
+instance bool: Not = let (!) a = !a;
 
-instance Eq char = let (==) a b = a == b;
-instance Eq () = let (==) () () = true;
+instance char: Eq = let (==) a b = a == b;
+instance (): Eq = let (==) () () = true;

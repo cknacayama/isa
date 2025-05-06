@@ -39,26 +39,26 @@ let tail a = match a with
     [_]rest -> rest,
 ;
 
-instance Functor List =
+instance List: Functor =
     let fmap f a = match a with
         [] -> [],
         [a]rest -> f a & (f <$> rest),
 ;
 
-instance Applicative List =
+instance List: Applicative =
     let pure a = [a],
     let (<*>) f a = match (f,a) with
         ([f]restf, [a]resta) -> f a & (restf <*> resta),
         _ -> [],
 ;
 
-instance Monad List =
+instance List: Monad =
     let (>>=) a f = match a with
         [] -> [],
         [a]rest -> f a ++ (rest >>= f),
 ;
 
-instance {a, Eq a} Eq List a =
+instance {a: Eq} List a: Eq =
     let (==) a b = match (a,b) with
         ([], []) -> true,
         ([a]resta, [b]restb) -> a == b && resta == restb,

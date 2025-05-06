@@ -2,44 +2,44 @@ module @ops
 
 type Ordering = Less | Equal | Greater;
 
-class Add a = infixl 6 (+): a -> a -> a;
+class Add = infixl 6 (+): Self -> Self -> Self;
 
-class Sub a = infixl 6 (-): a -> a -> a;
+class Sub = infixl 6 (-): Self -> Self -> Self;
 
-class Mul a = infixl 7 (*): a -> a -> a;
+class Mul = infixl 7 (*): Self -> Self -> Self;
 
-class Div a =
-    infixl 7 (/): a -> a -> a,
-    infixl 7 (%): a -> a -> a,
+class Div =
+    infixl 7 (/): Self -> Self -> Self,
+    infixl 7 (%): Self -> Self -> Self,
 ;
 
-class Pow a =
-    infixr 8 (^): a -> int -> a,
-    infixr 8 (^^): a -> real -> a,
+class Pow =
+    infixr 8 (^): Self -> int -> Self,
+    infixr 8 (^^): Self -> real -> Self,
 ;
 
-class Neg a = prefix 10 (-): a -> a;
+class Neg = prefix 10 (-): Self -> Self;
 
-class Not a = prefix 10 (!): a -> bool;
+class Not = prefix 10 (!): Self -> bool;
 
-class And a = infixr 3 (&&): a -> a -> bool;
+class And = infixr 3 (&&): Self -> Self -> bool;
 
-class Or a = infixr 2 (||): a -> a -> bool;
+class Or = infixr 2 (||): Self -> Self -> bool;
 
-class Eq a =
-    infix 4 (==): a -> a -> bool,
-    infix 4 (!=): a -> a -> bool,
+class Eq =
+    infix 4 (==): Self -> Self -> bool,
+    infix 4 (!=): Self -> Self -> bool,
 
     let (!=) a = (!) . (==) a,
 ;
 
-class {Eq a} Cmp a =
-    val cmp: a -> a -> Ordering,
+class Cmp: Eq =
+    val cmp: Self -> Self -> Ordering,
 
-    infix 4 (>):  a -> a -> bool,
-    infix 4 (<):  a -> a -> bool,
-    infix 4 (>=):  a -> a -> bool,
-    infix 4 (<=):  a -> a -> bool,
+    infix 4 (>):  Self -> Self -> bool,
+    infix 4 (<):  Self -> Self -> bool,
+    infix 4 (>=):  Self -> Self -> bool,
+    infix 4 (<=):  Self -> Self -> bool,
 
     let (>) a b = match Cmp::cmp a b with
         Ordering::Greater -> true,
@@ -62,13 +62,12 @@ class {Eq a} Cmp a =
     ,
 ;
 
-class {Cmp a, Add a, Sub a, Mul a, Div a, Pow a, Neg a} 
-    Number a = 
-        val from_int: int -> a,
-        val from_real: real -> a,
+class Number: {Cmp, Add, Sub, Mul, Div, Pow, Neg} = 
+    val from_int: int -> Self,
+    val from_real: real -> Self,
 ;
 
-instance Eq Ordering =
+instance Ordering: Eq =
     let (==) a b = match (a,b) with
         (Ordering::Less, Ordering::Less) 
         | (Ordering::Equal, Ordering::Equal) 
@@ -76,8 +75,8 @@ instance Eq Ordering =
         _ -> false,
 ;
 
-val {a, Cmp a} max: a -> a -> a;
+val {a: Cmp} max: a -> a -> a;
 let max x y = if x <= y then y else x;
 
-val {a, Cmp a} min: a -> a -> a;
+val {a: Cmp} min: a -> a -> a;
 let min x y = if x <= y then x else y;

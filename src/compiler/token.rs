@@ -137,6 +137,10 @@ impl TokenKind {
         }
     }
 
+    pub const fn identifier_character(c: char) -> bool {
+        c == '_' || c.is_ascii_alphanumeric()
+    }
+
     pub const fn operator_character(c: char) -> bool {
         matches!(
             c,

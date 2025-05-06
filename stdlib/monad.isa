@@ -1,32 +1,32 @@
 module @monad with {prelude::{id, const}}
 
-class Functor f =
+class Functor =
     val {a,b} fmap: (a -> b) -> f a -> f b,
     infixl 4 {a, b} (<$):  a -> f b -> f a,
 
     let (<$) = (<$>) . const,
 ;
 
-class {Functor f} Applicative f =
-    val {a} pure: a -> f a,
-    val {a,b,c} liftA2: (a -> b -> c) -> f a -> f b -> f c,
-    infixl 4 {a, b} (<*>): f (a -> b) -> f a -> f b,
-    infixl 4 {a, b} (*>):  f a -> f b -> f b,
-    infixl 4 {a, b} (<*):  f a -> f b -> f a,
+class Applicative: Functor =
+    val {a} pure: a -> Self a,
+    val {a,b,c} liftA2: (a -> b -> c) -> Self a -> Self b -> Self c,
+    infixl 4 {a, b} (<*>): Self (a -> b) -> Self a -> Self b,
+    infixl 4 {a, b} (*>):  Self a -> Self b -> Self b,
+    infixl 4 {a, b} (<*):  Self a -> Self b -> Self a,
 
     let liftA2 f x y = f <$> x <*> y,
     let (*>) a1 a2 = (id <$ a1) <*> a2,
     let (<*) = Applicative::liftA2 const,
 ;
 
-class {Applicative m} Monad m =
-    val {a} return: a -> m a,
-    infixl 1 {a, b} (>>=): m a -> (a -> m b) -> m b,
-    infixl 1 {a, b} (>>): m a -> m b -> m b,
+class Monad: Applicative =
+    val {a} return: a -> Self a,
+    infixl 1 {a, b} (>>=): Self a -> (a -> Self b) -> Self b,
+    infixl 1 {a, b} (>>): Self a -> Self b -> Self b,
 
     let return = Applicative::pure,
     let (>>) a b = a >>= \_ -> b,
 ;
 
-infixl 4 {a, b, f, Functor f} (<$>): (a -> b) -> f a -> f b;
+infixl 4 {a, b, f: Functor} (<$>): (a -> b) -> f a -> f b;
 let (<$>) = Functor::fmap;

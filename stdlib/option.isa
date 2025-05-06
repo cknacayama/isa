@@ -2,20 +2,20 @@ module @option with {monad::_, option::Option::_, prelude::panic}
 
 type Option a = None | Some a;
 
-instance Functor Option =
+instance Option: Functor =
     let fmap f opt = match opt with
         Some a -> Some $ f a,
         None -> None,
 ;
 
-instance Applicative Option =
+instance Option: Applicative =
     let pure = Some,
     let (<*>) f x = match (f,x) with
         (Some f, Some x) -> Some $ f x,
         _ -> None,
 ;
 
-instance Monad Option =
+instance Option: Monad =
     let (>>=) opt f = match opt with
         Some a -> f a,
         None -> None,

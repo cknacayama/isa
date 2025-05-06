@@ -182,11 +182,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn identifier_or_keyword(&mut self) -> Token {
-        const fn is_identifier_char(c: char) -> bool {
-            c == '_' || c.is_ascii_alphanumeric()
-        }
-
-        self.eat_while(is_identifier_char);
+        self.eat_while(TokenKind::identifier_character);
         let s = &self.input[self.start..self.cur];
         let kind = TokenKind::keyword(s);
         self.make_token(kind)

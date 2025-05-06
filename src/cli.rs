@@ -10,7 +10,6 @@ use codespan_reporting::{files, term};
 use crate::compiler::ast::Module;
 use crate::compiler::checker::Checker;
 use crate::compiler::ctx::Ctx;
-use crate::compiler::error::ParseError;
 use crate::compiler::exhaust::check_matches;
 use crate::compiler::lexer::{LexResult, Lexer};
 use crate::compiler::parser::{ParseResult, Parser};
