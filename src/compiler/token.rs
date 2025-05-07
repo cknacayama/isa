@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::global::Symbol;
-use crate::span::{Span, Spanned};
+use crate::span::{Span, Spand};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Ident {
@@ -43,7 +43,7 @@ impl std::hash::Hash for Ident {
     }
 }
 
-pub type Token = Spanned<TokenKind>;
+pub type Token = Spand<TokenKind>;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenKind {

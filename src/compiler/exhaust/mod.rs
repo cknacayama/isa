@@ -245,17 +245,17 @@ impl IntRange {
 }
 
 impl TypeCtx {
-    fn check_single_match_stmt(&self, stmt: &Stmt<Ty>) -> Result<(), MatchNonExhaustive> {
+    fn check_single_match_stmt(&self, stmt: &Stmt<Ty>, errors: &mut Vec<MatchNonExhaustive>) {
         match &stmt.kind {
             StmtKind::Semi(expr) => {
-                self.check_single_match_expr(expr)?;
+                self.check_single_match_expr(expr, errors);
             }
             StmtKind::Instance { impls, .. }
             | StmtKind::Class {
                 defaults: impls, ..
             } => {
                 for bind in impls {
-                    self.check_single_match_expr(&bind.expr)?;
+                    self.check_single_match_expr(&bind.expr, errors);
                 }
             }
             StmtKind::Let(bind) => {
@@ -263,10 +263,10 @@ impl TypeCtx {
                     let ty = p.pat.ty.clone();
                     let witnesses = check_match_pats(std::iter::once(&p.pat), ty, self);
                     if !witnesses.is_empty() {
-                        return Err(MatchNonExhaustive::new(witnesses, p.pat.span));
+                        errors.push(MatchNonExhaustive::new(witnesses, p.pat.span));
                     }
                 }
-                self.check_single_match_expr(&bind.expr)?;
+                self.check_single_match_expr(&bind.expr, errors);
             }
 
             StmtKind::Val(_)
@@ -274,26 +274,25 @@ impl TypeCtx {
             | StmtKind::Type { .. }
             | StmtKind::Operator(Operator { .. }) => (),
         }
-
-        Ok(())
     }
-    fn check_single_match_expr(&self, expr: &Expr<Ty>) -> Result<(), MatchNonExhaustive> {
+
+    fn check_single_match_expr(&self, expr: &Expr<Ty>, errors: &mut Vec<MatchNonExhaustive>) {
         let span = expr.span;
         match &expr.kind {
             ExprKind::Infix { lhs, rhs, .. } => {
-                self.check_single_match_expr(lhs)?;
-                self.check_single_match_expr(rhs)?;
+                self.check_single_match_expr(lhs, errors);
+                self.check_single_match_expr(rhs, errors);
             }
             ExprKind::Paren(expr) | ExprKind::Prefix { expr, .. } => {
-                self.check_single_match_expr(expr)?;
+                self.check_single_match_expr(expr, errors);
             }
             ExprKind::Fn { param, expr } => {
                 let ty = param.pat.ty.clone();
                 let witnesses = check_match_pats(std::iter::once(&param.pat), ty, self);
                 if !witnesses.is_empty() {
-                    return Err(MatchNonExhaustive::new(witnesses, param.pat.span));
+                    errors.push(MatchNonExhaustive::new(witnesses, param.pat.span));
                 }
-                self.check_single_match_expr(expr)?;
+                self.check_single_match_expr(expr, errors);
             }
 
             ExprKind::Let { bind, body, .. } => {
@@ -301,24 +300,24 @@ impl TypeCtx {
                     let ty = p.pat.ty.clone();
                     let witnesses = check_match_pats(std::iter::once(&p.pat), ty, self);
                     if !witnesses.is_empty() {
-                        return Err(MatchNonExhaustive::new(witnesses, p.pat.span));
+                        errors.push(MatchNonExhaustive::new(witnesses, p.pat.span));
                     }
                 }
-                self.check_single_match_expr(&bind.expr)?;
-                self.check_single_match_expr(body)?;
+                self.check_single_match_expr(&bind.expr, errors);
+                self.check_single_match_expr(body, errors);
             }
             ExprKind::Match { expr, arms } => {
-                self.check_single_match_expr(expr)?;
+                self.check_single_match_expr(expr, errors);
 
                 let ty = expr.ty.clone();
                 let typed_pats = arms.iter().map(MatchArm::pat);
                 let witnesses = check_match_pats(typed_pats, ty, self);
                 if !witnesses.is_empty() {
-                    return Err(MatchNonExhaustive::new(witnesses, span));
+                    errors.push(MatchNonExhaustive::new(witnesses, span));
                 }
 
                 for arm in arms.iter().map(MatchArm::expr) {
-                    self.check_single_match_expr(arm)?;
+                    self.check_single_match_expr(arm, errors);
                 }
             }
             ExprKind::If {
@@ -326,17 +325,17 @@ impl TypeCtx {
                 then,
                 otherwise,
             } => {
-                self.check_single_match_expr(cond)?;
-                self.check_single_match_expr(then)?;
-                self.check_single_match_expr(otherwise)?;
+                self.check_single_match_expr(cond, errors);
+                self.check_single_match_expr(then, errors);
+                self.check_single_match_expr(otherwise, errors);
             }
             ExprKind::Call { callee, arg } => {
-                self.check_single_match_expr(callee)?;
-                self.check_single_match_expr(arg)?;
+                self.check_single_match_expr(callee, errors);
+                self.check_single_match_expr(arg, errors);
             }
             ExprKind::List(exprs) | ExprKind::Tuple(exprs) => {
                 for expr in exprs {
-                    self.check_single_match_expr(expr)?;
+                    self.check_single_match_expr(expr, errors);
                 }
             }
 
@@ -348,16 +347,21 @@ impl TypeCtx {
             | ExprKind::Char(_)
             | ExprKind::Path(_) => (),
         }
-
-        Ok(())
     }
 }
 
-pub fn check_matches(stmts: &[Stmt<Ty>], ctx: &TypeCtx) -> Result<(), MatchNonExhaustive> {
+pub fn check_matches(stmts: &[Stmt<Ty>], ctx: &TypeCtx) -> Result<(), Vec<MatchNonExhaustive>> {
+    let mut errors = Vec::new();
+
     for stmt in stmts {
-        ctx.check_single_match_stmt(stmt)?;
+        ctx.check_single_match_stmt(stmt, &mut errors);
     }
-    Ok(())
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 fn check_match_pats<'a>(

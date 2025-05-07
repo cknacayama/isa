@@ -1,8 +1,8 @@
 use std::str::Chars;
 
-use super::error::LexError;
+use super::error::{LexError, LexErrorKind};
 use super::token::{Token, TokenKind};
-use crate::span::{Span, SpanData, Spanned};
+use crate::span::{Span, SpanData};
 
 const EOF: char = '\0';
 
@@ -15,7 +15,7 @@ pub struct Lexer<'a> {
     cur:     usize,
 }
 
-pub type LexResult<T> = Result<T, Spanned<LexError>>;
+pub type LexResult<T> = Result<T, LexError>;
 
 impl<'a> Lexer<'a> {
     #[must_use]
@@ -73,16 +73,34 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    pub fn lex_all(&mut self) -> Result<Vec<Token>, Vec<LexError>> {
+        let mut tokens = Vec::new();
+        let mut errors = Vec::new();
+
+        while let Some(tk) = self.next_token() {
+            match tk {
+                Ok(tk) => tokens.push(tk),
+                Err(err) => errors.push(err),
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(tokens)
+        } else {
+            Err(errors)
+        }
+    }
+
     fn make_token(&self, kind: TokenKind) -> Token {
         let span = SpanData::new(self.file_id, self.start, self.cur);
         let span = Span::intern(span);
         Token::new(kind, span)
     }
 
-    fn make_err(&self, kind: LexError) -> Spanned<LexError> {
+    fn make_err(&self, kind: LexErrorKind) -> LexError {
         let span = SpanData::new(self.file_id, self.start, self.cur);
         let span = Span::intern(span);
-        Spanned::new(kind, span)
+        LexError::new(kind, span)
     }
 
     fn skip_whitespace(&mut self) {
@@ -117,27 +135,27 @@ impl<'a> Lexer<'a> {
     fn character(&mut self) -> LexResult<Token> {
         let c = self
             .bump()
-            .ok_or_else(|| self.make_err(LexError::UnterminatedChar))?;
+            .ok_or_else(|| self.make_err(LexErrorKind::UnterminatedChar))?;
 
         let c = match c {
             '\\' => {
                 let c = self
                     .bump()
-                    .ok_or_else(|| self.make_err(LexError::UnterminatedString))?;
+                    .ok_or_else(|| self.make_err(LexErrorKind::UnterminatedString))?;
                 Self::escape(c).ok_or_else(|| {
                     self.eat_while(|c| c != '"');
-                    self.make_err(LexError::UnrecognizedEscape(c))
+                    self.make_err(LexErrorKind::UnrecognizedEscape(c))
                 })? as u8
             }
-            '\'' => return Err(self.make_err(LexError::EmptyChar)),
+            '\'' => return Err(self.make_err(LexErrorKind::EmptyChar)),
             _ if c.is_ascii() => c as u8,
-            _ => return Err(self.make_err(LexError::InvalidChar(c))),
+            _ => return Err(self.make_err(LexErrorKind::InvalidChar(c))),
         };
 
         if self.match_cur('\'') {
             Ok(self.make_token(TokenKind::Char(c)))
         } else {
-            Err(self.make_err(LexError::UnterminatedChar))
+            Err(self.make_err(LexErrorKind::UnterminatedChar))
         }
     }
 
@@ -161,10 +179,10 @@ impl<'a> Lexer<'a> {
             if c == '\\' {
                 let c = self
                     .bump()
-                    .ok_or_else(|| self.make_err(LexError::UnterminatedString))?;
+                    .ok_or_else(|| self.make_err(LexErrorKind::UnterminatedString))?;
                 let c = Self::escape(c).ok_or_else(|| {
                     self.eat_while(|c| c != '"');
-                    self.make_err(LexError::UnrecognizedEscape(c))
+                    self.make_err(LexErrorKind::UnrecognizedEscape(c))
                 })?;
                 s.push(c);
             } else {
@@ -173,7 +191,7 @@ impl<'a> Lexer<'a> {
         }
 
         if !self.match_cur('"') {
-            return Err(self.make_err(LexError::UnterminatedString));
+            return Err(self.make_err(LexErrorKind::UnterminatedString));
         }
 
         let kind = TokenKind::String(crate::global::intern_owned_symbol(s));
@@ -229,15 +247,7 @@ impl<'a> Lexer<'a> {
             '"' => Some(self.string()),
             '_' | 'a'..='z' | 'A'..='Z' => Some(Ok(self.identifier_or_keyword())),
             c if TokenKind::operator_character(c) => Some(Ok(self.operator())),
-            _ => Some(Err(self.make_err(LexError::InvalidChar(c)))),
+            _ => Some(Err(self.make_err(LexErrorKind::InvalidChar(c)))),
         }
-    }
-}
-
-impl Iterator for Lexer<'_> {
-    type Item = LexResult<Token>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_token()
     }
 }

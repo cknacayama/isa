@@ -77,36 +77,36 @@ impl Display for SpanData {
 }
 
 #[derive(Clone, Copy)]
-pub struct Spanned<T> {
+pub struct Spand<T> {
     pub data: T,
     pub span: Span,
 }
 
-impl<T: Eq> Eq for Spanned<T> {
+impl<T: Eq> Eq for Spand<T> {
 }
 
-impl<T: PartialEq> PartialEq for Spanned<T> {
+impl<T: PartialEq> PartialEq for Spand<T> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
     }
 }
 
-impl<T: Debug> Debug for Spanned<T> {
+impl<T: Debug> Debug for Spand<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.data.fmt(f)
     }
 }
 
-impl<T: Display> Display for Spanned<T> {
+impl<T: Display> Display for Spand<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.data.fmt(f)
     }
 }
 
-impl<T: Error> Error for Spanned<T> {
+impl<T: Error> Error for Spand<T> {
 }
 
-impl<T> Spanned<T> {
+impl<T> Spand<T> {
     pub const fn new(data: T, span: Span) -> Self {
         Self { data, span }
     }
@@ -115,10 +115,16 @@ impl<T> Spanned<T> {
         &self.data
     }
 
-    pub fn map<F, U>(self, f: F) -> Spanned<U>
+    pub fn map<F, U>(self, f: F) -> Spand<U>
     where
         F: FnOnce(T) -> U,
     {
-        Spanned::new(f(self.data), self.span)
+        Spand::new(f(self.data), self.span)
+    }
+}
+
+impl<T> From<Spand<T>> for Vec<Spand<T>> {
+    fn from(value: Spand<T>) -> Self {
+        vec![value]
     }
 }

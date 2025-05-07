@@ -1,5 +1,5 @@
 use std::ffi::OsStr;
-use std::fmt::{Debug, Display};
+use std::fmt::{Debug, Display, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -7,15 +7,17 @@ use codespan_reporting::diagnostic::Diagnostic;
 use codespan_reporting::files::{Files, SimpleFile};
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use codespan_reporting::{files, term};
+use rustc_hash::FxHashSet;
 
 use crate::compiler::ast::Module;
 use crate::compiler::checker::Checker;
 use crate::compiler::ctx::Ctx;
 use crate::compiler::exhaust::check_matches;
-use crate::compiler::lexer::{LexResult, Lexer};
-use crate::compiler::parser::{ParseResult, Parser};
+use crate::compiler::lexer::Lexer;
+use crate::compiler::parser::Parser;
 use crate::compiler::token::Token;
-use crate::report::Report;
+use crate::compiler::types::Ty;
+use crate::report::{Diagnosed, Report};
 
 /// TODO: add more options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -88,6 +90,8 @@ impl Display for CompileDuration {
     }
 }
 
+type CompileResult<T> = Result<T, Vec<Diagnosed>>;
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct Config {
@@ -95,6 +99,7 @@ pub struct Config {
     input_path: PathBuf,
     bin_path:   PathBuf,
     files:      FilesDatabase,
+    max_errors: usize,
 }
 
 impl Config {
@@ -138,6 +143,7 @@ impl Config {
             input_path,
             bin_path,
             files,
+            max_errors: 4,
         }
     }
 
@@ -160,70 +166,125 @@ impl Config {
         }
     }
 
-    fn report(&self, id: usize, diagnostic: &Diagnostic<usize>) {
-        let writer = StandardStream::stderr(ColorChoice::Auto);
+    fn report(&self, diagnostics: &[Diagnosed]) {
         let config = term::Config::default();
+        let writer = StandardStream::stderr(ColorChoice::Auto);
 
-        let _ = term::emit(&mut writer.lock(), &config, &self.files, diagnostic);
+        let mut files = FxHashSet::default();
+        {
+            let mut writer = writer.lock();
+            for err in diagnostics.iter().take(self.max_errors) {
+                let _ = term::emit(&mut writer, &config, &self.files, err.diagnostic());
+                if !files.contains(&err.id()) {
+                    files.insert(err.id());
+                }
+            }
+        }
 
-        let file_name = self.files.get(id).unwrap().name();
-        let error = Diagnostic::error().with_message(format!(
-            "could not compile `{file_name}` due to previous error"
+        let mut message = String::from("could not compile {");
+
+        let mut first = true;
+        for file in files {
+            if first {
+                first = false;
+            } else {
+                message.push_str(", ");
+            }
+            let file = self.files.get(file).unwrap().name();
+            message.push_str(file);
+        }
+
+        let _ = message.write_fmt(format_args!(
+            "}} due to {} previous {} ({} emitted)",
+            diagnostics.len(),
+            if diagnostics.len() > 1 {
+                "error"
+            } else {
+                "errors"
+            },
+            self.max_errors.min(diagnostics.len())
         ));
+
+        let error = Diagnostic::error().with_message(message);
 
         let _ = term::emit(&mut writer.lock(), &config, &self.files, &error);
     }
 
-    fn lex(&self) -> LexResult<Vec<Vec<Token>>> {
-        self.files
-            .files
-            .iter()
-            .enumerate()
-            .map(|(id, file)| Lexer::new(id, file.source()).collect())
-            .collect()
+    fn lex(&self, ctx: &Ctx) -> CompileResult<Vec<Vec<Token>>> {
+        let mut tokens = Vec::new();
+        let mut errors = Vec::new();
+
+        for (id, file) in self.files.files.iter().enumerate() {
+            match Lexer::new(id, file.source()).lex_all() {
+                Ok(tk) => tokens.push(tk),
+                Err(err) => errors.extend(err.into_iter().map(|err| err.report(ctx))),
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(tokens)
+        } else {
+            Err(errors)
+        }
     }
 
-    fn parse(&self, tokens: Vec<Vec<Token>>) -> ParseResult<Vec<Module<()>>> {
+    fn parse(&self, tokens: Vec<Vec<Token>>, ctx: &Ctx) -> CompileResult<Vec<Module<()>>> {
         let mut parser = Parser::new();
         let mut modules = Vec::new();
+        let mut errors = Vec::new();
 
         for tokens in tokens {
             parser.restart(tokens);
-            let parsed = parser.parse_all()?;
-            modules.extend(parsed);
+            match parser.parse_all() {
+                Ok(parsed) => modules.extend(parsed),
+                Err(err) => errors.extend(err.into_iter().map(|err| err.report(ctx))),
+            }
         }
 
-        Ok(modules)
+        if errors.is_empty() {
+            Ok(modules)
+        } else {
+            Err(errors)
+        }
     }
 
-    fn compile(&self) -> Result<(Ctx, CompileDuration), (usize, Diagnostic<usize>)> {
+    fn exhaust(&self, modules: &[Module<Ty>], ctx: &Ctx) -> Result<(), Vec<Diagnosed>> {
+        let mut errors = Vec::new();
+        for module in modules {
+            if let Err(err) = check_matches(&module.stmts, ctx) {
+                errors.extend(err.into_iter().map(|err| err.report(ctx)));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    fn compile(&self) -> Result<(Ctx, CompileDuration), Vec<Diagnosed>> {
         let start = Instant::now();
 
-        let tokens = match self.lex() {
-            Ok(tokens) => tokens,
-            Err(err) => return Err(err.report(&Ctx::default())),
-        };
+        let ctx = Ctx::default();
+
+        let tokens = self.lex(&ctx)?;
 
         let end_lex = Instant::now();
 
-        let modules = match self.parse(tokens) {
-            Ok(modules) => modules,
-            Err(err) => return Err(err.report(&Ctx::default())),
-        };
+        let modules = self.parse(tokens, &ctx)?;
 
         let end_parse = Instant::now();
 
-        let mut checker = Checker::default();
+        let mut checker = Checker::with_ctx(ctx);
         let modules = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
-            Err(err) => return Err(err.report(checker.ctx())),
+            Err(err) => return Err(vec![err.report(checker.ctx())]),
         };
 
         let end_check = Instant::now();
 
-        for module in modules {
-            check_matches(&module.stmts, checker.ctx()).map_err(|err| err.report(checker.ctx()))?;
-        }
+        self.exhaust(&modules, checker.ctx())?;
 
         let end_exhaust = Instant::now();
 
@@ -246,7 +307,7 @@ impl Config {
                 println!("{ctx}");
                 print!("{duration}");
             }
-            Err((id, diagnostic)) => self.report(id, &diagnostic),
+            Err(diagnostics) => self.report(&diagnostics),
         }
     }
 }

@@ -5,18 +5,42 @@ use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::compiler::ctx::{Ctx, CtxFmt};
 use crate::compiler::error::{DiagnosticLabel, IsaError, MatchNonExhaustive};
-use crate::span::Spanned;
+use crate::span::Spand;
+
+pub struct Diagnosed {
+    id:         usize,
+    diagnostic: Diagnostic<usize>,
+}
+
+impl From<Diagnosed> for Vec<Diagnosed> {
+    fn from(value: Diagnosed) -> Self {
+        vec![value]
+    }
+}
+
+impl Diagnosed {
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn diagnostic(&self) -> &Diagnostic<usize> {
+        &self.diagnostic
+    }
+}
 
 pub trait Report {
     fn file_id(&self) -> usize;
     fn diagnostic(&self, ctx: &Ctx) -> Diagnostic<usize>;
 
-    fn report(&self, ctx: &Ctx) -> (usize, Diagnostic<usize>) {
-        (self.file_id(), self.diagnostic(ctx))
+    fn report(&self, ctx: &Ctx) -> Diagnosed {
+        Diagnosed {
+            id:         self.file_id(),
+            diagnostic: self.diagnostic(ctx),
+        }
     }
 }
 
-impl<T: Error> Report for Spanned<T> {
+impl<T: Error> Report for Spand<T> {
     fn file_id(&self) -> usize {
         self.span.file_id()
     }

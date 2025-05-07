@@ -232,6 +232,37 @@ impl TokenKind {
                 | Self::KwFalse
         )
     }
+
+    pub const fn recover_start_point(&self) -> bool {
+        matches!(
+            self,
+            TokenKind::LParen
+                | TokenKind::RParen
+                | TokenKind::LBracket
+                | TokenKind::RBracket
+                | TokenKind::Backslash
+                | TokenKind::Integer(_)
+                | TokenKind::Real(_)
+                | TokenKind::Ident(_)
+                | TokenKind::String(_)
+                | TokenKind::Char(_)
+                | TokenKind::KwModule
+                | TokenKind::KwTrue
+                | TokenKind::KwFalse
+                | TokenKind::KwType
+                | TokenKind::KwAlias
+                | TokenKind::KwLet
+                | TokenKind::KwVal
+                | TokenKind::KwClass
+                | TokenKind::KwInstance
+                | TokenKind::KwInfix
+                | TokenKind::KwInfixl
+                | TokenKind::KwInfixr
+                | TokenKind::KwPrefix
+                | TokenKind::KwMatch
+                | TokenKind::KwIf
+        )
+    }
 }
 
 #[derive(Debug, Clone)]

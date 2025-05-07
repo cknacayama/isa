@@ -8,11 +8,10 @@ use super::infer::{Constraint, Subs};
 use super::token::{Ident, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
-use crate::span::{Span, Spanned};
+use crate::span::{Span, Spand};
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
-pub enum LexError {
+pub enum LexErrorKind {
     InvalidChar(char),
     UnterminatedChar,
     UnterminatedString,
@@ -20,7 +19,9 @@ pub enum LexError {
     UnrecognizedEscape(char),
 }
 
-impl Display for LexError {
+pub type LexError = Spand<LexErrorKind>;
+
+impl Display for LexErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidChar(c) => write!(f, "invalid character `{c}`"),
@@ -32,12 +33,11 @@ impl Display for LexError {
     }
 }
 
-impl std::error::Error for LexError {
+impl std::error::Error for LexErrorKind {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum ParseError {
-    LexError(LexError),
+pub enum ParseErrorKind {
     UnexpectedEof,
     ExpectedToken {
         expected: TokenKind,
@@ -52,22 +52,11 @@ pub enum ParseError {
     PrecendenceLimit(i64),
 }
 
-impl From<LexError> for ParseError {
-    fn from(value: LexError) -> Self {
-        Self::LexError(value)
-    }
-}
+pub type ParseError = Spand<ParseErrorKind>;
 
-impl From<Spanned<LexError>> for Spanned<ParseError> {
-    fn from(value: Spanned<LexError>) -> Self {
-        value.map(ParseError::from)
-    }
-}
-
-impl Display for ParseError {
+impl Display for ParseErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::LexError(lex_error) => lex_error.fmt(f),
             Self::UnexpectedEof => write!(f, "unexpected end-of-file"),
             Self::ExpectedToken { expected, got } => {
                 write!(f, "expected `{expected}`")?;
@@ -83,7 +72,7 @@ impl Display for ParseError {
         }
     }
 }
-impl std::error::Error for ParseError {
+impl std::error::Error for ParseErrorKind {
 }
 
 #[derive(Debug, Clone)]
