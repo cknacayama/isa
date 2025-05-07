@@ -51,6 +51,11 @@ impl Checker {
         &self.ctx
     }
 
+    #[must_use]
+    pub fn take_ctx(self) -> Ctx {
+        self.ctx
+    }
+
     const fn subs_count(&self) -> usize {
         self.subs.len()
     }

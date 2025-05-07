@@ -6,7 +6,7 @@ use super::ast::{
 };
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};
-use super::token::{Delim, Ident, Token, TokenKind};
+use super::token::{Ident, Token, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
 use crate::span::{Span, Spanned};
@@ -141,7 +141,6 @@ impl Parser {
         &mut self,
         span: Span,
         delim: Delim,
-        sep: TokenKind,
         mut parse: impl FnMut(&mut Self) -> ParseResult<T>,
     ) -> ParseResult<(Vec<T>, Span)> {
         let mut data = Vec::new();
@@ -149,7 +148,7 @@ impl Parser {
         while !self.check(delim.closing()) {
             let res = parse(self)?;
             data.push(res);
-            if self.next_if_match(sep).is_none() {
+            if self.next_if_match(delim.separator()).is_none() {
                 break;
             }
         }
@@ -162,15 +161,14 @@ impl Parser {
     fn parse_delimited<T>(
         &mut self,
         delim: Delim,
-        sep: TokenKind,
         parse: impl FnMut(&mut Self) -> ParseResult<T>,
     ) -> ParseResult<(Vec<T>, Span)> {
         let span = self.expect(delim.opening())?;
-        self.parse_delimited_from(span, delim, sep, parse)
+        self.parse_delimited_from(span, delim, parse)
     }
 
     fn parse_import_clause(&mut self) -> ParseResult<ImportClause> {
-        let (imports, _) = self.parse_delimited(Delim::Brace, TokenKind::Comma, |parser| {
+        let (imports, _) = self.parse_delimited(Delim::Brace, |parser| {
             let id = parser.expect_id()?;
             let mut path = Path::from_one(id);
             let mut wildcard = ImportWildcard::Nil;
@@ -478,7 +476,7 @@ impl Parser {
 
         let mut constrs = Vec::new();
 
-        let (params, _) = self.parse_delimited(Delim::Brace, TokenKind::Comma, |parser| {
+        let (params, _) = self.parse_delimited(Delim::Brace, |parser| {
             let name = parser.expect_id()?;
             let ty = Ty::Named {
                 name: Path::from_one(name),
@@ -498,8 +496,7 @@ impl Parser {
 
     fn parse_class_constraint(&mut self) -> ParseResult<Vec<(Path, Span)>> {
         if self.check(TokenKind::LBrace) {
-            let (classes, _) =
-                self.parse_delimited(Delim::Brace, TokenKind::Comma, Self::parse_path)?;
+            let (classes, _) = self.parse_delimited(Delim::Brace, Self::parse_path)?;
             Ok(classes)
         } else {
             Ok(vec![self.parse_path()?])
@@ -685,8 +682,7 @@ impl Parser {
     }
 
     fn parse_list(&mut self) -> ParseResult<Expr<()>> {
-        let (exprs, span) =
-            self.parse_delimited(Delim::Bracket, TokenKind::Comma, Self::parse_expr)?;
+        let (exprs, span) = self.parse_delimited(Delim::Bracket, Self::parse_expr)?;
 
         let kind = ExprKind::List(exprs.into_boxed_slice());
 
@@ -719,7 +715,7 @@ impl Parser {
         match data {
             TokenKind::LParen => {
                 let (mut types, span) =
-                    self.parse_delimited_from(span, Delim::Paren, TokenKind::Comma, |parser| {
+                    self.parse_delimited_from(span, Delim::Paren, |parser| {
                         parser.parse_type().map(|ty| ty.data)
                     })?;
 
@@ -1150,12 +1146,8 @@ impl Parser {
             TokenKind::KwTrue => Ok(Pat::untyped(PatKind::Bool(true), span)),
             TokenKind::KwFalse => Ok(Pat::untyped(PatKind::Bool(false), span)),
             TokenKind::LParen => {
-                let (mut pats, span) = self.parse_delimited_from(
-                    span,
-                    Delim::Paren,
-                    TokenKind::Comma,
-                    Self::parse_pat,
-                )?;
+                let (mut pats, span) =
+                    self.parse_delimited_from(span, Delim::Paren, Self::parse_pat)?;
 
                 if pats.len() == 1 {
                     Ok(Pat {
@@ -1303,5 +1295,34 @@ impl Parser {
             },
             span,
         ))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Delim {
+    Paren,
+    Brace,
+    Bracket,
+}
+
+impl Delim {
+    const fn opening(self) -> TokenKind {
+        match self {
+            Self::Paren => TokenKind::LParen,
+            Self::Brace => TokenKind::LBrace,
+            Self::Bracket => TokenKind::LBracket,
+        }
+    }
+
+    const fn closing(self) -> TokenKind {
+        match self {
+            Self::Paren => TokenKind::RParen,
+            Self::Brace => TokenKind::RBrace,
+            Self::Bracket => TokenKind::RBracket,
+        }
+    }
+
+    const fn separator(self) -> TokenKind {
+        TokenKind::Comma
     }
 }

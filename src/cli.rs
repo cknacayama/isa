@@ -1,8 +1,9 @@
 use std::ffi::OsStr;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use codespan_reporting::diagnostic::Diagnostic;
 use codespan_reporting::files::{Files, SimpleFile};
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use codespan_reporting::{files, term};
@@ -13,11 +14,12 @@ use crate::compiler::ctx::Ctx;
 use crate::compiler::exhaust::check_matches;
 use crate::compiler::lexer::{LexResult, Lexer};
 use crate::compiler::parser::{ParseResult, Parser};
+use crate::compiler::token::Token;
 use crate::report::Report;
 
 /// TODO: add more options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Opt {
+enum Opt {
     #[default]
     Infer,
 }
@@ -64,6 +66,25 @@ impl<'a> Files<'a> for FilesDatabase {
         line_index: usize,
     ) -> Result<std::ops::Range<usize>, files::Error> {
         self.get(id)?.line_range((), line_index)
+    }
+}
+
+struct CompileDuration {
+    lex:     Duration,
+    parse:   Duration,
+    check:   Duration,
+    exhaust: Duration,
+    total:   Duration,
+}
+
+impl Display for CompileDuration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "ran: {:?}", self.total)?;
+        writeln!(f, "  lex:     {:?}", self.lex)?;
+        writeln!(f, "  parse:   {:?}", self.parse)?;
+        writeln!(f, "  check:   {:?}", self.check)?;
+        writeln!(f, "  exhaust: {:?}", self.exhaust)?;
+        Ok(())
     }
 }
 
@@ -139,29 +160,30 @@ impl Config {
         }
     }
 
-    fn report<E>(&self, err: &E, ctx: &Ctx)
-    where
-        E: Report,
-    {
+    fn report(&self, id: usize, diagnostic: &Diagnostic<usize>) {
         let writer = StandardStream::stderr(ColorChoice::Auto);
         let config = term::Config::default();
-        let diagnostic = err.diagnostic(ctx);
 
-        let _ = term::emit(&mut writer.lock(), &config, &self.files, &diagnostic);
+        let _ = term::emit(&mut writer.lock(), &config, &self.files, diagnostic);
+
+        let file_name = self.files.get(id).unwrap().name();
+        let error = Diagnostic::error().with_message(format!(
+            "could not compile `{file_name}` due to previous error"
+        ));
+
+        let _ = term::emit(&mut writer.lock(), &config, &self.files, &error);
     }
 
-    fn parse(&self) -> ParseResult<Vec<Module<()>>> {
-        let tokens = self
-            .files
+    fn lex(&self) -> LexResult<Vec<Vec<Token>>> {
+        self.files
             .files
             .iter()
             .enumerate()
-            .map(|(id, file)| {
-                let lexer = Lexer::new(id, file.source());
-                lexer.collect()
-            })
-            .collect::<LexResult<Vec<_>>>()?;
+            .map(|(id, file)| Lexer::new(id, file.source()).collect())
+            .collect()
+    }
 
+    fn parse(&self, tokens: Vec<Vec<Token>>) -> ParseResult<Vec<Module<()>>> {
         let mut parser = Parser::new();
         let mut modules = Vec::new();
 
@@ -174,15 +196,19 @@ impl Config {
         Ok(modules)
     }
 
-    fn compile(&self) -> bool {
+    fn compile(&self) -> Result<(Ctx, CompileDuration), (usize, Diagnostic<usize>)> {
         let start = Instant::now();
 
-        let modules = match self.parse() {
+        let tokens = match self.lex() {
+            Ok(tokens) => tokens,
+            Err(err) => return Err(err.report(&Ctx::default())),
+        };
+
+        let end_lex = Instant::now();
+
+        let modules = match self.parse(tokens) {
             Ok(modules) => modules,
-            Err(err) => {
-                self.report(&err, &Ctx::default());
-                return true;
-            }
+            Err(err) => return Err(err.report(&Ctx::default())),
         };
 
         let end_parse = Instant::now();
@@ -190,42 +216,37 @@ impl Config {
         let mut checker = Checker::default();
         let modules = match checker.check_many_modules(modules) {
             Ok(ok) => ok,
-            Err(err) => {
-                self.report(&err, checker.ctx());
-                return true;
-            }
+            Err(err) => return Err(err.report(checker.ctx())),
         };
 
         let end_check = Instant::now();
 
         for module in modules {
-            if let Err(err) = check_matches(&module.stmts, checker.ctx()) {
-                self.report(&err, checker.ctx());
-                return true;
-            }
+            check_matches(&module.stmts, checker.ctx()).map_err(|err| err.report(checker.ctx()))?;
         }
 
         let end_exhaust = Instant::now();
 
-        let duration = end_exhaust.duration_since(start);
+        let ctx = checker.take_ctx();
 
-        println!("{}", checker.ctx());
+        let duration = CompileDuration {
+            lex:     end_lex.duration_since(start),
+            parse:   end_parse.duration_since(end_lex),
+            check:   end_check.duration_since(end_parse),
+            exhaust: end_exhaust.duration_since(end_check),
+            total:   end_exhaust.duration_since(start),
+        };
 
-        println!("ran in {duration:?}");
-        println!("  parsing in {:?}", end_parse.duration_since(start));
-        println!(
-            "  type analysis in {:?}",
-            end_check.duration_since(end_parse)
-        );
-        println!(
-            "  exhaustivness check in {:?}",
-            end_exhaust.duration_since(end_check)
-        );
-
-        false
+        Ok((ctx, duration))
     }
 
     pub fn run(&self) {
-        self.compile();
+        match self.compile() {
+            Ok((ctx, duration)) => {
+                println!("{ctx}");
+                print!("{duration}");
+            }
+            Err((id, diagnostic)) => self.report(id, &diagnostic),
+        }
     }
 }

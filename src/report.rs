@@ -8,10 +8,19 @@ use crate::compiler::error::{DiagnosticLabel, IsaError, MatchNonExhaustive};
 use crate::span::Spanned;
 
 pub trait Report {
+    fn file_id(&self) -> usize;
     fn diagnostic(&self, ctx: &Ctx) -> Diagnostic<usize>;
+
+    fn report(&self, ctx: &Ctx) -> (usize, Diagnostic<usize>) {
+        (self.file_id(), self.diagnostic(ctx))
+    }
 }
 
 impl<T: Error> Report for Spanned<T> {
+    fn file_id(&self) -> usize {
+        self.span.file_id()
+    }
+
     fn diagnostic(&self, _: &Ctx) -> Diagnostic<usize> {
         Diagnostic::error()
             .with_message(self.data())
@@ -20,6 +29,10 @@ impl<T: Error> Report for Spanned<T> {
 }
 
 impl Report for IsaError {
+    fn file_id(&self) -> usize {
+        self.primary_label().span().file_id()
+    }
+
     fn diagnostic(&self, _: &Ctx) -> Diagnostic<usize> {
         Diagnostic::error()
             .with_message(self.message())
@@ -54,6 +67,10 @@ impl MatchNonExhaustive {
 }
 
 impl Report for MatchNonExhaustive {
+    fn file_id(&self) -> usize {
+        self.span().file_id()
+    }
+
     fn diagnostic(&self, ctx: &Ctx) -> Diagnostic<usize> {
         Diagnostic::error()
             .with_message("non-exhaustive pattern")

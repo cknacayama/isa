@@ -179,31 +179,6 @@ impl TokenKind {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Delim {
-    Paren,
-    Bracket,
-    Brace,
-}
-
-impl Delim {
-    pub const fn opening(self) -> TokenKind {
-        match self {
-            Self::Paren => TokenKind::LParen,
-            Self::Bracket => TokenKind::LBracket,
-            Self::Brace => TokenKind::LBrace,
-        }
-    }
-
-    pub const fn closing(self) -> TokenKind {
-        match self {
-            Self::Paren => TokenKind::RParen,
-            Self::Bracket => TokenKind::RBracket,
-            Self::Brace => TokenKind::RBrace,
-        }
-    }
-}
-
 impl Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

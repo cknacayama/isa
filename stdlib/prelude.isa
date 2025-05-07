@@ -89,3 +89,5 @@ instance bool: Not = let (!) a = !a;
 
 instance char: Eq = let (==) a b = a == b;
 instance (): Eq = let (==) () () = true;
+
+// instance {a} List a: Eq;
