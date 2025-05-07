@@ -360,7 +360,7 @@ impl Checker {
             expr.ty.substitute_many(&subs);
             let ty = self.ctx.generalize(expr.ty.clone());
             return Err(val_error(&ty, expr.span));
-        };
+        }
 
         if let Some(c) = set.iter().find(|c| !val_set.contains(c)) {
             let fst = DiagnosticLabel::new(

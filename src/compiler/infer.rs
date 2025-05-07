@@ -340,6 +340,14 @@ impl ClassConstraintSet {
         self.constrs.contains(constr)
     }
 
+    pub const fn len(&self) -> usize {
+        self.constrs.len()
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn push(&mut self, class: ClassConstraint) {
         self.constrs.push(class);
     }

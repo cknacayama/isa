@@ -925,6 +925,27 @@ impl Ctx {
         self.import_wildcard(&mod_path!(prelude))
     }
 
+    fn is_super_class(&self, class: &Path, child: &Path) -> bool {
+        class == child
+            || self
+                .get_class(child)
+                .map(|child| {
+                    child
+                        .parents()
+                        .iter()
+                        .any(|parent| self.is_super_class(class, parent))
+                })
+                .unwrap_or(false)
+    }
+
+    fn set_contains_class(&self, set: &ClassConstraintSet, class: &ClassConstraint) -> bool {
+        set.iter().any(|c| {
+            c.ty() == class.ty()
+                && (self.is_super_class(class.class(), c.class())
+                    || self.is_super_class(c.class(), class.class()))
+        })
+    }
+
     pub fn insert_instance(
         &mut self,
         instance: Ty,
@@ -946,9 +967,10 @@ impl Ctx {
             ));
         }
 
-        if let Some(span) = constrs.iter().find_map(|(span, set)| {
-            (set.iter().all(|c| c.ty().is_var()) && data.set().iter().all(|c| set.contains(c)))
-                .then_some(span)
+        if let Some((span, _)) = constrs.iter().find(|(_, set)| {
+            set.iter().all(|c| c.ty().is_var())
+                && (data.set().is_empty()
+                    || data.set().iter().any(|c| self.set_contains_class(set, c)))
         }) {
             return Err(CheckError::new(
                 CheckErrorKind::MultipleInstances(*class, instance, *span),
