@@ -1,8 +1,8 @@
 module @monad with {prelude::{id, const}}
 
 class Functor =
-    val {a,b} fmap: (a -> b) -> f a -> f b,
-    infixl 4 {a, b} (<$):  a -> f b -> f a,
+    val {a,b} fmap: (a -> b) -> Self a -> Self b,
+    infixl 4 {a, b} (<$):  a -> Self b -> Self a,
 
     let (<$) = (<$>) . const,
 ;
@@ -20,13 +20,14 @@ class Applicative: Functor =
 ;
 
 class Monad: Applicative =
-    val {a} return: a -> Self a,
     infixl 1 {a, b} (>>=): Self a -> (a -> Self b) -> Self b,
     infixl 1 {a, b} (>>): Self a -> Self b -> Self b,
 
-    let return = Applicative::pure,
     let (>>) a b = a >>= \_ -> b,
 ;
 
 infixl 4 {a, b, f: Functor} (<$>): (a -> b) -> f a -> f b;
 let (<$>) = Functor::fmap;
+
+val {a, m: Monad} return: a -> m a;
+let return = Applicative::pure;

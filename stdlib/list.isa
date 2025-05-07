@@ -76,4 +76,4 @@ let (&) = List::Cons;
 
 // partial function (panics on out of bounds index)
 infixl 9 {a} (!!): List a -> int -> a;
-let (!!) list idx = option::unwrap $ at list idx;
+let (!!) list idx = unwrap $ at list idx;

@@ -6,7 +6,7 @@ use super::ast::{
 };
 use super::error::ParseError;
 use super::infer::{ClassConstraint, ClassConstraintSet};
-use super::token::{Ident, Token, TokenKind};
+use super::token::{Delim, Ident, Token, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
 use crate::span::{Span, Spanned};
@@ -18,16 +18,24 @@ pub struct Parser {
     tokens:    Vec<Token>,
     cur:       usize,
     last_span: Span,
+    empty:     Rc<[Ty]>,
 }
 
 impl Parser {
     #[must_use]
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new() -> Self {
         Self {
-            tokens,
-            cur: 0,
-            last_span: Span::default(),
+            tokens:    Vec::new(),
+            cur:       0,
+            last_span: Span::zero(),
+            empty:     Rc::new([]),
         }
+    }
+
+    pub fn restart(&mut self, tokens: Vec<Token>) {
+        self.tokens = tokens;
+        self.cur = 0;
+        self.last_span = Span::zero();
     }
 
     fn check(&mut self, t: TokenKind) -> bool {
@@ -88,16 +96,16 @@ impl Parser {
     }
 
     fn expect(&mut self, expected: TokenKind) -> ParseResult<Span> {
-        self.next_or_eof().and_then(|t| {
-            if t.data == expected {
-                Ok(t.span)
-            } else {
-                Err(t.map(|got| ParseError::ExpectedToken {
-                    expected,
-                    got: Some(got),
-                }))
-            }
-        })
+        let t = self.next_or_eof()?;
+
+        if t.data == expected {
+            Ok(t.span)
+        } else {
+            Err(t.map(|got| ParseError::ExpectedToken {
+                expected,
+                got: Some(got),
+            }))
+        }
     }
 
     fn expect_op(&mut self) -> ParseResult<Ident> {
@@ -129,46 +137,69 @@ impl Parser {
         }
     }
 
+    fn parse_delimited_from<T>(
+        &mut self,
+        span: Span,
+        delim: Delim,
+        sep: TokenKind,
+        mut parse: impl FnMut(&mut Self) -> ParseResult<T>,
+    ) -> ParseResult<(Vec<T>, Span)> {
+        let mut data = Vec::new();
+
+        while !self.check(delim.closing()) {
+            let res = parse(self)?;
+            data.push(res);
+            if self.next_if_match(sep).is_none() {
+                break;
+            }
+        }
+
+        let span = span.union(self.expect(delim.closing())?);
+
+        Ok((data, span))
+    }
+
+    fn parse_delimited<T>(
+        &mut self,
+        delim: Delim,
+        sep: TokenKind,
+        parse: impl FnMut(&mut Self) -> ParseResult<T>,
+    ) -> ParseResult<(Vec<T>, Span)> {
+        let span = self.expect(delim.opening())?;
+        self.parse_delimited_from(span, delim, sep, parse)
+    }
+
     fn parse_import_clause(&mut self) -> ParseResult<ImportClause> {
-        self.expect(TokenKind::LBrace)?;
-
-        let mut imports = Vec::new();
-
-        while !self.check(TokenKind::RBrace) {
-            let id = self.expect_id()?;
+        let (imports, _) = self.parse_delimited(Delim::Brace, TokenKind::Comma, |parser| {
+            let id = parser.expect_id()?;
             let mut path = Path::from_one(id);
             let mut wildcard = ImportWildcard::Nil;
-            while self.next_if_match(TokenKind::ColonColon).is_some() {
-                let Some(tk) = self.peek() else {
-                    return Err(Spanned::new(ParseError::UnexpectedEof, self.last_span));
+            while parser.next_if_match(TokenKind::ColonColon).is_some() {
+                let Some(tk) = parser.peek() else {
+                    return Err(Spanned::new(ParseError::UnexpectedEof, parser.last_span));
                 };
                 match tk.data {
                     TokenKind::Ident(ident) => {
-                        self.eat();
+                        parser.eat();
                         if !path.push(Ident::new(ident, tk.span)) {
-                            return Err(Spanned::new(ParseError::PathToLong, self.last_span));
+                            return Err(Spanned::new(ParseError::PathToLong, parser.last_span));
                         }
                     }
                     TokenKind::Underscore => {
-                        self.eat();
+                        parser.eat();
                         wildcard = ImportWildcard::Wildcard;
                         break;
                     }
                     TokenKind::LBrace => {
-                        let clause = self.parse_import_clause()?;
+                        let clause = parser.parse_import_clause()?;
                         wildcard = ImportWildcard::Clause(clause);
                         break;
                     }
                     kind => return Err(Spanned::new(ParseError::ExpectedId(kind), tk.span)),
                 }
             }
-            imports.push(Import { path, wildcard });
-            if self.next_if_match(TokenKind::Comma).is_none() {
-                break;
-            }
-        }
-
-        self.expect(TokenKind::RBrace)?;
+            Ok(Import { path, wildcard })
+        })?;
 
         Ok(ImportClause(imports.into_boxed_slice()))
     }
@@ -296,14 +327,19 @@ impl Parser {
     }
 
     fn parse_class(&mut self) -> ParseResult<Stmt<()>> {
-        let mut span = self.expect(TokenKind::KwClass)?;
+        let span = self.expect(TokenKind::KwClass)?;
         let (set, _) = self.parse_constraint_set()?;
         let name = self.expect_id()?;
-        let instance = self.expect_id()?;
-        let instance = Ty::Named {
-            name: Path::from_one(instance),
-            args: Rc::from([]),
+        let mut span = span.union(name.span);
+        let parents = if self.next_if_match(TokenKind::Colon).is_some() {
+            self.parse_class_constraint()?
+                .into_iter()
+                .map(|(class, _)| class)
+                .collect()
+        } else {
+            Box::default()
         };
+
         let (signatures, defaults, ops) = if self.next_if_match(TokenKind::Eq).is_some() {
             let mut signatures = Vec::new();
             let mut ops = Vec::new();
@@ -357,7 +393,7 @@ impl Parser {
             StmtKind::Class {
                 set,
                 name,
-                instance,
+                parents,
                 signatures,
                 ops,
                 defaults,
@@ -367,10 +403,12 @@ impl Parser {
     }
 
     fn parse_instance(&mut self) -> ParseResult<Stmt<()>> {
-        let mut span = self.expect(TokenKind::KwInstance)?;
+        let span = self.expect(TokenKind::KwInstance)?;
         let (set, params) = self.parse_constraint_set()?;
-        let (name, _) = self.parse_path()?;
         let Spanned { data: instance, .. } = self.parse_type()?;
+        self.expect(TokenKind::Colon)?;
+        let (class, name_span) = self.parse_path()?;
+        let mut span = span.union(name_span);
 
         let impls = if self.next_if_match(TokenKind::Eq).is_some() {
             let mut impls = Vec::new();
@@ -403,7 +441,7 @@ impl Parser {
             StmtKind::Instance {
                 params,
                 set,
-                class: name,
+                class,
                 instance,
                 impls,
             },
@@ -419,70 +457,53 @@ impl Parser {
             let ident = self.expect_id()?;
             params.push(Ty::Named {
                 name: Path::from_one(ident),
-                args: Rc::from([]),
+                args: self.empty.clone(),
             });
         }
         self.expect(TokenKind::Eq)?;
-        let parameters = params.into_boxed_slice();
+        let params = params.into_boxed_slice();
         let Spanned {
             data: ty,
             span: ty_span,
         } = self.parse_type()?;
         let span = span.union(ty_span);
 
-        Ok(Stmt::new(
-            StmtKind::Alias {
-                name,
-                parameters,
-                ty,
-            },
-            span,
-        ))
+        Ok(Stmt::new(StmtKind::Alias { name, params, ty }, span))
     }
 
     fn parse_constraint_set(&mut self) -> ParseResult<(ClassConstraintSet, Box<[Ty]>)> {
-        if self.next_if_match(TokenKind::LBrace).is_none() {
+        if !self.check(TokenKind::LBrace) {
             return Ok((ClassConstraintSet::new(), Box::new([])));
         }
 
         let mut constrs = Vec::new();
-        let mut params = Vec::new();
 
-        while !self.check(TokenKind::RBrace) {
-            let (id, span) = self.parse_path()?;
-            if let Some(Token {
-                data: TokenKind::Ident(ident),
-                span: ident_span,
-            }) = self.peek()
-            {
-                self.eat();
-                let name = Path::from_one(Ident { ident, span });
-                let span = span.union(ident_span);
-                constrs.push(ClassConstraint::new(
-                    id,
-                    Ty::Named {
-                        name,
-                        args: Rc::from([]),
-                    },
-                    span,
-                ));
-            } else {
-                if id.as_ident().is_none() {
-                    return Err(Spanned::new(ParseError::UnexpectedEof, span));
+        let (params, _) = self.parse_delimited(Delim::Brace, TokenKind::Comma, |parser| {
+            let name = parser.expect_id()?;
+            let ty = Ty::Named {
+                name: Path::from_one(name),
+                args: parser.empty.clone(),
+            };
+            if parser.next_if_match(TokenKind::Colon).is_some() {
+                let classes = parser.parse_class_constraint()?;
+                for (class, span) in classes {
+                    constrs.push(ClassConstraint::new(class, ty.clone(), span));
                 }
-                params.push(Ty::Named {
-                    name: id,
-                    args: Rc::from([]),
-                });
             }
-            if self.next_if_match(TokenKind::Comma).is_none() {
-                break;
-            }
-        }
-
-        self.expect(TokenKind::RBrace)?;
+            Ok(ty)
+        })?;
 
         Ok((ClassConstraintSet { constrs }, params.into_boxed_slice()))
+    }
+
+    fn parse_class_constraint(&mut self) -> ParseResult<Vec<(Path, Span)>> {
+        if self.check(TokenKind::LBrace) {
+            let (classes, _) =
+                self.parse_delimited(Delim::Brace, TokenKind::Comma, Self::parse_path)?;
+            Ok(classes)
+        } else {
+            Ok(vec![self.parse_path()?])
+        }
     }
 
     fn parse_val(&mut self) -> ParseResult<Val> {
@@ -664,18 +685,8 @@ impl Parser {
     }
 
     fn parse_list(&mut self) -> ParseResult<Expr<()>> {
-        let span = self.expect(TokenKind::LBracket)?;
-
-        let mut exprs = Vec::new();
-        while !self.check(TokenKind::RBracket) {
-            let expr = self.parse_expr()?;
-            exprs.push(expr);
-            if self.next_if_match(TokenKind::Comma).is_none() {
-                break;
-            }
-        }
-
-        let span = span.union(self.expect(TokenKind::RBracket)?);
+        let (exprs, span) =
+            self.parse_delimited(Delim::Bracket, TokenKind::Comma, Self::parse_expr)?;
 
         let kind = ExprKind::List(exprs.into_boxed_slice());
 
@@ -707,15 +718,10 @@ impl Parser {
 
         match data {
             TokenKind::LParen => {
-                let mut types = Vec::new();
-                while !self.check(TokenKind::RParen) {
-                    let ty = self.parse_type()?;
-                    types.push(ty.data);
-                    if self.next_if_match(TokenKind::Comma).is_none() {
-                        break;
-                    }
-                }
-                let span = span.union(self.expect(TokenKind::RParen)?);
+                let (mut types, span) =
+                    self.parse_delimited_from(span, Delim::Paren, TokenKind::Comma, |parser| {
+                        parser.parse_type().map(|ty| ty.data)
+                    })?;
 
                 if types.len() == 1 {
                     let ty = types.pop().unwrap();
@@ -734,11 +740,12 @@ impl Parser {
                 Ok(Spanned::new(
                     Ty::Named {
                         name: path,
-                        args: Rc::from([]),
+                        args: self.empty.clone(),
                     },
                     span,
                 ))
             }
+            TokenKind::KwSelf => Ok(Spanned::new(Ty::This(self.empty.clone()), span)),
             _ => Err(Spanned::new(ParseError::ExpectedType(data), span)),
         }
     }
@@ -757,6 +764,17 @@ impl Parser {
                 }
                 let args = params.into();
                 Ok(Spanned::new(Ty::Named { name, args }, span))
+            }
+            Ty::This(args) if args.is_empty() => {
+                let mut span = simple.span;
+                let mut params = Vec::new();
+                while self.peek_and(|tk| tk.can_start_type()) {
+                    let ty = self.parse_simple_type()?;
+                    span = span.union(ty.span);
+                    params.push(ty.data);
+                }
+                let args = params.into();
+                Ok(Spanned::new(Ty::This(args), span))
             }
             _ => Ok(simple),
         }
@@ -806,10 +824,11 @@ impl Parser {
         let name = self.expect_id()?;
 
         let params = std::iter::from_fn(|| {
+            let args = self.empty.clone();
             self.next_if_map(|tk| {
                 tk.data.as_ident().map(|ident| Ty::Named {
                     name: Path::from_one(Ident::new(ident, tk.span)),
-                    args: Rc::from([]),
+                    args,
                 })
             })
         })
@@ -831,7 +850,7 @@ impl Parser {
         Ok(Stmt::new(
             StmtKind::Type {
                 name,
-                parameters: params.into_boxed_slice(),
+                params: params.into_boxed_slice(),
                 constructors: constructors.into_boxed_slice(),
             },
             span,
@@ -1131,15 +1150,12 @@ impl Parser {
             TokenKind::KwTrue => Ok(Pat::untyped(PatKind::Bool(true), span)),
             TokenKind::KwFalse => Ok(Pat::untyped(PatKind::Bool(false), span)),
             TokenKind::LParen => {
-                let mut pats = Vec::new();
-                while !self.check(TokenKind::RParen) {
-                    let pat = self.parse_pat()?;
-                    pats.push(pat);
-                    if self.next_if_match(TokenKind::Comma).is_none() {
-                        break;
-                    }
-                }
-                let span = span.union(self.expect(TokenKind::RParen)?);
+                let (mut pats, span) = self.parse_delimited_from(
+                    span,
+                    Delim::Paren,
+                    TokenKind::Comma,
+                    Self::parse_pat,
+                )?;
 
                 if pats.len() == 1 {
                     Ok(Pat {

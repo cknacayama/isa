@@ -6,10 +6,18 @@ use super::token::{Ident, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct Path {
     segments: [Ident; 3],
     len:      u8,
+}
+
+impl Debug for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Path")
+            .field("segments", &self.as_slice())
+            .finish_non_exhaustive()
+    }
 }
 
 impl std::hash::Hash for Path {
@@ -511,7 +519,7 @@ pub enum StmtKind<T> {
     Class {
         set:        ClassConstraintSet,
         name:       Ident,
-        instance:   Ty,
+        parents:    Box<[Path]>,
         signatures: Box<[Val]>,
         ops:        Box<[Operator]>,
         defaults:   Box<[LetBind<T>]>,
@@ -527,14 +535,14 @@ pub enum StmtKind<T> {
 
     Type {
         name:         Ident,
-        parameters:   Box<[Ty]>,
+        params:       Box<[Ty]>,
         constructors: Box<[Constructor<T>]>,
     },
 
     Alias {
-        name:       Ident,
-        parameters: Box<[Ty]>,
-        ty:         Ty,
+        name:   Ident,
+        params: Box<[Ty]>,
+        ty:     Ty,
     },
 }
 

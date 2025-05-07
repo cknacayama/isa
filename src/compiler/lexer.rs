@@ -74,13 +74,13 @@ impl<'a> Lexer<'a> {
     }
 
     fn make_token(&self, kind: TokenKind) -> Token {
-        let span = SpanData::new(self.file_id, self.start, self.cur).unwrap();
+        let span = SpanData::new(self.file_id, self.start, self.cur);
         let span = Span::intern(span);
         Token::new(kind, span)
     }
 
     fn make_err(&self, kind: LexError) -> Spanned<LexError> {
-        let span = SpanData::new(self.file_id, self.start, self.cur).unwrap();
+        let span = SpanData::new(self.file_id, self.start, self.cur);
         let span = Span::intern(span);
         Spanned::new(kind, span)
     }

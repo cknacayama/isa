@@ -58,6 +58,14 @@ pub trait Substitute {
                         args: named.into(),
                     })
                 }
+                Ty::Generic { var, args: generic } => {
+                    let mut generic = generic.to_vec();
+                    generic.extend_from_slice(args);
+                    Some(Ty::Generic {
+                        var,
+                        args: generic.into(),
+                    })
+                }
                 _ => None,
             },
             _ => None,
@@ -74,6 +82,40 @@ pub trait Substitute {
         }
     }
 
+    fn substitute_self(&mut self, instance: &Ty)
+    where
+        Self: Sized,
+    {
+        self.substitute(&mut |ty| match ty {
+            Ty::This(args) if args.is_empty() => Some(instance.clone()),
+            Ty::This(args) => match instance.clone() {
+                Ty::Var(new) => Some(Ty::Generic {
+                    var:  new,
+                    args: args.clone(),
+                }),
+                Ty::Named { name, args: named } => {
+                    let mut named = named.to_vec();
+                    named.extend_from_slice(args);
+                    Some(Ty::Named {
+                        name,
+                        args: named.into(),
+                    })
+                }
+                Ty::Generic { var, args: generic } => {
+                    let mut generic = generic.to_vec();
+                    generic.extend_from_slice(args);
+                    Some(Ty::Generic {
+                        var,
+                        args: generic.into(),
+                    })
+                }
+                _ => None,
+            },
+
+            _ => None,
+        });
+    }
+
     fn substitute_param(&mut self, subs: &[(Ident, TyId)])
     where
         Self: Sized,
@@ -82,22 +124,14 @@ pub trait Substitute {
             return;
         }
         self.substitute(&mut |ty| match ty {
-            Ty::Named { name, args } if args.is_empty() => subs.iter().find_map(|(s, v)| {
-                if name.is_ident(*s) {
-                    Some(Ty::Var(*v))
-                } else {
-                    None
-                }
-            }),
+            Ty::Named { name, args } if args.is_empty() => subs
+                .iter()
+                .find_map(|(s, v)| name.is_ident(*s).then_some(Ty::Var(*v))),
             Ty::Named { name, args } => subs.iter().find_map(|(s, v)| {
-                if name.is_ident(*s) {
-                    Some(Ty::Generic {
-                        var:  *v,
-                        args: args.clone(),
-                    })
-                } else {
-                    None
-                }
+                name.is_ident(*s).then(|| Ty::Generic {
+                    var:  *v,
+                    args: args.clone(),
+                })
             }),
             _ => None,
         });
@@ -178,6 +212,21 @@ impl Substitute for EqConstraintSet {
     }
 }
 
+impl IntoIterator for EqConstraintSet {
+    type Item = EqConstraint;
+    type IntoIter = std::collections::vec_deque::IntoIter<EqConstraint>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.constrs.into_iter()
+    }
+}
+
+impl Extend<EqConstraint> for EqConstraintSet {
+    fn extend<T: IntoIterator<Item = EqConstraint>>(&mut self, iter: T) {
+        self.constrs.extend(iter);
+    }
+}
+
 impl<T> From<T> for EqConstraintSet
 where
     VecDeque<EqConstraint>: From<T>,
@@ -214,16 +263,16 @@ impl PartialEq for ClassConstraint {
 }
 
 impl ClassConstraint {
-    pub const fn new(class: Path, constrained: Ty, span: Span) -> Self {
-        Self {
-            class,
-            ty: constrained,
-            span,
-        }
+    pub const fn new(class: Path, ty: Ty, span: Span) -> Self {
+        Self { class, ty, span }
     }
 
     pub const fn class(&self) -> &Path {
         &self.class
+    }
+
+    pub const fn get_mut(&mut self) -> (&mut Path, &mut Ty) {
+        (&mut self.class, &mut self.ty)
     }
 
     pub const fn ty(&self) -> &Ty {
@@ -273,6 +322,15 @@ pub struct ClassConstraintSet {
     pub constrs: Vec<ClassConstraint>,
 }
 
+impl IntoIterator for ClassConstraintSet {
+    type Item = ClassConstraint;
+    type IntoIter = std::vec::IntoIter<ClassConstraint>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.constrs.into_iter()
+    }
+}
+
 impl ClassConstraintSet {
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &ClassConstraint> + DoubleEndedIterator {
         self.constrs.iter()
@@ -296,13 +354,15 @@ impl ClassConstraintSet {
         }
     }
 
-    pub fn extend(&mut self, other: Self) {
-        self.constrs.extend(other.constrs);
-    }
-
     pub fn concat(mut self, other: Self) -> Self {
         self.extend(other);
         self
+    }
+}
+
+impl Extend<ClassConstraint> for ClassConstraintSet {
+    fn extend<T: IntoIterator<Item = ClassConstraint>>(&mut self, iter: T) {
+        self.constrs.extend(iter);
     }
 }
 

@@ -93,6 +93,7 @@ pub enum TokenKind {
     KwInfixr,
     KwPrefix,
 
+    KwSelf,
     KwInt,
     KwBool,
     KwChar,
@@ -133,6 +134,7 @@ impl TokenKind {
             "in" => Self::KwIn,
             "with" => Self::KwWith,
             "module" => Self::KwModule,
+            "Self" => Self::KwSelf,
             _ => Self::Ident(Symbol::intern(s)),
         }
     }
@@ -173,6 +175,31 @@ impl TokenKind {
             Some(*v)
         } else {
             None
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Delim {
+    Paren,
+    Bracket,
+    Brace,
+}
+
+impl Delim {
+    pub const fn opening(self) -> TokenKind {
+        match self {
+            Self::Paren => TokenKind::LParen,
+            Self::Bracket => TokenKind::LBracket,
+            Self::Brace => TokenKind::LBrace,
+        }
+    }
+
+    pub const fn closing(self) -> TokenKind {
+        match self {
+            Self::Paren => TokenKind::RParen,
+            Self::Bracket => TokenKind::RBracket,
+            Self::Brace => TokenKind::RBrace,
         }
     }
 }
@@ -218,6 +245,7 @@ impl Display for TokenKind {
             Self::KwInfixr => write!(f, "infixr"),
             Self::KwPrefix => write!(f, "prefix"),
             Self::KwModule => write!(f, "module"),
+            Self::KwSelf => write!(f, "Self"),
             Self::KwInt => write!(f, "int"),
             Self::KwBool => write!(f, "bool"),
             Self::KwChar => write!(f, "char"),

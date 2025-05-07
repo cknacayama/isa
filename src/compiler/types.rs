@@ -27,6 +27,7 @@ pub enum Ty {
     Scheme { quant: Rc<[TyId]>, ty: Rc<Ty> },
     Named { name: Path, args: Rc<[Ty]> },
     Generic { var: TyId, args: Rc<[Ty]> },
+    This(Rc<[Ty]>),
 }
 
 impl From<Rc<Self>> for Ty {
@@ -48,7 +49,9 @@ impl Ty {
             Self::Fn { param, ret } => param.occurs(var) || ret.occurs(var),
             Self::Var(n) => *n == var,
             Self::Scheme { ty, .. } => ty.occurs(var),
-            Self::Tuple(args) | Self::Named { args, .. } => args.iter().any(|t| t.occurs(var)),
+            Self::This(args) | Self::Tuple(args) | Self::Named { args, .. } => {
+                args.iter().any(|t| t.occurs(var))
+            }
             Self::Generic { var: n, args } => *n == var || args.iter().any(|t| t.occurs(var)),
 
             Self::Int | Self::Char | Self::Bool | Self::Real => false,
@@ -61,7 +64,7 @@ impl Ty {
                 .contains_name(path)
                 .or_else(|| ret.contains_name(path)),
             Self::Scheme { ty, .. } => ty.contains_name(path),
-            Self::Tuple(args) | Self::Generic { args, .. } => {
+            Self::This(args) | Self::Tuple(args) | Self::Generic { args, .. } => {
                 args.iter().find_map(|t| t.contains_name(path))
             }
             Self::Named { name, args } => {
@@ -95,6 +98,36 @@ impl Ty {
         Self::Named {
             name: mod_path!(list::List),
             args: Rc::new([ty]),
+        }
+    }
+
+    pub fn zip_args(&self, rhs: &Self) -> Option<Vec<(Self, Self)>> {
+        match (self, rhs) {
+            (Self::Named { name: n1, args: a1 }, Self::Named { name: n2, args: a2 })
+                if n1 == n2 && a1.len() == a2.len() =>
+            {
+                Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
+            }
+            (Self::Generic { args: a1, .. }, Self::Generic { args: a2, .. })
+            | (Self::Tuple(a1), Self::Tuple(a2))
+                if a1.len() == a2.len() =>
+            {
+                Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
+            }
+            (Self::Fn { param: p1, ret: r1 }, Self::Fn { param: p2, ret: r2 }) => {
+                Some(vec![(p1.into(), p2.into()), (r1.into(), r2.into())])
+            }
+            (Self::Scheme { quant: q1, ty: t1 }, Self::Scheme { quant: q2, ty: t2 })
+                if q1.len() == q2.len() =>
+            {
+                t1.zip_args(t2)
+            }
+
+            (Self::Var(_), Self::Var(_)) => Some(Vec::new()),
+
+            (lhs, rhs) if lhs == rhs => Some(Vec::new()),
+
+            _ => None,
         }
     }
 
@@ -160,7 +193,9 @@ impl Ty {
                 true
             }
 
-            Self::Generic { args, .. } | Self::Named { args, .. } => args.is_empty(),
+            Self::This(args) | Self::Generic { args, .. } | Self::Named { args, .. } => {
+                args.is_empty()
+            }
 
             _ => false,
         }
@@ -169,6 +204,14 @@ impl Ty {
     pub const fn get_ident(&self) -> Option<Ident> {
         if let Self::Named { name, .. } = self {
             name.as_ident()
+        } else {
+            None
+        }
+    }
+
+    pub fn get_scheme_ty(&self) -> Option<&Self> {
+        if let Self::Scheme { ty, .. } = self {
+            Some(ty)
         } else {
             None
         }
@@ -186,7 +229,6 @@ impl Ty {
     fn free_type_variables_inner(&self, free: &mut Vec<TyId>) {
         match self {
             Self::Int | Self::Bool | Self::Char | Self::Real => (),
-            Self::Named { args, .. } if args.is_empty() => (),
             Self::Var(id) if free.contains(id) => (),
 
             Self::Var(id) => {
@@ -205,7 +247,7 @@ impl Ty {
                 }
             }
 
-            Self::Named { args, .. } | Self::Tuple(args) => {
+            Self::This(args) | Self::Named { args, .. } | Self::Tuple(args) => {
                 for arg in args.iter() {
                     arg.free_type_variables_inner(free);
                 }
@@ -255,11 +297,12 @@ impl Substitute for Ty {
                 ret.substitute(subs);
             }
             Self::Scheme { ty, .. } => {
-                let before = ty.clone();
                 ty.substitute(subs);
-                dbg!(&before == ty);
             }
-            Self::Generic { args, .. } | Self::Named { args, .. } | Self::Tuple(args) => {
+            Self::This(args)
+            | Self::Generic { args, .. }
+            | Self::Named { args, .. }
+            | Self::Tuple(args) => {
                 let mut new = args.to_vec();
                 for arg in &mut new {
                     arg.substitute(subs);
@@ -353,6 +396,18 @@ impl Substitute for Rc<Ty> {
                     Rc::from(new_args)
                 };
                 Ty::Tuple(args)
+            }
+            Ty::This(args) => {
+                let mut new_args = args.to_vec();
+                for arg in &mut new_args {
+                    arg.substitute(subs);
+                }
+                let args = if args.as_ref() == new_args {
+                    args.clone()
+                } else {
+                    Rc::from(new_args)
+                };
+                Ty::This(args)
             }
             Ty::Int | Ty::Bool | Ty::Char | Ty::Real | Ty::Var(_) => {
                 if let Some(new) = subs(self) {

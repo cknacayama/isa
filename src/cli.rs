@@ -151,14 +151,26 @@ impl Config {
     }
 
     fn parse(&self) -> ParseResult<Vec<Module<()>>> {
+        let tokens = self
+            .files
+            .files
+            .iter()
+            .enumerate()
+            .map(|(id, file)| {
+                let lexer = Lexer::new(id, file.source());
+                lexer.collect()
+            })
+            .collect::<LexResult<Vec<_>>>()?;
+
+        let mut parser = Parser::new();
         let mut modules = Vec::new();
-        for (id, file) in self.files.files.iter().enumerate() {
-            let lexer = Lexer::new(id, file.source());
-            let tokens = lexer.collect::<LexResult<_>>()?;
-            let mut parser = Parser::new(tokens);
-            let cur_modules = parser.parse_all()?;
-            modules.extend(cur_modules);
+
+        for tokens in tokens {
+            parser.restart(tokens);
+            let parsed = parser.parse_all()?;
+            modules.extend(parsed);
         }
+
         Ok(modules)
     }
 

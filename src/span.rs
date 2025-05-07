@@ -10,15 +10,11 @@ pub struct SpanData {
 
 impl SpanData {
     #[must_use]
-    pub const fn new(file_id: usize, start: usize, end: usize) -> Option<Self> {
-        if start > end {
-            None
-        } else {
-            Some(Self {
-                file_id,
-                start,
-                end,
-            })
+    pub const fn new(file_id: usize, start: usize, end: usize) -> Self {
+        Self {
+            file_id,
+            start,
+            end,
         }
     }
 

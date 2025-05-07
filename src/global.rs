@@ -119,9 +119,9 @@ macro_rules! default_symbols {
 impl Default for SymbolInterner {
     fn default() -> Self {
         default_symbols![
-            "", "+", "-", "/", "*", "^", "^^", "!", "==", "!=", ">", ">=", "<", "<=", ">>", ">>=",
-            "$", ".", "List", "Option", "Result", "Add", "Sub", "Mul", "Div", "Pow", "Neg", "Eq",
-            "Cmp", "Number", "And", "Or", "Not", "Nil", "Cons", "Some", "None",
+            "", "+", "-", "/", "*", "^", "^^", "!", "==", "!=", ">", ">=", "<", "<=", "&&", "||",
+            ">>", ">>=", "$", ".", "List", "Option", "Result", "Add", "Sub", "Mul", "Div", "Pow",
+            "Neg", "Eq", "Cmp", "Number", "And", "Or", "Not", "Nil", "Cons", "Some", "None",
         ]
     }
 }

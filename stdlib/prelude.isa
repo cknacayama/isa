@@ -24,7 +24,7 @@ infixr 0 {a, b} ($): (a -> b) -> a -> b;
 let ($) f x = f x;
 
 infixr 9 {a, b, c} (.): (b -> c) -> (a -> b) -> a -> c;
-let (.) f g x = f (g x);
+let (.) f g = \x -> f (g x);
 
 infixl 1 {a, b} (|>): a -> (a -> b) -> b;
 let (|>) x f = f x;

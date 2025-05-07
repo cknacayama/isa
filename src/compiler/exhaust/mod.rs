@@ -37,6 +37,7 @@ impl<'a> Ctx<'a> {
                 CtorSet::Type { variants }
             }
             Ty::Real | Ty::Fn { .. } | Ty::Var(_) | Ty::Generic { .. } => CtorSet::Unlistable,
+            Ty::This(_) => unreachable!(),
         }
     }
 

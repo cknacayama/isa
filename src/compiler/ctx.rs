@@ -87,12 +87,9 @@ impl ModuleData {
     pub fn get_class_data_mut(&mut self, id: Ident) -> CheckResult<&mut ClassData> {
         self.classes
             .get_mut(&id.ident)
-            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))
-            .and_then(|class| {
-                class
-                    .as_own_mut()
-                    .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotClass, id))
-            })
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, id))?
+            .as_own_mut()
+            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotClass, id))
     }
 
     fn get_class_mut(&mut self, id: Ident) -> CheckResult<&mut ImportData<ClassData>> {
@@ -297,30 +294,33 @@ pub struct MemberData {
 
 #[derive(Debug, Clone)]
 pub struct ClassData {
-    constraints:  ClassConstraintSet,
-    instance_var: TyId,
-    signatures:   FxHashMap<Ident, MemberData>,
-    instances:    FxHashMap<Ty, InstanceData>,
-    span:         Span,
+    parents:     Box<[Path]>,
+    constraints: ClassConstraintSet,
+    signatures:  FxHashMap<Ident, MemberData>,
+    instances:   FxHashMap<Ty, InstanceData>,
+    span:        Span,
 }
 
 impl ClassData {
-    pub fn new(constraints: ClassConstraintSet, instance_var: TyId, span: Span) -> Self {
+    pub fn new(span: Span) -> Self {
         Self {
-            constraints,
-            instance_var,
+            parents: Box::new([]),
+            constraints: ClassConstraintSet::new(),
             signatures: FxHashMap::default(),
             instances: FxHashMap::default(),
             span,
         }
     }
 
-    pub fn extend_signature(&mut self, iter: impl IntoIterator<Item = (Ident, MemberData)>) {
+    pub fn extend_signature(
+        &mut self,
+        iter: impl IntoIterator<Item = (Ident, MemberData)>,
+        parents: Box<[Path]>,
+        constraints: ClassConstraintSet,
+    ) {
         self.signatures.extend(iter);
-    }
-
-    pub const fn instance_var(&self) -> TyId {
-        self.instance_var
+        self.parents = parents;
+        self.constraints = constraints;
     }
 
     pub const fn signatures(&self) -> &FxHashMap<Ident, MemberData> {
@@ -333,6 +333,10 @@ impl ClassData {
 
     pub const fn constraints(&self) -> &ClassConstraintSet {
         &self.constraints
+    }
+
+    pub fn parents(&self) -> &[Path] {
+        &self.parents
     }
 }
 
@@ -717,12 +721,24 @@ impl Ctx {
     }
 
     pub fn resolve_type_name(&self, name: &Path) -> CheckResult<Path> {
+        self.resolve_name(name, ModuleData::get_ty)
+    }
+
+    fn resolve_name<T>(
+        &self,
+        name: &Path,
+        get: impl FnOnce(&ModuleData, Ident) -> CheckResult<&ImportData<T>>,
+    ) -> CheckResult<Path> {
         let (module, ty) = self.get_module_and_ident(name)?;
-        let data = self.get_from_module(module, ty, ModuleData::get_ty)?;
+        let data = self.get_from_module(module, ty, get)?;
         let module = data
             .as_import()
             .map_or(module, |id| Ident::new(id.ident, module.span));
         Ok(Path::from_two(module, ty))
+    }
+
+    pub fn resolve_class_name(&self, name: &Path) -> CheckResult<Path> {
+        self.resolve_name(name, ModuleData::get_class)
     }
 
     fn import_from_module(&mut self, from: Ident, id: Ident) -> CheckResult<bool> {
@@ -909,28 +925,6 @@ impl Ctx {
         self.import_wildcard(&mod_path!(prelude))
     }
 
-    pub fn insert_instance_at_env(
-        &mut self,
-        ty: Ty,
-        class: Ident,
-        data: InstanceData,
-    ) -> CheckResult<()> {
-        let class_data = self
-            .current_mut()?
-            .get_class_mut(class)?
-            .as_own_mut()
-            .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotClass, class))?;
-
-        let span = data.span;
-        match class_data.instances.insert(ty.clone(), data) {
-            Some(previous) => Err(CheckError::new(
-                CheckErrorKind::MultipleInstances(Path::from_one(class), ty, previous.span),
-                span,
-            )),
-            None => Ok(()),
-        }
-    }
-
     pub fn insert_instance(
         &mut self,
         instance: Ty,
@@ -943,8 +937,8 @@ impl Ctx {
             self.instantiate_class(class, &instance, data.span)?
         };
 
-        if let [(span, c)] = constrs.as_slice()
-            && c.constrs.is_empty()
+        if let [(span, constrs)] = constrs.as_slice()
+            && constrs.constrs.is_empty()
         {
             return Err(CheckError::new(
                 CheckErrorKind::MultipleInstances(*class, instance, *span),
@@ -952,8 +946,9 @@ impl Ctx {
             ));
         }
 
-        if let Some((span, _)) = constrs.iter().find(|(_, set)| {
-            set.iter().all(|c| c.ty().is_var()) && data.set().iter().all(|c| set.contains(c))
+        if let Some(span) = constrs.iter().find_map(|(span, set)| {
+            (set.iter().all(|c| c.ty().is_var()) && data.set().iter().all(|c| set.contains(c)))
+                .then_some(span)
         }) {
             return Err(CheckError::new(
                 CheckErrorKind::MultipleInstances(*class, instance, *span),
@@ -963,6 +958,7 @@ impl Ctx {
 
         let class_data = self.get_class_mut(class)?;
         class_data.instances.insert(instance, data);
+
         Ok(())
     }
 
@@ -974,10 +970,7 @@ impl Ctx {
 
     pub fn assume_constraints(&mut self, set: &ClassConstraintSet) {
         for c in set.iter() {
-            let Ok(constrs) = self
-                .get_class(c.class())
-                .map(|data| data.constraints.clone())
-            else {
+            let Ok(constrs) = self.get_class(c.class()).map(|data| data.parents.clone()) else {
                 continue;
             };
             self.assume_constraint_tree(c.ty(), &constrs);
@@ -989,19 +982,16 @@ impl Ctx {
         }
     }
 
-    pub fn assume_constraint_tree(&mut self, ty: &Ty, set: &ClassConstraintSet) {
-        for c in set.iter() {
-            let Ok(constrs) = self
-                .get_class(c.class())
-                .map(|data| data.constraints.clone())
-            else {
+    fn assume_constraint_tree(&mut self, ty: &Ty, parents: &[Path]) {
+        for c in parents {
+            let Ok(constrs) = self.get_class(c).map(|data| data.parents.clone()) else {
                 continue;
             };
             self.assume_constraint_tree(ty, &constrs);
             let _ = self.assume_instance(
                 ty.clone(),
-                c.class(),
-                InstanceData::new(ClassConstraintSet::new(), c.span()),
+                c,
+                InstanceData::new(ClassConstraintSet::new(), Span::default()),
             );
         }
     }
@@ -1052,13 +1042,10 @@ impl Ctx {
         let class_data = self.get_class(class)?;
 
         let instance = if ty.is_scheme() {
-            class_data.instances.iter().find_map(|(instance, data)| {
-                if ty.equivalent(instance) {
-                    Some(data)
-                } else {
-                    None
-                }
-            })
+            class_data
+                .instances
+                .iter()
+                .find_map(|(inst, data)| ty.equivalent(inst).then_some(data))
         } else {
             class_data.instances.get(ty)
         };
@@ -1091,36 +1078,6 @@ impl Ctx {
             .ok_or_else(|| CheckError::new(CheckErrorKind::NotInstance(ty, *class), class.span()))
     }
 
-    fn zip_args(lhs: &Ty, rhs: &Ty) -> Option<Vec<(Ty, Ty)>> {
-        match (lhs, rhs) {
-            (Ty::Named { name: n1, args: a1 }, Ty::Named { name: n2, args: a2 })
-                if n1 == n2 && a1.len() == a2.len() =>
-            {
-                Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
-            }
-            (Ty::Generic { args: a1, .. }, Ty::Generic { args: a2, .. })
-            | (Ty::Tuple(a1), Ty::Tuple(a2))
-                if a1.len() == a2.len() =>
-            {
-                Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
-            }
-            (Ty::Fn { param: p1, ret: r1 }, Ty::Fn { param: p2, ret: r2 }) => {
-                Some(vec![(p1.into(), p2.into()), (r1.into(), r2.into())])
-            }
-            (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 })
-                if q1.len() == q2.len() =>
-            {
-                Self::zip_args(t1, t2)
-            }
-
-            (Ty::Var(_), Ty::Var(_)) => Some(Vec::new()),
-
-            (lhs, rhs) if lhs == rhs => Some(Vec::new()),
-
-            _ => None,
-        }
-    }
-
     pub fn instantiate_class(
         &self,
         class: &Path,
@@ -1133,31 +1090,31 @@ impl Ctx {
             return Ok(vec![(data.span, ClassConstraintSet::new())]);
         }
 
-        let mut sets = Vec::new();
-        for (args, set, inst_span) in data.instances.iter().filter_map(|(inst, data)| match inst {
-            Ty::Scheme { ty: inst, .. } => {
-                Self::zip_args(inst, ty).map(|args| (args, data.set().iter(), data.span))
-            }
-            _ => None,
-        }) {
-            let set = set
-                .filter_map(|c| {
-                    args.iter().find_map(|(a1, a2)| {
-                        if c.ty() == a1 {
-                            Some(self.instantiate_class(c.class(), a2, span))
-                        } else {
-                            None
-                        }
+        let sets = data
+            .instances
+            .iter()
+            .filter_map(|(inst, data)| {
+                inst.get_scheme_ty()?
+                    .zip_args(ty)
+                    .map(|args| (args, data.set().iter(), data.span))
+            })
+            .map(|(args, set, inst_span)| {
+                let mut new = ClassConstraintSet::new();
+
+                for (c, arg) in set
+                    .zip(std::iter::repeat(args.iter()))
+                    .flat_map(|(c, zip)| {
+                        zip.filter_map(move |(a1, a2)| (c.ty() == a1).then_some((c, a2)))
                     })
-                })
-                .try_fold(ClassConstraintSet::new(), |mut new, constr| {
-                    for (_, c) in constr? {
+                {
+                    for (_, c) in self.instantiate_class(c.class(), arg, span)? {
                         new.extend(c);
                     }
-                    Ok(new)
-                })?;
-            sets.push((inst_span, set));
-        }
+                }
+
+                Ok((inst_span, new))
+            })
+            .collect::<CheckResult<Vec<_>>>()?;
 
         if sets.is_empty() {
             Ok(vec![(
@@ -1269,6 +1226,20 @@ impl Ty {
                 }
                 Ok(())
             }
+            Self::This(args) => {
+                write!(f, "Self")?;
+                for arg in args.iter() {
+                    if arg.is_simple_fmt() {
+                        write!(f, " ")?;
+                        arg.fmt_var(f, chars)?;
+                    } else {
+                        write!(f, " (")?;
+                        arg.fmt_var(f, chars)?;
+                        write!(f, ")")?;
+                    }
+                }
+                Ok(())
+            }
             Self::Generic { var, args } => {
                 let var = chars.get(*var);
                 write!(f, "'{var}")?;
@@ -1334,7 +1305,7 @@ impl Display for ModuleData {
             };
             write!(f, "  class ")?;
             class.constraints.fmt_var(f, &mut chars)?;
-            writeln!(f, "{id} '{} =", chars.get(class.instance_var()))?;
+            writeln!(f, "{id} =")?;
             for (id, sig) in class.signatures() {
                 write!(f, "    val ")?;
                 sig.set.fmt_var(f, &mut chars)?;
