@@ -32,7 +32,7 @@ pub struct Checker {
 pub type IsaResult<T> = Result<T, IsaError>;
 
 impl Checker {
-    pub fn with_ctx(ctx: Ctx) -> Self {
+    pub const fn with_ctx(ctx: Ctx) -> Self {
         Self {
             ctx,
             subs: Vec::new(),

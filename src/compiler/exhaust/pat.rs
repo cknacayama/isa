@@ -10,7 +10,7 @@ pub struct WitnessPat {
     ty:     Ty,
 }
 
-impl CtxFmt for &WitnessPat {
+impl CtxFmt for WitnessPat {
     type Ctx = TypeCtx;
 
     fn ctx_fmt(&self, f: &mut impl std::fmt::Write, ctx: &Self::Ctx) -> std::fmt::Result {
@@ -56,7 +56,7 @@ impl WitnessPat {
         Self::new(ctor, fields, ty)
     }
 
-    fn iter_fields(&self) -> impl ExactSizeIterator<Item = &Self> {
+    fn iter_fields(&self) -> std::slice::Iter<'_, Self> {
         self.fields.iter()
     }
 }

@@ -1,10 +1,10 @@
 use std::error::Error;
-use std::fmt::Write;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 
 use crate::compiler::ctx::{Ctx, CtxFmt};
 use crate::compiler::error::{DiagnosticLabel, IsaError, MatchNonExhaustive};
+use crate::separated_fmt;
 use crate::span::Spand;
 
 pub struct Diagnosed {
@@ -19,11 +19,11 @@ impl From<Diagnosed> for Vec<Diagnosed> {
 }
 
 impl Diagnosed {
-    pub fn id(&self) -> usize {
+    pub const fn id(&self) -> usize {
         self.id
     }
 
-    pub fn diagnostic(&self) -> &Diagnostic<usize> {
+    pub const fn diagnostic(&self) -> &Diagnostic<usize> {
         &self.diagnostic
     }
 }
@@ -70,22 +70,17 @@ impl MatchNonExhaustive {
     fn fmt_witnesses(&self, ctx: &Ctx) -> String {
         let mut out = String::new();
         if self.witnessess().len() > 1 {
-            let _ = write!(out, "patterns");
+            out.push_str("patterns ");
         } else {
-            let _ = write!(out, "pattern");
+            out.push_str("pattern ");
         }
-        let mut first = true;
-        for w in self.witnessess() {
-            if first {
-                first = false;
-            } else {
-                let _ = write!(out, ",");
-            }
-            let _ = write!(out, " `");
-            let _ = w.ctx_fmt(&mut out, ctx);
-            let _ = write!(out, "`");
-        }
-        let _ = write!(out, " not covered");
+        let _ = separated_fmt(&mut out, self.witnessess(), ", ", |w, out| {
+            out.push('`');
+            w.ctx_fmt(out, ctx)?;
+            out.push('`');
+            Ok(())
+        });
+        out.push_str(" not covered");
         out
     }
 }

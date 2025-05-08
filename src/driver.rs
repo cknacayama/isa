@@ -18,6 +18,7 @@ use crate::compiler::parser::Parser;
 use crate::compiler::token::Token;
 use crate::compiler::types::Ty;
 use crate::report::{Diagnosed, Report};
+use crate::separated_fmt;
 
 /// TODO: add more options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -175,24 +176,23 @@ impl Config {
             let mut writer = writer.lock();
             for err in diagnostics.iter().take(self.max_errors) {
                 let _ = term::emit(&mut writer, &config, &self.files, err.diagnostic());
-                if !files.contains(&err.id()) {
-                    files.insert(err.id());
-                }
+                files.insert(err.id());
             }
         }
 
         let mut message = String::from("could not compile {");
 
-        let mut first = true;
-        for file in files {
-            if first {
-                first = false;
-            } else {
-                message.push_str(", ");
-            }
-            let file = self.files.get(file).unwrap().name();
-            message.push_str(file);
-        }
+        let _ = separated_fmt(
+            &mut message,
+            files
+                .into_iter()
+                .map(|id| self.files.get(id).unwrap().name()),
+            ", ",
+            |file, msg| {
+                msg.push_str(file);
+                Ok(())
+            },
+        );
 
         let _ = message.write_fmt(format_args!(
             "}} due to {} previous {} ({} emitted)",
@@ -228,7 +228,7 @@ impl Config {
         }
     }
 
-    fn parse(&self, tokens: Vec<Vec<Token>>, ctx: &Ctx) -> CompileResult<Vec<Module<()>>> {
+    fn parse(tokens: Vec<Vec<Token>>, ctx: &Ctx) -> CompileResult<Vec<Module<()>>> {
         let mut parser = Parser::new();
         let mut modules = Vec::new();
         let mut errors = Vec::new();
@@ -248,7 +248,7 @@ impl Config {
         }
     }
 
-    fn exhaust(&self, modules: &[Module<Ty>], ctx: &Ctx) -> Result<(), Vec<Diagnosed>> {
+    fn exhaust(modules: &[Module<Ty>], ctx: &Ctx) -> Result<(), Vec<Diagnosed>> {
         let mut errors = Vec::new();
         for module in modules {
             if let Err(err) = check_matches(&module.stmts, ctx) {
@@ -272,7 +272,7 @@ impl Config {
 
         let end_lex = Instant::now();
 
-        let modules = self.parse(tokens, &ctx)?;
+        let modules = Self::parse(tokens, &ctx)?;
 
         let end_parse = Instant::now();
 
@@ -284,7 +284,7 @@ impl Config {
 
         let end_check = Instant::now();
 
-        self.exhaust(&modules, checker.ctx())?;
+        Self::exhaust(&modules, checker.ctx())?;
 
         let end_exhaust = Instant::now();
 

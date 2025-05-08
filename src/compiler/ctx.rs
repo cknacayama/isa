@@ -11,6 +11,7 @@ use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::token::Ident;
 use super::types::{Ty, TyId};
 use crate::global::Symbol;
+use crate::separated_fmt;
 use crate::span::Span;
 
 #[derive(Debug, Clone)]
@@ -1279,16 +1280,9 @@ impl Ty {
             }
             Self::Tuple(types) => {
                 write!(f, "(")?;
-                let mut first = true;
-                for ty in types.iter() {
-                    if first {
-                        first = false;
-                    } else {
-                        write!(f, ", ")?;
-                    }
-                    ty.fmt_var(f, chars)?;
-                }
-                write!(f, ")")
+                separated_fmt(f, types.iter(), ", ", |ty, f| ty.fmt_var(f, chars))?;
+                write!(f, ")")?;
+                Ok(())
             }
         }
     }
@@ -1403,16 +1397,10 @@ impl ClassConstraintSet {
             return Ok(());
         }
         write!(f, "{{")?;
-        let mut first = true;
-        for ty in &self.constrs {
-            if first {
-                first = false;
-            } else {
-                write!(f, ", ")?;
-            }
+        separated_fmt(f, &self.constrs, ", ", |ty, f| {
             write!(f, "{} ", ty.class().base_name())?;
-            ty.ty().fmt_var(f, chars)?;
-        }
+            ty.ty().fmt_var(f, chars)
+        })?;
         write!(f, "}} => ")
     }
 }

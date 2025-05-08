@@ -411,14 +411,6 @@ fn unify_eq(
 
             subs.push(s);
         }
-        (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
-            let c1 = EqConstraint::new(i1.into(), i2.into(), c.span);
-            let c2 = EqConstraint::new(o1.into(), o2.into(), c.span);
-            let parent = Rc::new(c);
-
-            cset.push(c1.with_parent(parent.clone()));
-            cset.push(c2.with_parent(parent));
-        }
         (
             Ty::Generic {
                 var: v1,
@@ -466,6 +458,14 @@ fn unify_eq(
             cset.substitute_eq(&s);
 
             subs.push(s);
+        }
+        (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
+            let c1 = EqConstraint::new(i1.into(), i2.into(), c.span);
+            let c2 = EqConstraint::new(o1.into(), o2.into(), c.span);
+            let parent = Rc::new(c);
+
+            cset.push(c1.with_parent(parent.clone()));
+            cset.push(c2.with_parent(parent));
         }
         (
             Ty::Named {

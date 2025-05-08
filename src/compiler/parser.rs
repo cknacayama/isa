@@ -15,48 +15,46 @@ pub type ParseResult<T> = Result<T, ParseError>;
 
 #[derive(Debug)]
 pub struct Parser {
-    tokens:    Vec<Token>,
-    cur:       usize,
-    last_span: Span,
-    empty:     Rc<[Ty]>,
+    tokens: Vec<Token>,
+    cur:    usize,
+    empty:  Rc<[Ty]>,
 }
 
 impl Parser {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            tokens:    Vec::new(),
-            cur:       0,
-            last_span: Span::zero(),
-            empty:     Rc::new([]),
+            tokens: Vec::new(),
+            cur:    0,
+            empty:  Rc::new([]),
         }
+    }
+
+    fn last_span(&self) -> Span {
+        self.tokens.last().map(|tk| tk.span).unwrap_or_default()
     }
 
     pub fn restart(&mut self, tokens: Vec<Token>) {
         self.tokens = tokens;
         self.cur = 0;
-        self.last_span = Span::zero();
     }
 
-    fn check(&mut self, t: TokenKind) -> bool {
+    fn check(&self, t: TokenKind) -> bool {
         self.peek().is_some_and(|tk| tk.data == t)
     }
 
-    fn peek(&mut self) -> Option<Token> {
-        self.tokens
-            .get(self.cur)
-            .inspect(|tk| self.last_span = tk.span)
-            .copied()
+    fn peek(&self) -> Option<Token> {
+        self.tokens.get(self.cur).copied()
     }
 
-    fn peek_and<P>(&mut self, p: P) -> bool
+    fn peek_and<P>(&self, p: P) -> bool
     where
         P: FnOnce(TokenKind) -> bool,
     {
         self.peek_kind().is_some_and(p)
     }
 
-    fn peek_kind(&mut self) -> Option<TokenKind> {
+    fn peek_kind(&self) -> Option<TokenKind> {
         self.peek().map(|tk| tk.data)
     }
 
@@ -73,7 +71,7 @@ impl Parser {
 
     fn next_or_eof(&mut self) -> ParseResult<Token> {
         self.next()
-            .ok_or_else(|| ParseError::new(ParseErrorKind::UnexpectedEof, self.last_span))
+            .ok_or_else(|| ParseError::new(ParseErrorKind::UnexpectedEof, self.last_span()))
     }
 
     fn next_if_match(&mut self, tk: TokenKind) -> Option<Span> {
@@ -143,7 +141,7 @@ impl Parser {
         while !self.check(delim.closing()) {
             let res = parse(self)?;
             data.push(res);
-            if self.next_if_match(delim.separator()).is_none() {
+            if self.next_if_match(Delim::separator()).is_none() {
                 break;
             }
         }
@@ -171,7 +169,7 @@ impl Parser {
                 let Some(tk) = parser.peek() else {
                     return Err(ParseError::new(
                         ParseErrorKind::UnexpectedEof,
-                        parser.last_span,
+                        parser.last_span(),
                     ));
                 };
                 match tk.data {
@@ -180,7 +178,7 @@ impl Parser {
                         if !path.push(Ident::new(ident, tk.span)) {
                             return Err(ParseError::new(
                                 ParseErrorKind::PathToLong,
-                                parser.last_span,
+                                parser.last_span(),
                             ));
                         }
                     }
@@ -244,7 +242,7 @@ impl Parser {
         }
 
         if let [.., stmt] = stmts.as_slice() {
-            span = span.union(stmt.span)
+            span = span.union(stmt.span);
         }
 
         Ok(Module::new(no_prelude, name, imports, stmts, span))
@@ -277,11 +275,9 @@ impl Parser {
     }
 
     fn parse_stmt(&mut self) -> ParseResult<Stmt<()>> {
-        let span = self.last_span;
-
         let stmt = match self
             .peek()
-            .ok_or_else(|| ParseError::new(ParseErrorKind::UnexpectedEof, span))?
+            .ok_or_else(|| ParseError::new(ParseErrorKind::UnexpectedEof, self.last_span()))?
             .data
         {
             TokenKind::KwType => self.parse_type_definition(),
@@ -627,10 +623,9 @@ impl Parser {
     }
 
     fn parse_prim(&mut self) -> ParseResult<Expr<()>> {
-        let last_span = self.last_span;
         let Token { data, span } = self
             .peek()
-            .ok_or_else(|| ParseError::new(ParseErrorKind::UnexpectedEof, last_span))?;
+            .ok_or_else(|| ParseError::new(ParseErrorKind::UnexpectedEof, self.last_span()))?;
 
         match data {
             TokenKind::KwLet => self.parse_let(),
@@ -953,6 +948,7 @@ impl Parser {
         else {
             return None;
         };
+        self.eat();
         Some(Spand::new(c, span))
     }
 
@@ -1357,7 +1353,7 @@ impl Delim {
         }
     }
 
-    const fn separator(self) -> TokenKind {
+    const fn separator() -> TokenKind {
         TokenKind::Comma
     }
 }

@@ -5,6 +5,7 @@ use super::infer::{ClassConstraintSet, Substitute};
 use super::token::{Ident, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
+use crate::separated_fmt;
 
 #[derive(Clone, Copy)]
 pub struct Path {
@@ -236,31 +237,31 @@ impl TokenKind {
     pub const fn recover_start_point(&self) -> bool {
         matches!(
             self,
-            TokenKind::LParen
-                | TokenKind::RParen
-                | TokenKind::LBracket
-                | TokenKind::RBracket
-                | TokenKind::Backslash
-                | TokenKind::Integer(_)
-                | TokenKind::Real(_)
-                | TokenKind::Ident(_)
-                | TokenKind::String(_)
-                | TokenKind::Char(_)
-                | TokenKind::KwModule
-                | TokenKind::KwTrue
-                | TokenKind::KwFalse
-                | TokenKind::KwType
-                | TokenKind::KwAlias
-                | TokenKind::KwLet
-                | TokenKind::KwVal
-                | TokenKind::KwClass
-                | TokenKind::KwInstance
-                | TokenKind::KwInfix
-                | TokenKind::KwInfixl
-                | TokenKind::KwInfixr
-                | TokenKind::KwPrefix
-                | TokenKind::KwMatch
-                | TokenKind::KwIf
+            Self::LParen
+                | Self::RParen
+                | Self::LBracket
+                | Self::RBracket
+                | Self::Backslash
+                | Self::Integer(_)
+                | Self::Real(_)
+                | Self::Ident(_)
+                | Self::String(_)
+                | Self::Char(_)
+                | Self::KwModule
+                | Self::KwTrue
+                | Self::KwFalse
+                | Self::KwType
+                | Self::KwAlias
+                | Self::KwLet
+                | Self::KwVal
+                | Self::KwClass
+                | Self::KwInstance
+                | Self::KwInfix
+                | Self::KwInfixl
+                | Self::KwInfixr
+                | Self::KwPrefix
+                | Self::KwMatch
+                | Self::KwIf
         )
     }
 }
@@ -986,16 +987,7 @@ impl Display for Ident {
 
 impl Display for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut first = true;
-        for segment in self.as_slice() {
-            if first {
-                first = false;
-            } else {
-                write!(f, "::")?;
-            }
-            write!(f, "{segment}")?;
-        }
-        Ok(())
+        separated_fmt(f, self.as_slice(), "::", |seg, f| write!(f, "{seg}"))
     }
 }
 

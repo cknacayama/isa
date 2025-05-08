@@ -4,6 +4,7 @@ use std::num::NonZeroUsize;
 
 use crate::compiler::ctx::{Ctx as TypeCtx, CtxFmt};
 use crate::compiler::types::Ty;
+use crate::separated_fmt;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Ctor {
@@ -67,30 +68,20 @@ impl Ctor {
         }
     }
 
-    pub(super) fn fmt_fields(
+    pub(super) fn fmt_fields<'a, T>(
         &self,
         f: &mut impl fmt::Write,
         ty: &Ty,
-        fields: impl ExactSizeIterator<Item = impl CtxFmt<Ctx = TypeCtx>>,
+        fields: impl ExactSizeIterator<Item = &'a T>,
         ctx: &TypeCtx,
-    ) -> fmt::Result {
-        let mut first = true;
-        let mut start_or_continue = |s| {
-            if first {
-                first = false;
-                ""
-            } else {
-                s
-            }
-        };
-
+    ) -> fmt::Result
+    where
+        T: CtxFmt<Ctx = TypeCtx> + 'a,
+    {
         match self {
             Self::Single => {
                 write!(f, "(")?;
-                for p in fields {
-                    write!(f, "{}", start_or_continue(", "))?;
-                    p.ctx_simple_fmt(f, ctx)?;
-                }
+                separated_fmt(f, fields, ", ", |p, f| p.ctx_simple_fmt(f, ctx))?;
                 write!(f, ")")?;
             }
             Self::Type(idx) => {
@@ -116,19 +107,13 @@ impl Ctor {
             Self::IntRange(range) => write!(f, "{range}")?,
             Self::RealRange(range) => write!(f, "{range}")?,
             Self::Or => {
-                for pat in fields {
-                    write!(f, "{}", start_or_continue(" | "))?;
-                    pat.ctx_fmt(f, ctx)?;
-                }
+                separated_fmt(f, fields, " | ", |p, f| p.ctx_simple_fmt(f, ctx))?;
             }
             _ => write!(f, "_")?,
         }
         Ok(())
     }
 
-    /// Returns `true` if the ctor is [`NonExhaustive`].
-    ///
-    /// [`NonExhaustive`]: Ctor::NonExhaustive
     #[must_use]
     pub const fn is_non_exhaustive(&self) -> bool {
         matches!(self, Self::NonExhaustive)
