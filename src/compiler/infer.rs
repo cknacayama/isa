@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use super::ast::Path;
@@ -201,17 +202,6 @@ pub struct EqConstraintSet {
     constrs: VecDeque<EqConstraint>,
 }
 
-impl Substitute for EqConstraintSet {
-    fn substitute<S>(&mut self, subs: &mut S)
-    where
-        S: FnMut(&Ty) -> Option<Ty>,
-    {
-        for c in &mut self.constrs {
-            c.substitute(subs);
-        }
-    }
-}
-
 impl IntoIterator for EqConstraintSet {
     type Item = EqConstraint;
     type IntoIter = std::collections::vec_deque::IntoIter<EqConstraint>;
@@ -221,9 +211,28 @@ impl IntoIterator for EqConstraintSet {
     }
 }
 
-impl Extend<EqConstraint> for EqConstraintSet {
-    fn extend<T: IntoIterator<Item = EqConstraint>>(&mut self, iter: T) {
-        self.constrs.extend(iter);
+impl Deref for EqConstraintSet {
+    type Target = VecDeque<EqConstraint>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.constrs
+    }
+}
+
+impl DerefMut for EqConstraintSet {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.constrs
+    }
+}
+
+impl Substitute for EqConstraintSet {
+    fn substitute<S>(&mut self, subs: &mut S)
+    where
+        S: FnMut(&Ty) -> Option<Ty>,
+    {
+        for c in &mut self.constrs {
+            c.substitute(subs);
+        }
     }
 }
 
@@ -319,7 +328,7 @@ impl Constraint {
 
 #[derive(Debug, Clone)]
 pub struct ClassConstraintSet {
-    pub constrs: Vec<ClassConstraint>,
+    constrs: Vec<ClassConstraint>,
 }
 
 impl IntoIterator for ClassConstraintSet {
@@ -331,46 +340,29 @@ impl IntoIterator for ClassConstraintSet {
     }
 }
 
+impl Deref for ClassConstraintSet {
+    type Target = Vec<ClassConstraint>;
+    fn deref(&self) -> &Self::Target {
+        &self.constrs
+    }
+}
+
+impl DerefMut for ClassConstraintSet {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.constrs
+    }
+}
+
 impl ClassConstraintSet {
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &ClassConstraint> + DoubleEndedIterator {
-        self.constrs.iter()
-    }
-
-    pub fn contains(&self, constr: &ClassConstraint) -> bool {
-        self.constrs.contains(constr)
-    }
-
-    pub const fn len(&self) -> usize {
-        self.constrs.len()
-    }
-
-    pub const fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    pub fn push(&mut self, class: ClassConstraint) {
-        self.constrs.push(class);
-    }
-
-    pub fn pop(&mut self) -> Option<ClassConstraint> {
-        self.constrs.pop()
-    }
-
     pub const fn new() -> Self {
         Self {
             constrs: Vec::new(),
         }
     }
 
-    pub fn concat(mut self, other: Self) -> Self {
+    pub fn join(mut self, other: Self) -> Self {
         self.extend(other);
         self
-    }
-}
-
-impl Extend<ClassConstraint> for ClassConstraintSet {
-    fn extend<T: IntoIterator<Item = ClassConstraint>>(&mut self, iter: T) {
-        self.constrs.extend(iter);
     }
 }
 
@@ -400,10 +392,11 @@ fn unify_eq(
 ) -> Result<(), Uninferable> {
     let span = c.span;
     match (&c.lhs, &c.rhs) {
-        (
-            lhs @ (Ty::Int | Ty::Bool | Ty::Char | Ty::Real | Ty::Var(_)),
-            rhs @ (Ty::Int | Ty::Bool | Ty::Char | Ty::Real | Ty::Var(_)),
-        ) if lhs == rhs => {}
+        (Ty::Int, Ty::Int) | (Ty::Bool, Ty::Bool) | (Ty::Char, Ty::Char) | (Ty::Real, Ty::Real) => {
+        }
+
+        (Ty::Var(v1), Ty::Var(v2)) if v1 == v2 => {}
+
         (new, Ty::Var(old)) | (Ty::Var(old), new) if !new.occurs(*old) => {
             let s = Subs::new(*old, new.clone());
 
@@ -427,7 +420,7 @@ fn unify_eq(
             let v2 = *v2;
             let parent = Rc::new(c);
             for (a1, a2) in args1.iter().zip(args2.iter()) {
-                cset.push(
+                cset.push_back(
                     EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
                 );
             }
@@ -449,7 +442,7 @@ fn unify_eq(
             let mut named_iter = named.iter().rev();
             for arg in vars.iter().rev() {
                 let named = named_iter.next().unwrap();
-                cset.push(
+                cset.push_back(
                     EqConstraint::new(arg.clone(), named.clone(), span).with_parent(parent.clone()),
                 );
             }
@@ -464,8 +457,8 @@ fn unify_eq(
             let c2 = EqConstraint::new(o1.into(), o2.into(), c.span);
             let parent = Rc::new(c);
 
-            cset.push(c1.with_parent(parent.clone()));
-            cset.push(c2.with_parent(parent));
+            cset.push_back(c1.with_parent(parent.clone()));
+            cset.push_back(c2.with_parent(parent));
         }
         (
             Ty::Named {
@@ -481,7 +474,7 @@ fn unify_eq(
             let args2 = args2.clone();
             let parent = Rc::new(c);
             for (a1, a2) in args1.iter().zip(args2.iter()) {
-                cset.push(
+                cset.push_back(
                     EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
                 );
             }
@@ -491,7 +484,7 @@ fn unify_eq(
             let args2 = t2.clone();
             let parent = Rc::new(c);
             for (a1, a2) in args1.iter().zip(args2.iter()) {
-                cset.push(
+                cset.push_back(
                     EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
                 );
             }
@@ -501,7 +494,7 @@ fn unify_eq(
         {
             let constr = EqConstraint::new(t1.into(), t2.into(), span);
             let parent = Rc::new(c);
-            cset.push(constr.with_parent(parent));
+            cset.push_back(constr.with_parent(parent));
         }
 
         _ => {
@@ -580,10 +573,6 @@ impl EqConstraintSet {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn push(&mut self, c: EqConstraint) {
-        self.constrs.push_back(c);
     }
 }
 

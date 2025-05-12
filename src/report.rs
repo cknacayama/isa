@@ -40,6 +40,15 @@ pub trait Report {
     }
 }
 
+#[inline]
+pub fn report_collection<I, T>(it: I, ctx: &Ctx) -> impl Iterator<Item = Diagnosed>
+where
+    I: Sized + IntoIterator<Item = T>,
+    T: Report,
+{
+    it.into_iter().map(|e| e.report(ctx))
+}
+
 impl<T: Error> Report for Spand<T> {
     fn file_id(&self) -> usize {
         self.span.file_id()

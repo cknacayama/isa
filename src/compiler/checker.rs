@@ -149,7 +149,7 @@ impl Checker {
         let c_body = EqConstraint::new(then.ty.clone(), otherwise.ty.clone(), otherwise.span);
 
         let (subs, set) = self
-            .unify([c_cond, c_body], set.concat(then_set).concat(else_set))
+            .unify([c_cond, c_body], set.join(then_set).join(else_set))
             .map_err(|err| {
                 if err.constr().is_class() {
                     return IsaError::from(err);
@@ -249,7 +249,7 @@ impl Checker {
             ret:   Rc::new(var.clone()),
         };
         let constr = EqConstraint::new(callee.ty.clone(), fn_ty, span);
-        let (subs, set) = self.unify(constr, set.concat(arg_set)).map_err(|err| {
+        let (subs, set) = self.unify(constr, set.join(arg_set)).map_err(|err| {
             if err.constr().is_class() {
                 return IsaError::from(err);
             }
@@ -487,7 +487,7 @@ impl Checker {
         let (body, body_set) = self.check_expr(body)?;
         self.ctx.pop_scope();
         let ty = body.ty.clone();
-        let set = set.concat(body_set);
+        let set = set.join(body_set);
 
         let bind = LetBind::new(false, name, params, expr);
 
@@ -570,6 +570,7 @@ impl Checker {
         set: &Set,
         op: Symbol,
         ty: &Ty,
+        ty_span: Span,
         span: Span,
     ) -> IsaResult<()> {
         let quant = params
@@ -580,7 +581,7 @@ impl Checker {
         if IS_CLASS {
             self.check_valid_signature(ty)?;
         } else {
-            self.check_valid_type(ty, span)?;
+            self.check_valid_type(ty, ty_span)?;
         }
         let arity = ty.function_arity();
         let ty = if quant.is_empty() {
@@ -595,7 +596,7 @@ impl Checker {
         let data = OperatorData::new(fixity, prec, ty, set.clone(), span);
         let min = fixity.minimum_arity();
         if arity < min {
-            let fst = DiagnosticLabel::new("invalid operator type", span);
+            let fst = DiagnosticLabel::new("invalid operator type", ty_span);
             let note = format!("{fixity} operator should have at least arity of {min}");
             return Err(IsaError::new("invalid operator", fst, Vec::new()).with_note(note));
         }
@@ -624,6 +625,7 @@ impl Checker {
             &op.set,
             op.op.ident,
             &op.ty,
+            op.ty_span,
             op.span,
         )
     }
@@ -690,7 +692,7 @@ impl Checker {
             let Ty::Fn { param, ret } = &ty else {
                 return Err(CheckError::new(CheckErrorKind::NotConstructor(ty), span).into());
             };
-            c.push(EqConstraint::new(
+            c.push_back(EqConstraint::new(
                 param.as_ref().clone(),
                 arg.ty.clone(),
                 arg.span,
@@ -740,6 +742,7 @@ impl Checker {
             set,
             op,
             ty,
+            ty_span,
             span,
         } in ops.iter_mut()
         {
@@ -749,7 +752,9 @@ impl Checker {
             set.push(ClassConstraint::new(class, Ty::Var(var), *span));
             let mut ty = ty.clone();
             ty.substitute_self(&Ty::Var(var));
-            self.check_operator::<true>(*fixity, *prec, &params, set, op.ident, &ty, *span)?;
+            self.check_operator::<true>(
+                *fixity, *prec, &params, set, op.ident, &ty, *ty_span, *span,
+            )?;
             set.pop();
         }
 
@@ -977,7 +982,7 @@ impl Checker {
                 let mut var = self.gen_type_var();
                 for pat in spanneds {
                     let pat = self.check_pat(pat)?;
-                    c.push(EqConstraint::new(pat.ty.clone(), var.clone(), pat.span));
+                    c.push_back(EqConstraint::new(pat.ty.clone(), var.clone(), pat.span));
                     patterns.push(pat);
                 }
 
@@ -1074,8 +1079,8 @@ impl Checker {
         for arm in arms {
             let (pat, aexpr, arm_set) = self.check_match_arm(arm.pat, arm.expr)?;
             set.extend(arm_set);
-            c.push(EqConstraint::new(var.clone(), aexpr.ty.clone(), aexpr.span));
-            c.push(EqConstraint::new(expr.ty.clone(), pat.ty.clone(), pat.span));
+            c.push_back(EqConstraint::new(var.clone(), aexpr.ty.clone(), aexpr.span));
+            c.push_back(EqConstraint::new(expr.ty.clone(), pat.ty.clone(), pat.span));
             typed_arms.push(MatchArm::new(pat, aexpr));
         }
 
@@ -1189,7 +1194,7 @@ impl Checker {
             .get_infix(op)
             .or_else(|_| self.ctx.get_prefix(op))?;
         let mut set = data.set().clone();
-        for c in &mut set.constrs {
+        for c in set.iter_mut() {
             *c.span_mut() = span;
         }
         let (ty, subs) = self.instantiate(data.ty().clone());
@@ -1212,7 +1217,7 @@ impl Checker {
 
         let data = self.ctx.get_infix(op)?;
         let mut set = data.set().clone();
-        for c in &mut set.constrs {
+        for c in set.iter_mut() {
             *c.span_mut() = span;
         }
         let (ty, subs) = self.instantiate(data.ty().clone());
@@ -1251,7 +1256,7 @@ impl Checker {
         let (expr, expr_set) = self.check_expr(expr)?;
         let data = self.ctx.get_prefix(op)?;
         let mut set = data.set().clone();
-        for c in &mut set.constrs {
+        for c in set.iter_mut() {
             *c.span_mut() = op.span;
         }
         let (op_ty, subs) = self.instantiate(data.ty().clone());
@@ -1473,7 +1478,7 @@ impl Checker {
     ) -> CheckResult<(Ty, Set)> {
         class = ctx.resolve_class_name(&class)?;
         let mut constraints = data.constraints().clone();
-        for c in &mut constraints.constrs {
+        for c in constraints.iter_mut() {
             *c.span_mut() = span;
         }
         let MemberData {
@@ -1486,7 +1491,7 @@ impl Checker {
             .cloned()
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(member.ident), span))?;
 
-        for c in &mut member_set.constrs {
+        for c in member_set.iter_mut() {
             *c.span_mut() = span;
         }
 
@@ -1651,7 +1656,7 @@ impl Checker {
                         let new_lhs = std::mem::take(lrhs);
                         let new_rhs = std::mem::take(rhs);
 
-                        let span = new_lhs.span.union(new_rhs.span);
+                        let span = new_lhs.span.join(new_rhs.span);
                         let kind = ExprKind::Infix {
                             op:  *op,
                             lhs: new_lhs,
@@ -1701,7 +1706,7 @@ impl Checker {
         set: &mut Set,
         subs: &mut impl Fn(&Ty) -> Option<Ty>,
     ) -> IsaResult<()> {
-        for (class, ty) in set.constrs.iter_mut().map(ClassConstraint::get_mut) {
+        for (class, ty) in set.iter_mut().map(ClassConstraint::get_mut) {
             *class = self.ctx.resolve_class_name(class)?;
             ty.substitute(subs);
         }

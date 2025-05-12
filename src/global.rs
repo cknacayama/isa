@@ -49,10 +49,10 @@ impl Span {
     }
 
     #[must_use]
-    pub fn union(self, other: Self) -> Self {
+    pub fn join(self, other: Self) -> Self {
         let (self_data, other_data) =
             GLOBAL_DATA.with_borrow(|e| (e.spans.get(self).unwrap(), e.spans.get(other).unwrap()));
-        let new_data = self_data.union(&other_data);
+        let new_data = self_data.join(&other_data);
         Self::intern(new_data)
     }
 
@@ -167,7 +167,7 @@ impl SpanInterner {
     }
 
     fn intern(&mut self, span: SpanData) -> Span {
-        let idx = self.spans.len();
+        let idx = self.spans.len().try_into().unwrap();
         self.spans.push(span);
         Span::new(idx)
     }

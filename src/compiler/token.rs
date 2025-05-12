@@ -45,7 +45,7 @@ impl std::hash::Hash for Ident {
 
 pub type Token = Spand<TokenKind>;
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum TokenKind {
     Underscore,
 
@@ -104,6 +104,21 @@ pub enum TokenKind {
     KwIf,
     KwThen,
     KwElse,
+}
+
+impl std::hash::Hash for TokenKind {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+    }
+}
+
+impl PartialEq for TokenKind {
+    fn eq(&self, other: &Self) -> bool {
+        core::mem::discriminant(self) == core::mem::discriminant(other)
+    }
+}
+
+impl Eq for TokenKind {
 }
 
 impl TokenKind {
@@ -177,59 +192,90 @@ impl TokenKind {
             None
         }
     }
+
+    pub const fn is_keyword(&self) -> bool {
+        matches!(
+            self,
+            Self::KwTrue
+                | Self::KwFalse
+                | Self::KwType
+                | Self::KwAlias
+                | Self::KwLet
+                | Self::KwVal
+                | Self::KwIn
+                | Self::KwModule
+                | Self::KwClass
+                | Self::KwInstance
+                | Self::KwInfix
+                | Self::KwInfixl
+                | Self::KwInfixr
+                | Self::KwPrefix
+                | Self::KwSelf
+                | Self::KwInt
+                | Self::KwBool
+                | Self::KwChar
+                | Self::KwReal
+                | Self::KwMatch
+                | Self::KwWith
+                | Self::KwIf
+                | Self::KwThen
+                | Self::KwElse
+        )
+    }
 }
 
 impl Display for TokenKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Underscore => write!(f, "_"),
-            Self::LParen => write!(f, "("),
-            Self::RParen => write!(f, ")"),
-            Self::LBrace => write!(f, "{{"),
-            Self::RBrace => write!(f, "}}"),
-            Self::LBracket => write!(f, "["),
-            Self::RBracket => write!(f, "]"),
-            Self::At => write!(f, "@"),
-            Self::Bar => write!(f, "|"),
-            Self::Comma => write!(f, ","),
-            Self::Semicolon => write!(f, ";"),
-            Self::Colon => write!(f, ":"),
-            Self::ColonColon => write!(f, "::"),
-            Self::DotDot => write!(f, ".."),
-            Self::DotDotEq => write!(f, "..="),
-            Self::Eq => write!(f, "="),
-            Self::Arrow => write!(f, "->"),
-            Self::Rocket => write!(f, "=>"),
-            Self::Backslash => write!(f, "\\"),
-            Self::Integer(v) => write!(f, "{v}"),
-            Self::Real(v) => write!(f, "{v:?}"),
-            Self::String(v) => write!(f, "{v:?}"),
-            Self::Ident(v) | Self::Operator(v) => write!(f, "{v}"),
-            Self::Char(v) => write!(f, "{:?}", *v as char),
-            Self::KwTrue => write!(f, "true"),
-            Self::KwFalse => write!(f, "false"),
-            Self::KwType => write!(f, "type"),
-            Self::KwAlias => write!(f, "alias"),
-            Self::KwLet => write!(f, "let"),
-            Self::KwVal => write!(f, "val"),
-            Self::KwIn => write!(f, "in"),
-            Self::KwClass => write!(f, "class"),
-            Self::KwInstance => write!(f, "instance"),
-            Self::KwInfix => write!(f, "infix"),
-            Self::KwInfixl => write!(f, "infixl"),
-            Self::KwInfixr => write!(f, "infixr"),
-            Self::KwPrefix => write!(f, "prefix"),
-            Self::KwModule => write!(f, "module"),
-            Self::KwSelf => write!(f, "Self"),
-            Self::KwInt => write!(f, "int"),
-            Self::KwBool => write!(f, "bool"),
-            Self::KwChar => write!(f, "char"),
-            Self::KwReal => write!(f, "real"),
-            Self::KwMatch => write!(f, "match"),
-            Self::KwWith => write!(f, "with"),
-            Self::KwIf => write!(f, "if"),
-            Self::KwThen => write!(f, "then"),
-            Self::KwElse => write!(f, "else"),
+            Self::Underscore => write!(f, "`_`"),
+            Self::LParen => write!(f, "`(`"),
+            Self::RParen => write!(f, "`)`"),
+            Self::LBrace => write!(f, "`{{`"),
+            Self::RBrace => write!(f, "`}}`"),
+            Self::LBracket => write!(f, "`[`"),
+            Self::RBracket => write!(f, "`]`"),
+            Self::At => write!(f, "`@`"),
+            Self::Bar => write!(f, "`|`"),
+            Self::Comma => write!(f, "`,`"),
+            Self::Semicolon => write!(f, "`;`"),
+            Self::Colon => write!(f, "`:`"),
+            Self::ColonColon => write!(f, "`::`"),
+            Self::DotDot => write!(f, "`..`"),
+            Self::DotDotEq => write!(f, "`..=`"),
+            Self::Eq => write!(f, "`=`"),
+            Self::Arrow => write!(f, "`->`"),
+            Self::Rocket => write!(f, "`=>`"),
+            Self::Backslash => write!(f, "`\\`"),
+            Self::Integer(_) => write!(f, "integer"),
+            Self::Real(_) => write!(f, "real"),
+            Self::String(_) => write!(f, "string"),
+            Self::Ident(_) => write!(f, "identifier"),
+            Self::Operator(_) => write!(f, "operator"),
+            Self::Char(_) => write!(f, "character"),
+            Self::KwTrue => write!(f, "`true`"),
+            Self::KwFalse => write!(f, "`false`"),
+            Self::KwType => write!(f, "`type`"),
+            Self::KwAlias => write!(f, "`alias`"),
+            Self::KwLet => write!(f, "`let`"),
+            Self::KwVal => write!(f, "`val`"),
+            Self::KwIn => write!(f, "`in`"),
+            Self::KwClass => write!(f, "`class`"),
+            Self::KwInstance => write!(f, "`instance`"),
+            Self::KwInfix => write!(f, "`infix`"),
+            Self::KwInfixl => write!(f, "`infixl`"),
+            Self::KwInfixr => write!(f, "`infixr`"),
+            Self::KwPrefix => write!(f, "`prefix`"),
+            Self::KwModule => write!(f, "`module`"),
+            Self::KwSelf => write!(f, "`Self`"),
+            Self::KwInt => write!(f, "`int`"),
+            Self::KwBool => write!(f, "`bool`"),
+            Self::KwChar => write!(f, "`char`"),
+            Self::KwReal => write!(f, "`real`"),
+            Self::KwMatch => write!(f, "`match`"),
+            Self::KwWith => write!(f, "`with`"),
+            Self::KwIf => write!(f, "`if`"),
+            Self::KwThen => write!(f, "`then`"),
+            Self::KwElse => write!(f, "`else`"),
         }
     }
 }

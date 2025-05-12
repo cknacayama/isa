@@ -86,8 +86,7 @@ instance real: Number =
 instance bool: And = let (&&) a b = a && b;
 instance bool: Or = let (||) a b = a || b;
 instance bool: Not = let (!) a = !a;
+instance bool: Eq = let (==) a b = a == b;
 
 instance char: Eq = let (==) a b = a == b;
 instance (): Eq = let (==) () () = true;
-
-// instance {a} List a: Eq;

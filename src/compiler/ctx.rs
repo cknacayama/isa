@@ -767,7 +767,7 @@ impl Ctx {
         }
 
         let path = Path::from_two(from, id);
-        let span = from.span.union(id.span);
+        let span = from.span.join(id.span);
 
         Err(CheckError::new(CheckErrorKind::InvalidImport(path), span))
     }
@@ -960,7 +960,7 @@ impl Ctx {
         };
 
         if let [(span, constrs)] = constrs.as_slice()
-            && constrs.constrs.is_empty()
+            && constrs.is_empty()
         {
             return Err(CheckError::new(
                 CheckErrorKind::MultipleInstances(*class, instance, *span),
@@ -1393,11 +1393,11 @@ impl ClassConstraintSet {
         f: &mut std::fmt::Formatter<'_>,
         chars: &mut TyVarFormatter<T>,
     ) -> std::fmt::Result {
-        if self.constrs.is_empty() {
+        if self.is_empty() {
             return Ok(());
         }
         write!(f, "{{")?;
-        separated_fmt(f, &self.constrs, ", ", |ty, f| {
+        separated_fmt(f, self.iter(), ", ", |ty, f| {
             write!(f, "{} ", ty.class().base_name())?;
             ty.ty().fmt_var(f, chars)
         })?;

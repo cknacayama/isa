@@ -59,15 +59,15 @@ impl Display for ParseErrorKind {
         match self {
             Self::UnexpectedEof => write!(f, "unexpected end-of-file"),
             Self::ExpectedToken { expected, got } => {
-                write!(f, "expected `{expected}`")?;
-                got.map_or(Ok(()), |got| write!(f, ", got `{got}`"))
+                write!(f, "expected {expected}")?;
+                got.map_or(Ok(()), |got| write!(f, ", got {got}"))
             }
             Self::PathToLong => write!(f, "path too long"),
-            Self::ExpectedExpr(got) => write!(f, "expected expression, got `{got}`"),
-            Self::ExpectedId(got) => write!(f, "expected identifier, got `{got}`"),
-            Self::ExpectedInt(got) => write!(f, "expected integer literal, got `{got}`"),
-            Self::ExpectedType(got) => write!(f, "expected type, got `{got}`"),
-            Self::ExpectedPattern(got) => write!(f, "expected pattern, got `{got}`"),
+            Self::ExpectedExpr(got) => write!(f, "expected expression, got {got}"),
+            Self::ExpectedId(got) => write!(f, "expected identifier, got {got}"),
+            Self::ExpectedInt(got) => write!(f, "expected integer literal, got {got}"),
+            Self::ExpectedType(got) => write!(f, "expected type, got {got}"),
+            Self::ExpectedPattern(got) => write!(f, "expected pattern, got {got}"),
             Self::PrecendenceLimit(prec) => write!(f, "precedence limit exceded ({prec} > 255)"),
         }
     }

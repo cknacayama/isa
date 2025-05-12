@@ -19,7 +19,7 @@ impl SpanData {
     }
 
     #[must_use]
-    pub fn union(&self, other: &Self) -> Self {
+    pub fn join(&self, other: &Self) -> Self {
         Self {
             file_id: self.file_id,
             start:   std::cmp::min(self.start, other.start),
@@ -52,12 +52,9 @@ impl Default for Span {
 }
 
 impl Span {
-    /// # Panics
-    ///
-    /// Panics if idx excedes `u32::MAX`
     #[must_use]
-    pub fn new(idx: usize) -> Self {
-        Self(idx.try_into().expect("Should have at max u32::MAX spans"))
+    pub const fn new(idx: u32) -> Self {
+        Self(idx)
     }
 
     #[must_use]

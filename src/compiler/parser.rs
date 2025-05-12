@@ -146,7 +146,7 @@ impl Parser {
             }
         }
 
-        let span = span.union(self.expect(delim.closing())?);
+        let span = span.join(self.expect(delim.closing())?);
 
         Ok((data, span))
     }
@@ -212,11 +212,11 @@ impl Parser {
         let span = self.expect(TokenKind::KwModule)?;
         let no_prelude = self.next_if_match(TokenKind::At).is_some();
         let name = self.expect_id()?;
-        let mut span = span.union(name.span);
+        let mut span = span.join(name.span);
 
         let imports = if self.next_if_match(TokenKind::KwWith).is_some() {
             let (imports, clause_span) = self.parse_import_clause()?;
-            span = span.union(clause_span);
+            span = span.join(clause_span);
             imports
         } else {
             ImportClause::default()
@@ -242,31 +242,31 @@ impl Parser {
         }
 
         if let [.., stmt] = stmts.as_slice() {
-            span = span.union(stmt.span);
+            span = span.join(stmt.span);
         }
 
         Ok(Module::new(no_prelude, name, imports, stmts, span))
     }
 
     pub fn parse_all(&mut self) -> Result<Vec<Module<()>>, Vec<ParseError>> {
-        let mut errors = Vec::new();
-        let mut modules = Vec::new();
+        let mut folded = Vec::new();
+        let mut errs = Vec::new();
 
-        while self.peek().is_some() {
-            match self.parse_module() {
-                Ok(module) => modules.push(module),
-                Err(err) => errors.extend(err),
+        for item in self {
+            match item {
+                Ok(ok) => folded.push(ok),
+                Err(err) => errs.extend(err),
             }
         }
 
-        if errors.is_empty() {
-            Ok(modules)
+        if errs.is_empty() {
+            Ok(folded)
         } else {
-            Err(errors)
+            Err(errs)
         }
     }
 
-    pub fn parse(&mut self) -> Option<ParseResult<Stmt<()>>> {
+    fn parse(&mut self) -> Option<ParseResult<Stmt<()>>> {
         if self.peek().is_some() {
             Some(self.parse_stmt())
         } else {
@@ -306,7 +306,7 @@ impl Parser {
         let Spand { data: bind, span } = self.parse_let_bind(true)?;
         if self.next_if_match(TokenKind::KwIn).is_some() {
             let body = self.parse_expr()?;
-            let span = span.union(body.span);
+            let span = span.join(body.span);
             let kind = StmtKind::Semi(Expr::untyped(
                 ExprKind::Let {
                     bind: Box::new(bind),
@@ -341,8 +341,11 @@ impl Parser {
         let op = self.expect_op()?;
         self.expect(TokenKind::RParen)?;
         self.expect(TokenKind::Colon)?;
-        let ty = self.parse_type()?;
-        let span = span.union(ty.span);
+        let Spand {
+            data: ty,
+            span: ty_span,
+        } = self.parse_type()?;
+        let span = span.join(ty_span);
 
         Ok(Operator {
             fixity,
@@ -350,7 +353,8 @@ impl Parser {
             params,
             set,
             op,
-            ty: ty.data,
+            ty,
+            ty_span,
             span,
         })
     }
@@ -359,7 +363,7 @@ impl Parser {
         let span = self.expect(TokenKind::KwClass)?;
         let (set, _) = self.parse_constraint_set()?;
         let name = self.expect_id()?;
-        let mut span = span.union(name.span);
+        let mut span = span.join(name.span);
         let parents = if self.next_if_match(TokenKind::Colon).is_some() {
             self.parse_class_constraint()?
                 .into_iter()
@@ -377,18 +381,18 @@ impl Parser {
                 match self.peek_kind() {
                     Some(TokenKind::KwVal) => {
                         let val = self.parse_val()?;
-                        span = span.union(val.span);
+                        span = span.join(val.span);
                         signatures.push(val);
                     }
                     Some(TokenKind::KwLet) => {
                         let val = self.parse_let_bind(true)?;
-                        span = span.union(val.span);
+                        span = span.join(val.span);
                         defaults.push(val.data);
                     }
                     Some(tk) => {
                         if let Some(fixity) = Fixity::from_tk(tk) {
                             let op = self.parse_operator(fixity)?;
-                            span = span.union(op.span);
+                            span = span.join(op.span);
                             ops.push(op);
                         } else {
                             break;
@@ -397,7 +401,7 @@ impl Parser {
                     _ => break,
                 }
                 if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
-                    span = span.union(c_span);
+                    span = span.join(c_span);
                 }
             }
             if signatures.is_empty() && ops.is_empty() {
@@ -437,7 +441,7 @@ impl Parser {
         let Spand { data: instance, .. } = self.parse_type()?;
         self.expect(TokenKind::Colon)?;
         let (class, name_span) = self.parse_path()?;
-        let mut span = span.union(name_span);
+        let mut span = span.join(name_span);
 
         let impls = if self.next_if_match(TokenKind::Eq).is_some() {
             let mut impls = Vec::new();
@@ -447,9 +451,9 @@ impl Parser {
                     span: bind_span,
                 } = self.parse_let_bind(true)?;
                 impls.push(bind);
-                span = span.union(bind_span);
+                span = span.join(bind_span);
                 if let Some(c_span) = self.next_if_match(TokenKind::Comma) {
-                    span = span.union(c_span);
+                    span = span.join(c_span);
                 }
             }
             if impls.is_empty() {
@@ -495,17 +499,16 @@ impl Parser {
             data: ty,
             span: ty_span,
         } = self.parse_type()?;
-        let span = span.union(ty_span);
+        let span = span.join(ty_span);
 
         Ok(Stmt::new(StmtKind::Alias { name, params, ty }, span))
     }
 
     fn parse_constraint_set(&mut self) -> ParseResult<(ClassConstraintSet, Box<[Ty]>)> {
+        let mut constrs = ClassConstraintSet::new();
         if !self.check(TokenKind::LBrace) {
-            return Ok((ClassConstraintSet::new(), Box::new([])));
+            return Ok((constrs, Box::new([])));
         }
-
-        let mut constrs = Vec::new();
 
         let (params, _) = self.parse_delimited(Delim::Brace, |parser| {
             let name = parser.expect_id()?;
@@ -522,7 +525,7 @@ impl Parser {
             Ok(ty)
         })?;
 
-        Ok((ClassConstraintSet { constrs }, params.into_boxed_slice()))
+        Ok((constrs, params.into_boxed_slice()))
     }
 
     fn parse_class_constraint(&mut self) -> ParseResult<Vec<(Path, Span)>> {
@@ -543,7 +546,7 @@ impl Parser {
             data: ty,
             span: ty_span,
         } = self.parse_type()?;
-        let span = span.union(ty_span);
+        let span = span.join(ty_span);
 
         Ok(Val {
             params,
@@ -569,7 +572,7 @@ impl Parser {
             self.next_if_map(|tk| tk.data.as_operator().map(|op| Ident::new(op, tk.span)))
         {
             let rhs = self.parse_prefix()?;
-            let span = lhs.span.union(rhs.span);
+            let span = lhs.span.join(rhs.span);
             lhs = Expr::untyped(
                 ExprKind::Infix {
                     op,
@@ -591,7 +594,7 @@ impl Parser {
                 self.eat();
                 let expr = self.parse_prefix()?;
                 let op = Ident::new(op, span);
-                let span = span.union(expr.span);
+                let span = span.join(expr.span);
                 let kind = ExprKind::Prefix {
                     op,
                     expr: Box::new(expr),
@@ -609,7 +612,7 @@ impl Parser {
 
         while self.peek_and(|tk| tk.can_start_expr()) {
             let arg = self.parse_prim()?;
-            let span = expr.span.union(arg.span);
+            let span = expr.span.join(arg.span);
             expr = Expr::untyped(
                 ExprKind::Call {
                     callee: Box::new(expr),
@@ -677,11 +680,11 @@ impl Parser {
         }) {
             if let Some(rspan) = self.next_if_match(TokenKind::RParen) {
                 let kind = ExprKind::Operator(Ident::new(op, op_span));
-                return Ok(Expr::untyped(kind, span.union(rspan)));
+                return Ok(Expr::untyped(kind, span.join(rspan)));
             }
             let expr = self.parse_prefix()?;
             let op = Ident::new(op, span);
-            let span = span.union(expr.span);
+            let span = span.join(expr.span);
             let kind = ExprKind::Prefix {
                 op,
                 expr: Box::new(expr),
@@ -698,7 +701,7 @@ impl Parser {
             }
         }
 
-        let span = span.union(self.expect(TokenKind::RParen)?);
+        let span = span.join(self.expect(TokenKind::RParen)?);
 
         if exprs.len() == 1 {
             let kind = ExprKind::Paren(Box::new(exprs.pop().unwrap()));
@@ -730,7 +733,7 @@ impl Parser {
 
         while self.next_if_match(TokenKind::ColonColon).is_some() {
             let id = self.expect_id()?;
-            span = span.union(id.span);
+            span = span.join(id.span);
             if !path.push(id) {
                 return Err(ParseError::new(ParseErrorKind::PathToLong, span));
             }
@@ -785,7 +788,7 @@ impl Parser {
                 let mut params = Vec::new();
                 while self.peek_and(|tk| tk.can_start_type()) {
                     let ty = self.parse_simple_type()?;
-                    span = span.union(ty.span);
+                    span = span.join(ty.span);
                     params.push(ty.data);
                 }
                 let args = params.into();
@@ -796,7 +799,7 @@ impl Parser {
                 let mut params = Vec::new();
                 while self.peek_and(|tk| tk.can_start_type()) {
                     let ty = self.parse_simple_type()?;
-                    span = span.union(ty.span);
+                    span = span.join(ty.span);
                     params.push(ty.data);
                 }
                 let args = params.into();
@@ -811,7 +814,7 @@ impl Parser {
 
         if self.next_if_match(TokenKind::Arrow).is_some() {
             let ret = self.parse_type()?;
-            let span = simple.span.union(ret.span);
+            let span = simple.span.join(ret.span);
 
             Ok(Spand::new(
                 Ty::Fn {
@@ -833,7 +836,7 @@ impl Parser {
 
         while self.peek_and(|tk| tk.can_start_type()) {
             let ty = self.parse_simple_type()?;
-            span = span.union(ty.span);
+            span = span.join(ty.span);
             params.push(ty.data);
         }
 
@@ -866,7 +869,7 @@ impl Parser {
         self.next_if_match(TokenKind::Bar);
         loop {
             let c = self.parse_constructor()?;
-            span = span.union(c.span);
+            span = span.join(c.span);
             constructors.push(c);
             if self.next_if_match(TokenKind::Bar).is_none() {
                 break;
@@ -887,7 +890,7 @@ impl Parser {
         let pat = self.parse_pat()?;
         self.expect(TokenKind::Arrow)?;
         let expr = self.parse_expr()?;
-        let span = pat.span.union(expr.span);
+        let span = pat.span.join(expr.span);
 
         Ok(Spand::new(MatchArm::new(pat, expr), span))
     }
@@ -902,9 +905,9 @@ impl Parser {
         while self.peek_and(|tk| tk.can_start_pat()) {
             let arm = self.parse_match_arm()?;
             arms.push(arm.data);
-            span = span.union(arm.span);
+            span = span.join(arm.span);
             if let Some(tk) = self.next_if_match(TokenKind::Comma) {
-                span = span.union(tk);
+                span = span.join(tk);
             } else {
                 break;
             }
@@ -928,7 +931,7 @@ impl Parser {
 
         self.expect(TokenKind::KwElse)?;
         let otherwise = self.parse_expr()?;
-        let span = span.union(otherwise.span);
+        let span = span.join(otherwise.span);
 
         Ok(Expr::untyped(
             ExprKind::If {
@@ -971,7 +974,7 @@ impl Parser {
             )));
         };
 
-        Some(Ok(Spand::new(-int.data, span.union(int.span))))
+        Some(Ok(Spand::new(-int.data, span.join(int.span))))
     }
 
     fn try_parse_real(&mut self) -> Option<ParseResult<Spand<f64>>> {
@@ -1011,7 +1014,7 @@ impl Parser {
             match expect(self) {
                 Some(rhs) => {
                     let rhs = rhs?;
-                    let span = lhs_span.union(rhs.span);
+                    let span = lhs_span.join(rhs.span);
                     Ok(Pat::untyped(
                         range_kind(RangePat::Exclusive(lhs, rhs.data)),
                         span,
@@ -1019,14 +1022,14 @@ impl Parser {
                 }
                 None => Ok(Pat::untyped(
                     range_kind(RangePat::From(lhs)),
-                    lhs_span.union(span),
+                    lhs_span.join(span),
                 )),
             }
         } else if let Some(span) = self.next_if_match(TokenKind::DotDotEq) {
             let rhs = expect(self).ok_or_else(|| {
                 ParseError::new(ParseErrorKind::ExpectedPattern(TokenKind::DotDotEq), span)
             })??;
-            let span = lhs_span.union(rhs.span);
+            let span = lhs_span.join(rhs.span);
             Ok(Pat::untyped(
                 range_kind(RangePat::Inclusive(lhs, rhs.data)),
                 span,
@@ -1064,7 +1067,7 @@ impl Parser {
 
     fn parse_to_range_pat(&mut self, span: Span) -> ParseResult<Pat<()>> {
         if let Some(char) = self.try_parse_char() {
-            let span = span.union(char.span);
+            let span = span.join(char.span);
             return Ok(Pat::untyped(
                 PatKind::CharRange(RangePat::To(char.data)),
                 span,
@@ -1083,7 +1086,7 @@ impl Parser {
             if minus {
                 real.data = -real.data;
             }
-            let span = span.union(real.span);
+            let span = span.join(real.span);
             Ok(Pat::untyped(
                 PatKind::RealRange(RangePat::To(real.data)),
                 span,
@@ -1093,7 +1096,7 @@ impl Parser {
             if minus {
                 int.data = -int.data;
             }
-            let span = span.union(int.span);
+            let span = span.join(int.span);
             Ok(Pat::untyped(
                 PatKind::IntRange(RangePat::To(int.data)),
                 span,
@@ -1103,7 +1106,7 @@ impl Parser {
 
     fn parse_to_inclusive_range_pat(&mut self, span: Span) -> ParseResult<Pat<()>> {
         if let Some(char) = self.try_parse_char() {
-            let span = span.union(char.span);
+            let span = span.join(char.span);
             return Ok(Pat::untyped(
                 PatKind::CharRange(RangePat::ToInclusive(char.data)),
                 span,
@@ -1122,7 +1125,7 @@ impl Parser {
             if minus {
                 real.data = -real.data;
             }
-            let span = span.union(real.span);
+            let span = span.join(real.span);
             Ok(Pat::untyped(
                 PatKind::RealRange(RangePat::ToInclusive(real.data)),
                 span,
@@ -1132,7 +1135,7 @@ impl Parser {
             if minus {
                 int.data = -int.data;
             }
-            let span = span.union(int.span);
+            let span = span.join(int.span);
             Ok(Pat::untyped(
                 PatKind::IntRange(RangePat::ToInclusive(int.data)),
                 span,
@@ -1151,14 +1154,14 @@ impl Parser {
         if let Some(int) = self.try_parse_integer() {
             let int = int?;
             if let Some(span) = minus {
-                return self.parse_int_range_pat(-int.data, span.union(int.span));
+                return self.parse_int_range_pat(-int.data, span.join(int.span));
             }
             return self.parse_int_range_pat(int.data, int.span);
         }
         if let Some(real) = self.try_parse_real() {
             let real = real?;
             if let Some(span) = minus {
-                return self.parse_real_range_pat(-real.data, span.union(real.span));
+                return self.parse_real_range_pat(-real.data, span.join(real.span));
             }
             return self.parse_real_range_pat(real.data, real.span);
         }
@@ -1207,15 +1210,15 @@ impl Parser {
 
     fn parse_list_pat(&mut self, span: Span) -> ParseResult<Pat<()>> {
         if let Some(close) = self.next_if_match(TokenKind::RBracket) {
-            return Ok(Pat::untyped(PatKind::List(ListPat::Nil), span.union(close)));
+            return Ok(Pat::untyped(PatKind::List(ListPat::Nil), span.join(close)));
         }
 
         let head = self.parse_pat()?;
-        let span = span.union(self.expect(TokenKind::RBracket)?);
+        let span = span.join(self.expect(TokenKind::RBracket)?);
 
         let (kind, span) = if self.peek_and(|tk| tk.can_start_pat()) {
             let rest = self.parse_pat()?;
-            let span = span.union(rest.span);
+            let span = span.join(rest.span);
             (ListPat::Cons(Box::new(head), Box::new(rest)), span)
         } else {
             (ListPat::Single(Box::new(head)), span)
@@ -1235,7 +1238,7 @@ impl Parser {
         let mut args = Vec::new();
         while self.peek_and(|tk| tk.can_start_pat()) {
             let pat = self.parse_simple_pat()?;
-            span = span.union(pat.span);
+            span = span.join(pat.span);
             args.push(pat);
         }
         let args = args.into_boxed_slice();
@@ -1257,7 +1260,7 @@ impl Parser {
                 }
             }
 
-            span = span.union(pats.last().unwrap().span);
+            span = span.join(pats.last().unwrap().span);
 
             pat = Pat::untyped(PatKind::Or(pats.into_boxed_slice()), span);
         }
@@ -1284,7 +1287,7 @@ impl Parser {
         }
         self.expect(TokenKind::Eq)?;
         let expr = self.parse_expr()?;
-        let span = span.union(expr.span);
+        let span = span.join(expr.span);
 
         Ok(Spand::new(
             LetBind::new(operator, name, parametes.into_boxed_slice(), expr),
@@ -1296,7 +1299,7 @@ impl Parser {
         let Spand { data: bind, span } = self.parse_let_bind(false)?;
         self.expect(TokenKind::KwIn)?;
         let body = self.parse_expr()?;
-        let span = span.union(body.span);
+        let span = span.join(body.span);
 
         Ok(Expr::untyped(
             ExprKind::Let {
@@ -1315,7 +1318,7 @@ impl Parser {
 
         let expr = self.parse_expr()?;
 
-        let span = span.union(expr.span);
+        let span = span.join(expr.span);
 
         let param = Param::new(pat);
 
@@ -1355,5 +1358,17 @@ impl Delim {
 
     const fn separator() -> TokenKind {
         TokenKind::Comma
+    }
+}
+
+impl Iterator for Parser {
+    type Item = Result<Module<()>, Vec<ParseError>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.peek().is_some() {
+            Some(self.parse_module())
+        } else {
+            None
+        }
     }
 }

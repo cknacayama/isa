@@ -87,7 +87,7 @@ impl Path {
         self.as_slice()
             .iter()
             .map(|id| id.span)
-            .reduce(Span::union)
+            .reduce(Span::join)
             .unwrap()
     }
 
@@ -165,6 +165,7 @@ impl Fixity {
             _ => None,
         }
     }
+
     #[must_use]
     pub const fn is_right(self) -> bool {
         matches!(self, Self::Infixr)
@@ -529,13 +530,14 @@ pub struct Val {
 
 #[derive(Debug, Clone)]
 pub struct Operator {
-    pub fixity: Fixity,
-    pub prec:   u8,
-    pub params: Box<[Ty]>,
-    pub set:    ClassConstraintSet,
-    pub op:     Ident,
-    pub ty:     Ty,
-    pub span:   Span,
+    pub fixity:  Fixity,
+    pub prec:    u8,
+    pub params:  Box<[Ty]>,
+    pub set:     ClassConstraintSet,
+    pub op:      Ident,
+    pub ty:      Ty,
+    pub ty_span: Span,
+    pub span:    Span,
 }
 
 #[derive(Debug, Clone)]

@@ -73,22 +73,18 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    pub fn lex_all(&mut self) -> Result<Vec<Token>, Vec<LexError>> {
-        let mut tokens = Vec::new();
-        let mut errors = Vec::new();
+    pub fn lex_all(self) -> Result<Vec<Token>, Vec<LexError>> {
+        let mut tks = Vec::new();
+        let mut errs = Vec::new();
 
-        while let Some(tk) = self.next_token() {
-            match tk {
-                Ok(tk) => tokens.push(tk),
-                Err(err) => errors.push(err),
+        for item in self {
+            match item {
+                Ok(ok) => tks.push(ok),
+                Err(err) => errs.push(err),
             }
         }
 
-        if errors.is_empty() {
-            Ok(tokens)
-        } else {
-            Err(errors)
-        }
+        if errs.is_empty() { Ok(tks) } else { Err(errs) }
     }
 
     fn make_token(&self, kind: TokenKind) -> Token {
@@ -249,5 +245,13 @@ impl<'a> Lexer<'a> {
             c if TokenKind::operator_character(c) => Some(Ok(self.operator())),
             _ => Some(Err(self.make_err(LexErrorKind::InvalidChar(c)))),
         }
+    }
+}
+
+impl Iterator for Lexer<'_> {
+    type Item = LexResult<Token>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_token()
     }
 }
