@@ -2,15 +2,15 @@ use std::fmt::Display;
 
 use codespan_reporting::diagnostic::Label;
 
-use super::ast::Path;
+use super::ast::{Ident, Path};
 use super::exhaust::pat::WitnessPat;
 use super::infer::{Constraint, Subs};
-use super::token::{Ident, TokenKind};
+use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;
 use crate::span::{Span, Spand};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LexErrorKind {
     InvalidChar(char),
     UnterminatedChar,

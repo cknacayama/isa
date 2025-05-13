@@ -2,10 +2,9 @@ use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
-use super::ast::Path;
+use super::ast::{Ident, Path};
 use super::ctx::Ctx;
 use super::error::Uninferable;
-use super::token::Ident;
 use super::types::{Ty, TyId};
 use crate::span::Span;
 

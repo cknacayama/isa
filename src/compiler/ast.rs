@@ -2,10 +2,50 @@ use std::fmt::{Debug, Display};
 
 use super::super::span::Span;
 use super::infer::{ClassConstraintSet, Substitute};
-use super::token::{Ident, TokenKind};
+use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::Symbol;
 use crate::separated_fmt;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Ident {
+    pub ident: Symbol,
+    pub span:  Span,
+}
+
+impl Default for Ident {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
+impl Ident {
+    pub const fn new(ident: Symbol, span: Span) -> Self {
+        Self { ident, span }
+    }
+
+    pub const fn zero() -> Self {
+        Self {
+            ident: Symbol::zero(),
+            span:  Span::zero(),
+        }
+    }
+}
+
+impl Eq for Ident {
+}
+
+impl PartialEq for Ident {
+    fn eq(&self, other: &Self) -> bool {
+        self.ident == other.ident
+    }
+}
+
+impl std::hash::Hash for Ident {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.ident.hash(state);
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct Path {
@@ -110,8 +150,7 @@ impl Path {
 
 macro_rules! mod_path {
     ($seg:ident) => {{
-        use crate::compiler::ast::Path;
-        use crate::compiler::token::Ident;
+        use crate::compiler::ast::{Ident, Path};
         use crate::global::Symbol;
         use crate::span::Span;
         Path::from_one(Ident {
@@ -120,8 +159,7 @@ macro_rules! mod_path {
         })
     }};
     ($fst:ident::$snd:ident) => {{
-        use crate::compiler::ast::Path;
-        use crate::compiler::token::Ident;
+        use crate::compiler::ast::{Ident, Path};
         use crate::global::Symbol;
         use crate::span::Span;
         Path::from_two(

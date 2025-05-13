@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 use std::fmt::{Debug, Display, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use codespan_reporting::diagnostic::Diagnostic;
@@ -18,12 +18,12 @@ use crate::compiler::lexer::Lexer;
 use crate::compiler::parser::Parser;
 use crate::compiler::token::{Token, TokenKind};
 use crate::compiler::types::Ty;
-use crate::report::{Diagnosed, Report, report_collection};
+use crate::report::{Report, report_collection};
 use crate::separated_fmt;
 
 /// TODO: add more options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum Opt {
+pub enum Opt {
     Lex,
     Parse,
     Infer,
@@ -54,34 +54,26 @@ impl Opt {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct Config {
+    silence:    bool,
     opt:        Opt,
-    input_path: PathBuf,
-    bin_path:   PathBuf,
-    files:      FilesDatabase,
+    db:         FilesDatabase,
     max_errors: usize,
 }
 
 impl Config {
-    /// # Panics
-    ///
-    /// Will panic if any arguments are missing
-    /// Or if input file does not exist
     #[must_use]
     pub fn from_env(mut env: std::env::Args) -> Self {
-        let bin_path = PathBuf::from(
-            env.next()
-                .expect("Should have binary path as first argument"),
-        );
+        env.next()
+            .expect("Should have binary path as first argument");
 
         let input_path = PathBuf::from(
             env.next()
                 .expect("Should have input path as second argument"),
         );
 
-        let mut files = FilesDatabase::default();
+        let mut db = FilesDatabase::default();
 
         let input = std::fs::read_to_string(&input_path).expect("Should have valid path as input");
         let input_file_name = input_path
@@ -89,8 +81,8 @@ impl Config {
             .and_then(OsStr::to_str)
             .unwrap_or_default()
             .to_owned();
-        Self::add_prelude(&mut files);
-        files.add(input_file_name, input);
+        db.add_prelude();
+        db.add(input_file_name, input);
 
         let opt = env
             .next()
@@ -104,30 +96,25 @@ impl Config {
             .unwrap_or_default();
 
         Self {
+            silence: false,
             opt,
-            input_path,
-            bin_path,
-            files,
+            db,
             max_errors: 4,
         }
     }
 
-    fn add_prelude(files: &mut FilesDatabase) {
-        use std::fs;
+    #[must_use]
+    pub fn from_dir(opt: Opt, dir: impl AsRef<Path>) -> Self {
+        let mut db = FilesDatabase::default();
 
-        let dir =
-            fs::read_dir("stdlib").expect("Should have standard library in stdlib/ directory");
+        db.add_prelude();
+        db.add_dir(dir);
 
-        for file in dir
-            .map(|res| res.expect("Should be valid file"))
-            .filter(|file| file.file_type().as_ref().is_ok_and(fs::FileType::is_file))
-        {
-            let input = std::fs::read_to_string(file.path()).unwrap();
-            let name = file.file_name();
-            files.add(
-                name.into_string().expect("Should be valid unicode string"),
-                input,
-            );
+        Self {
+            silence: true,
+            opt,
+            db,
+            max_errors: 4,
         }
     }
 
@@ -136,6 +123,10 @@ impl Config {
         I: IntoIterator<Item = T>,
         T: Report,
     {
+        if self.silence {
+            return;
+        }
+
         let mut diagnostics = diagnostics.into_iter();
         let config = term::Config::default();
         let writer = StandardStream::stderr(ColorChoice::Auto);
@@ -145,7 +136,7 @@ impl Config {
         {
             let mut writer = writer.lock();
             for err in report_collection((&mut diagnostics).take(self.max_errors), ctx) {
-                let _ = term::emit(&mut writer, &config, &self.files, err.diagnostic());
+                let _ = term::emit(&mut writer, &config, &self.db, err.diagnostic());
                 files.insert(err.id());
                 error_count += 1;
             }
@@ -157,9 +148,7 @@ impl Config {
 
         let _ = separated_fmt(
             &mut message,
-            files
-                .into_iter()
-                .map(|id| self.files.get(id).unwrap().name()),
+            files.into_iter().map(|id| self.db.get(id).unwrap().name()),
             ", ",
             |file, msg| {
                 msg.push_str(file);
@@ -176,42 +165,18 @@ impl Config {
 
         let error = Diagnostic::error().with_message(message);
 
-        let _ = term::emit(&mut writer.lock(), &config, &self.files, &error);
+        let _ = term::emit(&mut writer.lock(), &config, &self.db, &error);
     }
 
-    fn lex(&self) -> Result<Vec<Vec<Token>>, Vec<LexError>> {
+    fn lex(&self) -> Result<Vec<Token>, Vec<LexError>> {
         let mut folded = Vec::new();
         let mut errs = Vec::new();
 
-        for (id, file) in self.files.files.iter().enumerate() {
-            let lexer = Lexer::new(id, file.source());
-            match lexer.lex_all() {
-                Ok(ok) => folded.push(ok),
-                Err(err) => errs.extend(err),
-            }
-        }
-
-        if errs.is_empty() {
-            Ok(folded)
-        } else {
-            Err(errs)
-        }
-    }
-
-    fn parse(tokens: Vec<Vec<Token>>) -> Result<Vec<Module<()>>, Vec<ParseError>> {
-        let mut parser = Parser::new();
-
-        let mut folded = Vec::new();
-        let mut errs = Vec::new();
-
-        for tokens in tokens {
-            parser.restart(tokens);
-            match parser.parse_all() {
-                Ok(ok) => {
-                    folded.extend(ok);
-                }
-                Err(err) => {
-                    errs.extend(err);
+        for (id, file) in self.db.files.iter().enumerate() {
+            for item in Lexer::new(id, file.source()) {
+                match item {
+                    Ok(ok) => folded.push(ok),
+                    Err(err) => errs.push(err),
                 }
             }
         }
@@ -221,6 +186,10 @@ impl Config {
         } else {
             Err(errs)
         }
+    }
+
+    fn parse(tokens: Vec<Token>) -> Result<Vec<Module<()>>, Vec<ParseError>> {
+        Parser::new(tokens).parse_all()
     }
 
     fn exhaust(modules: &[Module<Ty>], ctx: &Ctx) -> Result<(), Vec<MatchNonExhaustive>> {
@@ -244,13 +213,11 @@ impl Config {
 
         let instants = instants.with_lex();
         if self.opt.is_lex() {
-            let tokens = Tokens::new(
-                tokens
-                    .into_iter()
-                    .flat_map(|tks| tks.into_iter().map(|tk| tk.data)),
-            );
-            println!("{tokens}");
-            print!("{}", instants.finish());
+            let tokens = Tokens::new(tokens.into_iter().map(|tk| tk.data));
+            if !self.silence {
+                println!("{tokens}");
+                print!("{}", instants.finish());
+            }
             return Ok(());
         }
 
@@ -258,8 +225,10 @@ impl Config {
 
         let instants = instants.with_parse();
         if self.opt.is_parse() {
-            println!("parsed {} modules", modules.len());
-            print!("{}", instants.finish());
+            if !self.silence {
+                println!("parsed {} modules", modules.len());
+                print!("{}", instants.finish());
+            }
             return Ok(());
         }
 
@@ -274,8 +243,10 @@ impl Config {
             instants = instants.with_exhaust();
         }
 
-        println!("{}", checker.ctx());
-        print!("{}", instants.finish());
+        if !self.silence {
+            println!("{}", checker.ctx());
+            print!("{}", instants.finish());
+        }
 
         Ok(())
     }
@@ -390,6 +361,40 @@ impl FilesDatabase {
         let cur = self.files.len();
         self.files.push(SimpleFile::new(name, source));
         cur
+    }
+
+    fn add_prelude(&mut self) {
+        self.add_dir("stdlib");
+    }
+
+    fn add_dir(&mut self, dir: impl AsRef<Path>) {
+        use std::fs;
+
+        let dir = fs::read_dir(dir).expect("Should be valid directory");
+
+        for file in dir
+            .map(|res| res.expect("Should be valid file"))
+            .filter(|file| file.file_type().as_ref().is_ok_and(fs::FileType::is_file))
+        {
+            let input = fs::read_to_string(file.path()).unwrap();
+            let name = file.file_name();
+            self.add(
+                name.into_string().expect("Should be valid unicode string"),
+                input,
+            );
+        }
+    }
+
+    fn add_files<'a, I>(&mut self, files: I)
+    where
+        I: IntoIterator<Item = &'a str>,
+    {
+        use std::fs;
+
+        for file in files {
+            let input = fs::read_to_string(file).expect("Should be valid file path");
+            self.add(file.to_owned(), input);
+        }
     }
 
     fn get(&self, id: usize) -> Result<&SimpleFile<String, String>, files::Error> {

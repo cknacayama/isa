@@ -23,6 +23,10 @@ impl Symbol {
     pub fn intern(symbol: &str) -> Self {
         Env::get(|e| e.symbols.intern(symbol))
     }
+
+    pub fn get(self) -> &'static str {
+        Env::get(|e| e.symbols.get(self).unwrap())
+    }
 }
 
 impl std::fmt::Debug for Symbol {
@@ -80,7 +84,7 @@ impl Env {
         Self::default()
     }
 
-    fn get<T>(f: impl FnOnce(&mut Env) -> T) -> T {
+    fn get<T>(f: impl FnOnce(&mut Self) -> T) -> T {
         GLOBAL_DATA.with_borrow_mut(f)
     }
 }

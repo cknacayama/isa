@@ -1,9 +1,8 @@
 use std::rc::Rc;
 
-use super::ast::{Path, mod_path};
+use super::ast::{Ident, Path, mod_path};
 use super::ctx::Generator;
 use super::infer::{Subs, Substitute};
-use super::token::Ident;
 use crate::span::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -1,47 +1,7 @@
 use std::fmt::Display;
 
 use crate::global::Symbol;
-use crate::span::{Span, Spand};
-
-#[derive(Clone, Copy, Debug)]
-pub struct Ident {
-    pub ident: Symbol,
-    pub span:  Span,
-}
-
-impl Default for Ident {
-    fn default() -> Self {
-        Self::zero()
-    }
-}
-
-impl Ident {
-    pub const fn new(ident: Symbol, span: Span) -> Self {
-        Self { ident, span }
-    }
-
-    pub const fn zero() -> Self {
-        Self {
-            ident: Symbol::zero(),
-            span:  Span::zero(),
-        }
-    }
-}
-
-impl Eq for Ident {
-}
-
-impl PartialEq for Ident {
-    fn eq(&self, other: &Self) -> bool {
-        self.ident == other.ident
-    }
-}
-
-impl std::hash::Hash for Ident {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.ident.hash(state);
-    }
-}
+use crate::span::Spand;
 
 pub type Token = Spand<TokenKind>;
 
@@ -174,6 +134,14 @@ impl TokenKind {
             "->" => Self::Arrow,
             "=>" => Self::Rocket,
             _ => Self::Operator(Symbol::intern(op)),
+        }
+    }
+
+    pub const fn as_string(&self) -> Option<Symbol> {
+        if let Self::String(v) = self {
+            Some(*v)
+        } else {
+            None
         }
     }
 

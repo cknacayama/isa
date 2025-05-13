@@ -5,10 +5,11 @@ use std::{fmt, vec};
 
 use rustc_hash::FxHashMap;
 
-use super::ast::{Constructor, Fixity, Import, ImportClause, ImportWildcard, Path, mod_path};
+use super::ast::{
+    Constructor, Fixity, Ident, Import, ImportClause, ImportWildcard, Path, mod_path,
+};
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
-use super::token::Ident;
 use super::types::{Ty, TyId};
 use crate::global::Symbol;
 use crate::separated_fmt;

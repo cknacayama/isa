@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
 use super::ast::{
-    Constructor, Expr, ExprKind, Fixity, Import, ImportClause, ImportWildcard, LetBind, ListPat,
-    MatchArm, Module, Operator, Param, Pat, PatKind, Path, RangePat, Stmt, StmtKind, Val,
+    Constructor, Expr, ExprKind, Fixity, Ident, Import, ImportClause, ImportWildcard, LetBind,
+    ListPat, MatchArm, Module, Operator, Param, Pat, PatKind, Path, RangePat, Stmt, StmtKind, Val,
 };
 use super::error::{ParseError, ParseErrorKind};
 use super::infer::{ClassConstraint, ClassConstraintSet};
-use super::token::{Ident, Token, TokenKind};
+use super::token::{Token, TokenKind};
 use super::types::Ty;
 use crate::global::Symbol;
 use crate::span::{Span, Spand};
@@ -22,21 +22,16 @@ pub struct Parser {
 
 impl Parser {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(tokens: Vec<Token>) -> Self {
         Self {
-            tokens: Vec::new(),
-            cur:    0,
-            empty:  Rc::new([]),
+            tokens,
+            cur: 0,
+            empty: Rc::new([]),
         }
     }
 
     fn last_span(&self) -> Span {
         self.tokens.last().map(|tk| tk.span).unwrap_or_default()
-    }
-
-    pub fn restart(&mut self, tokens: Vec<Token>) {
-        self.tokens = tokens;
-        self.cur = 0;
     }
 
     fn check(&self, t: TokenKind) -> bool {
@@ -250,7 +245,7 @@ impl Parser {
         Ok(Module::new(no_prelude, name, imports, stmts, span))
     }
 
-    pub fn parse_all(&mut self) -> Result<Vec<Module<()>>, Vec<ParseError>> {
+    pub fn parse_all(self) -> Result<Vec<Module<()>>, Vec<ParseError>> {
         let mut folded = Vec::new();
         let mut errs = Vec::new();
 

@@ -3,8 +3,8 @@ use std::rc::Rc;
 use rustc_hash::FxHashMap;
 
 use super::ast::{
-    Constructor, Expr, ExprKind, Fixity, LetBind, ListPat, MatchArm, Module, Operator, Param, Pat,
-    PatKind, Path, Stmt, StmtKind, Val,
+    Constructor, Expr, ExprKind, Fixity, Ident, LetBind, ListPat, MatchArm, Module, Operator,
+    Param, Pat, PatKind, Path, Stmt, StmtKind, Val,
 };
 use super::ctx::{
     AliasData, ClassData, Ctx, Generator, IdGenerator, InstanceData, MemberData, VarData,
@@ -16,7 +16,6 @@ use super::infer::{
     ClassConstraint, ClassConstraintSet as Set, Constraint, EqConstraint, EqConstraintSet, Subs,
     Substitute,
 };
-use super::token::Ident;
 use super::types::{Ty, TyId};
 use crate::compiler::ctx::OperatorData;
 use crate::global::Symbol;
@@ -57,11 +56,6 @@ impl Checker {
     #[must_use]
     pub const fn ctx(&self) -> &Ctx {
         &self.ctx
-    }
-
-    #[must_use]
-    pub fn take_ctx(self) -> Ctx {
-        self.ctx
     }
 
     const fn subs_count(&self) -> usize {
