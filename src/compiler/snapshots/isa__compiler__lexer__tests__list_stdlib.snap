@@ -1,0 +1,3664 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer ::\nnew(0,\nr#\"\nmodule @list with {\n    ops::_,\n    monad::_,\n    option::_,\n    prelude::panic\n}\n\ntype List a = Nil | Cons a (List a);\n\nval {a} at: List a -> int -> Option a;\nlet at list idx = match (list, idx) with\n    ([], _) | (_, ..0) -> None,\n    ([a]_, 0) -> Some a,\n    ([_]list, idx) -> at list $ idx - 1,\n;\n\nval {a} lenght: List a -> int;\nlet lenght a = match a with\n    [] -> 0,\n    [_]rest -> 1 + lenght rest\n;\n\nval {a} head: List a -> Option a;\nlet head a = match a with\n    [] -> None,\n    [a]_ -> Some a,\n;\n\nval {a} last: List a -> Option a;\nlet last a = match a with\n    [] -> None,\n    [a] -> Some a,\n    [_]rest -> last rest,\n;\n\nval {a} tail: List a -> List a;\nlet tail a = match a with\n    [] -> [],\n    [_]rest -> rest,\n;\n\ninstance List: Functor =\n    let fmap f a = match a with\n        [] -> [],\n        [a]rest -> f a & (f <$> rest),\n;\n\ninstance List: Applicative =\n    let pure a = [a],\n    let (<*>) f a = match (f,a) with\n        ([f]restf, [a]resta) -> f a & (restf <*> resta),\n        _ -> [],\n;\n\ninstance List: Monad =\n    let (>>=) a f = match a with\n        [] -> [],\n        [a]rest -> f a ++ (rest >>= f),\n;\n\ninstance {a: Eq} List a: Eq =\n    let (==) a b = match (a,b) with\n        ([], []) -> true,\n        ([a]resta, [b]restb) -> a == b && resta == restb,\n        _ -> false,\n;\n\ninfixr 5 {a} (++): List a -> List a -> List a;\nlet (++) a b = match (a,b) with\n    (a, []) -> a,\n    (a, [b]restb) -> a ++ b & restb,\n;\n\ninfixr 5 {a} (&): a -> List a -> List a;\nlet (&) = List::Cons;\n\n// partial function (panics on out of bounds index)\ninfixl 9 {a} (!!): List a -> int -> a;\nlet (!!) list idx = unwrap $ at list idx;\n\"#).collect\n:: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: KwModule,
+            span: SpanData { file_id: 0, start: 1, end: 7 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: At,
+            span: SpanData { file_id: 0, start: 8, end: 9 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "list",
+            ),
+            span: SpanData { file_id: 0, start: 9, end: 13 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 14, end: 18 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBrace,
+            span: SpanData { file_id: 0, start: 19, end: 20 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "ops",
+            ),
+            span: SpanData { file_id: 0, start: 25, end: 28 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: ColonColon,
+            span: SpanData { file_id: 0, start: 28, end: 30 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 30, end: 31 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 31, end: 32 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "monad",
+            ),
+            span: SpanData { file_id: 0, start: 37, end: 42 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: ColonColon,
+            span: SpanData { file_id: 0, start: 42, end: 44 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 44, end: 45 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 45, end: 46 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "option",
+            ),
+            span: SpanData { file_id: 0, start: 51, end: 57 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: ColonColon,
+            span: SpanData { file_id: 0, start: 57, end: 59 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 59, end: 60 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 60, end: 61 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "prelude",
+            ),
+            span: SpanData { file_id: 0, start: 66, end: 73 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: ColonColon,
+            span: SpanData { file_id: 0, start: 73, end: 75 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "panic",
+            ),
+            span: SpanData { file_id: 0, start: 75, end: 80 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBrace,
+            span: SpanData { file_id: 0, start: 81, end: 82 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwType,
+            span: SpanData { file_id: 0, start: 84, end: 88 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 89, end: 93 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 94, end: 95 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 96, end: 97 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Nil",
+            ),
+            span: SpanData { file_id: 0, start: 98, end: 101 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Bar,
+            span: SpanData { file_id: 0, start: 102, end: 103 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Cons",
+            ),
+            span: SpanData { file_id: 0, start: 104, end: 108 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 109, end: 110 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 111, end: 112 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 112, end: 116 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 117, end: 118 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 118, end: 119 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 119, end: 120 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwVal,
+            span: SpanData { file_id: 0, start: 122, end: 125 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBrace,
+            span: SpanData { file_id: 0, start: 126, end: 127 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 127, end: 128 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBrace,
+            span: SpanData { file_id: 0, start: 128, end: 129 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "at",
+            ),
+            span: SpanData { file_id: 0, start: 130, end: 132 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 132, end: 133 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 134, end: 138 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 139, end: 140 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 141, end: 143 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwInt,
+            span: SpanData { file_id: 0, start: 144, end: 147 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 148, end: 150 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Option",
+            ),
+            span: SpanData { file_id: 0, start: 151, end: 157 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 158, end: 159 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 159, end: 160 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 161, end: 164 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "at",
+            ),
+            span: SpanData { file_id: 0, start: 165, end: 167 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "list",
+            ),
+            span: SpanData { file_id: 0, start: 168, end: 172 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "idx",
+            ),
+            span: SpanData { file_id: 0, start: 173, end: 176 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 177, end: 178 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 179, end: 184 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 185, end: 186 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "list",
+            ),
+            span: SpanData { file_id: 0, start: 186, end: 190 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 190, end: 191 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "idx",
+            ),
+            span: SpanData { file_id: 0, start: 192, end: 195 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 195, end: 196 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 197, end: 201 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 206, end: 207 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 207, end: 208 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 208, end: 209 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 209, end: 210 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 211, end: 212 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 212, end: 213 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Bar,
+            span: SpanData { file_id: 0, start: 214, end: 215 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 216, end: 217 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 217, end: 218 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 218, end: 219 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: DotDot,
+            span: SpanData { file_id: 0, start: 220, end: 222 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                0,
+            ),
+            span: SpanData { file_id: 0, start: 222, end: 223 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 223, end: 224 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 225, end: 227 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "None",
+            ),
+            span: SpanData { file_id: 0, start: 228, end: 232 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 232, end: 233 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 238, end: 239 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 239, end: 240 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 240, end: 241 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 241, end: 242 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 242, end: 243 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 243, end: 244 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                0,
+            ),
+            span: SpanData { file_id: 0, start: 245, end: 246 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 246, end: 247 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 248, end: 250 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Some",
+            ),
+            span: SpanData { file_id: 0, start: 251, end: 255 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 256, end: 257 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 257, end: 258 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 263, end: 264 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 264, end: 265 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 265, end: 266 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 266, end: 267 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "list",
+            ),
+            span: SpanData { file_id: 0, start: 267, end: 271 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 271, end: 272 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "idx",
+            ),
+            span: SpanData { file_id: 0, start: 273, end: 276 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 276, end: 277 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 278, end: 280 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "at",
+            ),
+            span: SpanData { file_id: 0, start: 281, end: 283 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "list",
+            ),
+            span: SpanData { file_id: 0, start: 284, end: 288 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "$",
+            ),
+            span: SpanData { file_id: 0, start: 289, end: 290 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "idx",
+            ),
+            span: SpanData { file_id: 0, start: 291, end: 294 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "-",
+            ),
+            span: SpanData { file_id: 0, start: 295, end: 296 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                1,
+            ),
+            span: SpanData { file_id: 0, start: 297, end: 298 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 298, end: 299 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 300, end: 301 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwVal,
+            span: SpanData { file_id: 0, start: 303, end: 306 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBrace,
+            span: SpanData { file_id: 0, start: 307, end: 308 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 308, end: 309 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBrace,
+            span: SpanData { file_id: 0, start: 309, end: 310 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "lenght",
+            ),
+            span: SpanData { file_id: 0, start: 311, end: 317 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 317, end: 318 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 319, end: 323 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 324, end: 325 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 326, end: 328 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwInt,
+            span: SpanData { file_id: 0, start: 329, end: 332 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 332, end: 333 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 334, end: 337 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "lenght",
+            ),
+            span: SpanData { file_id: 0, start: 338, end: 344 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 345, end: 346 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 347, end: 348 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 349, end: 354 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 355, end: 356 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 357, end: 361 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 366, end: 367 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 367, end: 368 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 369, end: 371 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                0,
+            ),
+            span: SpanData { file_id: 0, start: 372, end: 373 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 373, end: 374 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 379, end: 380 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 380, end: 381 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 381, end: 382 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "rest",
+            ),
+            span: SpanData { file_id: 0, start: 382, end: 386 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 387, end: 389 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                1,
+            ),
+            span: SpanData { file_id: 0, start: 390, end: 391 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "+",
+            ),
+            span: SpanData { file_id: 0, start: 392, end: 393 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "lenght",
+            ),
+            span: SpanData { file_id: 0, start: 394, end: 400 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "rest",
+            ),
+            span: SpanData { file_id: 0, start: 401, end: 405 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 406, end: 407 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwVal,
+            span: SpanData { file_id: 0, start: 409, end: 412 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBrace,
+            span: SpanData { file_id: 0, start: 413, end: 414 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 414, end: 415 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBrace,
+            span: SpanData { file_id: 0, start: 415, end: 416 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "head",
+            ),
+            span: SpanData { file_id: 0, start: 417, end: 421 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 421, end: 422 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 423, end: 427 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 428, end: 429 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 430, end: 432 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Option",
+            ),
+            span: SpanData { file_id: 0, start: 433, end: 439 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 440, end: 441 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 441, end: 442 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 443, end: 446 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "head",
+            ),
+            span: SpanData { file_id: 0, start: 447, end: 451 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 452, end: 453 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 454, end: 455 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 456, end: 461 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 462, end: 463 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 464, end: 468 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 473, end: 474 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 474, end: 475 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 476, end: 478 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "None",
+            ),
+            span: SpanData { file_id: 0, start: 479, end: 483 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 483, end: 484 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 489, end: 490 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 490, end: 491 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 491, end: 492 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 492, end: 493 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 494, end: 496 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Some",
+            ),
+            span: SpanData { file_id: 0, start: 497, end: 501 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 502, end: 503 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 503, end: 504 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 505, end: 506 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwVal,
+            span: SpanData { file_id: 0, start: 508, end: 511 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBrace,
+            span: SpanData { file_id: 0, start: 512, end: 513 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 513, end: 514 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBrace,
+            span: SpanData { file_id: 0, start: 514, end: 515 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "last",
+            ),
+            span: SpanData { file_id: 0, start: 516, end: 520 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 520, end: 521 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 522, end: 526 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 527, end: 528 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 529, end: 531 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Option",
+            ),
+            span: SpanData { file_id: 0, start: 532, end: 538 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 539, end: 540 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 540, end: 541 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 542, end: 545 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "last",
+            ),
+            span: SpanData { file_id: 0, start: 546, end: 550 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 551, end: 552 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 553, end: 554 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 555, end: 560 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 561, end: 562 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 563, end: 567 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 572, end: 573 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 573, end: 574 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 575, end: 577 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "None",
+            ),
+            span: SpanData { file_id: 0, start: 578, end: 582 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 582, end: 583 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 588, end: 589 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 589, end: 590 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 590, end: 591 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 592, end: 594 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Some",
+            ),
+            span: SpanData { file_id: 0, start: 595, end: 599 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 600, end: 601 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 601, end: 602 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 607, end: 608 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 608, end: 609 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 609, end: 610 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "rest",
+            ),
+            span: SpanData { file_id: 0, start: 610, end: 614 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 615, end: 617 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "last",
+            ),
+            span: SpanData { file_id: 0, start: 618, end: 622 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "rest",
+            ),
+            span: SpanData { file_id: 0, start: 623, end: 627 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 627, end: 628 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 629, end: 630 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwVal,
+            span: SpanData { file_id: 0, start: 632, end: 635 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBrace,
+            span: SpanData { file_id: 0, start: 636, end: 637 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 637, end: 638 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBrace,
+            span: SpanData { file_id: 0, start: 638, end: 639 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "tail",
+            ),
+            span: SpanData { file_id: 0, start: 640, end: 644 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 644, end: 645 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 646, end: 650 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 651, end: 652 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 653, end: 655 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 656, end: 660 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 661, end: 662 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 662, end: 663 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 664, end: 667 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "tail",
+            ),
+            span: SpanData { file_id: 0, start: 668, end: 672 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 673, end: 674 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 675, end: 676 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 677, end: 682 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 683, end: 684 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 685, end: 689 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 694, end: 695 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 695, end: 696 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 697, end: 699 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 700, end: 701 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 701, end: 702 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 702, end: 703 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 708, end: 709 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 709, end: 710 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 710, end: 711 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "rest",
+            ),
+            span: SpanData { file_id: 0, start: 711, end: 715 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 716, end: 718 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "rest",
+            ),
+            span: SpanData { file_id: 0, start: 719, end: 723 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 723, end: 724 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 725, end: 726 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwInstance,
+            span: SpanData { file_id: 0, start: 728, end: 736 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 737, end: 741 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 741, end: 742 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Functor",
+            ),
+            span: SpanData { file_id: 0, start: 743, end: 750 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 751, end: 752 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 757, end: 760 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "fmap",
+            ),
+            span: SpanData { file_id: 0, start: 761, end: 765 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "f",
+            ),
+            span: SpanData { file_id: 0, start: 766, end: 767 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 768, end: 769 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 770, end: 771 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 772, end: 777 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 778, end: 779 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 780, end: 784 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 793, end: 794 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 794, end: 795 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 796, end: 798 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 799, end: 800 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 800, end: 801 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 801, end: 802 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 811, end: 812 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 812, end: 813 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 813, end: 814 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "rest",
+            ),
+            span: SpanData { file_id: 0, start: 814, end: 818 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 819, end: 821 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "f",
+            ),
+            span: SpanData { file_id: 0, start: 822, end: 823 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 824, end: 825 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "&",
+            ),
+            span: SpanData { file_id: 0, start: 826, end: 827 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 828, end: 829 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "f",
+            ),
+            span: SpanData { file_id: 0, start: 829, end: 830 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "<$>",
+            ),
+            span: SpanData { file_id: 0, start: 831, end: 834 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "rest",
+            ),
+            span: SpanData { file_id: 0, start: 835, end: 839 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 839, end: 840 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 840, end: 841 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 842, end: 843 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwInstance,
+            span: SpanData { file_id: 0, start: 845, end: 853 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 854, end: 858 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 858, end: 859 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Applicative",
+            ),
+            span: SpanData { file_id: 0, start: 860, end: 871 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 872, end: 873 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 878, end: 881 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "pure",
+            ),
+            span: SpanData { file_id: 0, start: 882, end: 886 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 887, end: 888 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 889, end: 890 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 891, end: 892 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 892, end: 893 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 893, end: 894 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 894, end: 895 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 900, end: 903 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 904, end: 905 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "<*>",
+            ),
+            span: SpanData { file_id: 0, start: 905, end: 908 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 908, end: 909 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "f",
+            ),
+            span: SpanData { file_id: 0, start: 910, end: 911 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 912, end: 913 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 914, end: 915 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 916, end: 921 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 922, end: 923 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "f",
+            ),
+            span: SpanData { file_id: 0, start: 923, end: 924 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 924, end: 925 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 925, end: 926 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 926, end: 927 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 928, end: 932 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 941, end: 942 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 942, end: 943 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "f",
+            ),
+            span: SpanData { file_id: 0, start: 943, end: 944 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 944, end: 945 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "restf",
+            ),
+            span: SpanData { file_id: 0, start: 945, end: 950 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 950, end: 951 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 952, end: 953 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 953, end: 954 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 954, end: 955 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "resta",
+            ),
+            span: SpanData { file_id: 0, start: 955, end: 960 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 960, end: 961 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 962, end: 964 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "f",
+            ),
+            span: SpanData { file_id: 0, start: 965, end: 966 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 967, end: 968 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "&",
+            ),
+            span: SpanData { file_id: 0, start: 969, end: 970 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 971, end: 972 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "restf",
+            ),
+            span: SpanData { file_id: 0, start: 972, end: 977 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "<*>",
+            ),
+            span: SpanData { file_id: 0, start: 978, end: 981 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "resta",
+            ),
+            span: SpanData { file_id: 0, start: 982, end: 987 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 987, end: 988 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 988, end: 989 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 998, end: 999 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1000, end: 1002 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 1003, end: 1004 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 1004, end: 1005 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1005, end: 1006 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 1007, end: 1008 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwInstance,
+            span: SpanData { file_id: 0, start: 1010, end: 1018 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 1019, end: 1023 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 1023, end: 1024 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Monad",
+            ),
+            span: SpanData { file_id: 0, start: 1025, end: 1030 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 1031, end: 1032 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 1037, end: 1040 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1041, end: 1042 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                ">>=",
+            ),
+            span: SpanData { file_id: 0, start: 1042, end: 1045 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1045, end: 1046 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1047, end: 1048 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "f",
+            ),
+            span: SpanData { file_id: 0, start: 1049, end: 1050 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 1051, end: 1052 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 1053, end: 1058 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1059, end: 1060 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 1061, end: 1065 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 1074, end: 1075 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 1075, end: 1076 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1077, end: 1079 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 1080, end: 1081 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 1081, end: 1082 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1082, end: 1083 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 1092, end: 1093 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1093, end: 1094 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 1094, end: 1095 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "rest",
+            ),
+            span: SpanData { file_id: 0, start: 1095, end: 1099 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1100, end: 1102 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "f",
+            ),
+            span: SpanData { file_id: 0, start: 1103, end: 1104 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1105, end: 1106 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "++",
+            ),
+            span: SpanData { file_id: 0, start: 1107, end: 1109 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1110, end: 1111 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "rest",
+            ),
+            span: SpanData { file_id: 0, start: 1111, end: 1115 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                ">>=",
+            ),
+            span: SpanData { file_id: 0, start: 1116, end: 1119 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "f",
+            ),
+            span: SpanData { file_id: 0, start: 1120, end: 1121 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1121, end: 1122 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1122, end: 1123 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 1124, end: 1125 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwInstance,
+            span: SpanData { file_id: 0, start: 1127, end: 1135 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBrace,
+            span: SpanData { file_id: 0, start: 1136, end: 1137 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1137, end: 1138 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 1138, end: 1139 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Eq",
+            ),
+            span: SpanData { file_id: 0, start: 1140, end: 1142 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBrace,
+            span: SpanData { file_id: 0, start: 1142, end: 1143 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 1144, end: 1148 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1149, end: 1150 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 1150, end: 1151 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Eq",
+            ),
+            span: SpanData { file_id: 0, start: 1152, end: 1154 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 1155, end: 1156 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 1161, end: 1164 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1165, end: 1166 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "==",
+            ),
+            span: SpanData { file_id: 0, start: 1166, end: 1168 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1168, end: 1169 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1170, end: 1171 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 1172, end: 1173 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 1174, end: 1175 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 1176, end: 1181 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1182, end: 1183 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1183, end: 1184 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1184, end: 1185 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 1185, end: 1186 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1186, end: 1187 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 1188, end: 1192 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1201, end: 1202 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 1202, end: 1203 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 1203, end: 1204 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1204, end: 1205 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 1206, end: 1207 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 1207, end: 1208 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1208, end: 1209 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1210, end: 1212 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwTrue,
+            span: SpanData { file_id: 0, start: 1213, end: 1217 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1217, end: 1218 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1227, end: 1228 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 1228, end: 1229 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1229, end: 1230 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 1230, end: 1231 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "resta",
+            ),
+            span: SpanData { file_id: 0, start: 1231, end: 1236 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1236, end: 1237 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 1238, end: 1239 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 1239, end: 1240 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 1240, end: 1241 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "restb",
+            ),
+            span: SpanData { file_id: 0, start: 1241, end: 1246 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1246, end: 1247 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1248, end: 1250 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1251, end: 1252 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "==",
+            ),
+            span: SpanData { file_id: 0, start: 1253, end: 1255 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 1256, end: 1257 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "&&",
+            ),
+            span: SpanData { file_id: 0, start: 1258, end: 1260 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "resta",
+            ),
+            span: SpanData { file_id: 0, start: 1261, end: 1266 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "==",
+            ),
+            span: SpanData { file_id: 0, start: 1267, end: 1269 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "restb",
+            ),
+            span: SpanData { file_id: 0, start: 1270, end: 1275 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1275, end: 1276 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 1285, end: 1286 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1287, end: 1289 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwFalse,
+            span: SpanData { file_id: 0, start: 1290, end: 1295 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1295, end: 1296 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 1297, end: 1298 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwInfixr,
+            span: SpanData { file_id: 0, start: 1300, end: 1306 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                5,
+            ),
+            span: SpanData { file_id: 0, start: 1307, end: 1308 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBrace,
+            span: SpanData { file_id: 0, start: 1309, end: 1310 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1310, end: 1311 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBrace,
+            span: SpanData { file_id: 0, start: 1311, end: 1312 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1313, end: 1314 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "++",
+            ),
+            span: SpanData { file_id: 0, start: 1314, end: 1316 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1316, end: 1317 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 1317, end: 1318 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 1319, end: 1323 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1324, end: 1325 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1326, end: 1328 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 1329, end: 1333 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1334, end: 1335 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1336, end: 1338 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 1339, end: 1343 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1344, end: 1345 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 1345, end: 1346 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 1347, end: 1350 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1351, end: 1352 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "++",
+            ),
+            span: SpanData { file_id: 0, start: 1352, end: 1354 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1354, end: 1355 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1356, end: 1357 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 1358, end: 1359 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 1360, end: 1361 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 1362, end: 1367 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1368, end: 1369 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1369, end: 1370 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1370, end: 1371 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 1371, end: 1372 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1372, end: 1373 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 1374, end: 1378 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1383, end: 1384 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1384, end: 1385 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1385, end: 1386 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 1387, end: 1388 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 1388, end: 1389 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1389, end: 1390 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1391, end: 1393 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1394, end: 1395 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1395, end: 1396 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1401, end: 1402 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1402, end: 1403 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1403, end: 1404 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBracket,
+            span: SpanData { file_id: 0, start: 1405, end: 1406 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 1406, end: 1407 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBracket,
+            span: SpanData { file_id: 0, start: 1407, end: 1408 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "restb",
+            ),
+            span: SpanData { file_id: 0, start: 1408, end: 1413 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1413, end: 1414 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1415, end: 1417 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1418, end: 1419 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "++",
+            ),
+            span: SpanData { file_id: 0, start: 1420, end: 1422 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 1423, end: 1424 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "&",
+            ),
+            span: SpanData { file_id: 0, start: 1425, end: 1426 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "restb",
+            ),
+            span: SpanData { file_id: 0, start: 1427, end: 1432 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 1432, end: 1433 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 1434, end: 1435 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwInfixr,
+            span: SpanData { file_id: 0, start: 1437, end: 1443 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                5,
+            ),
+            span: SpanData { file_id: 0, start: 1444, end: 1445 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBrace,
+            span: SpanData { file_id: 0, start: 1446, end: 1447 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1447, end: 1448 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBrace,
+            span: SpanData { file_id: 0, start: 1448, end: 1449 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1450, end: 1451 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "&",
+            ),
+            span: SpanData { file_id: 0, start: 1451, end: 1452 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1452, end: 1453 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 1453, end: 1454 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1455, end: 1456 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1457, end: 1459 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 1460, end: 1464 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1465, end: 1466 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1467, end: 1469 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 1470, end: 1474 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1475, end: 1476 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 1476, end: 1477 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 1478, end: 1481 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1482, end: 1483 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "&",
+            ),
+            span: SpanData { file_id: 0, start: 1483, end: 1484 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1484, end: 1485 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 1486, end: 1487 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 1488, end: 1492 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: ColonColon,
+            span: SpanData { file_id: 0, start: 1492, end: 1494 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "Cons",
+            ),
+            span: SpanData { file_id: 0, start: 1494, end: 1498 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 1498, end: 1499 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwInfixl,
+            span: SpanData { file_id: 0, start: 1553, end: 1559 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                9,
+            ),
+            span: SpanData { file_id: 0, start: 1560, end: 1561 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LBrace,
+            span: SpanData { file_id: 0, start: 1562, end: 1563 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1563, end: 1564 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RBrace,
+            span: SpanData { file_id: 0, start: 1564, end: 1565 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1566, end: 1567 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "!!",
+            ),
+            span: SpanData { file_id: 0, start: 1567, end: 1569 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1569, end: 1570 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Colon,
+            span: SpanData { file_id: 0, start: 1570, end: 1571 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "List",
+            ),
+            span: SpanData { file_id: 0, start: 1572, end: 1576 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1577, end: 1578 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1579, end: 1581 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwInt,
+            span: SpanData { file_id: 0, start: 1582, end: 1585 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 1586, end: 1588 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 1589, end: 1590 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 1590, end: 1591 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 1592, end: 1595 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 1596, end: 1597 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "!!",
+            ),
+            span: SpanData { file_id: 0, start: 1597, end: 1599 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 1599, end: 1600 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "list",
+            ),
+            span: SpanData { file_id: 0, start: 1601, end: 1605 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "idx",
+            ),
+            span: SpanData { file_id: 0, start: 1606, end: 1609 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 1610, end: 1611 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "unwrap",
+            ),
+            span: SpanData { file_id: 0, start: 1612, end: 1618 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "$",
+            ),
+            span: SpanData { file_id: 0, start: 1619, end: 1620 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "at",
+            ),
+            span: SpanData { file_id: 0, start: 1621, end: 1623 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "list",
+            ),
+            span: SpanData { file_id: 0, start: 1624, end: 1628 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "idx",
+            ),
+            span: SpanData { file_id: 0, start: 1629, end: 1632 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 1632, end: 1633 },
+        },
+    ),
+]

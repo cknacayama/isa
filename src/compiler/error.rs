@@ -7,8 +7,8 @@ use super::exhaust::pat::WitnessPat;
 use super::infer::{Constraint, Subs};
 use super::token::TokenKind;
 use super::types::Ty;
-use crate::global::Symbol;
-use crate::span::{Span, Spand};
+use crate::global::{Span, Symbol};
+use crate::span::Spand;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LexErrorKind {

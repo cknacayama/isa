@@ -1,0 +1,14 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \"0120\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: Integer(
+                120,
+            ),
+            span: SpanData { file_id: 0, start: 0, end: 4 },
+        },
+    ),
+)

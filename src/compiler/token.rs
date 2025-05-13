@@ -5,7 +5,7 @@ use crate::span::Spand;
 
 pub type Token = Spand<TokenKind>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind {
     Underscore,
 
@@ -72,15 +72,6 @@ impl std::hash::Hash for TokenKind {
     }
 }
 
-impl PartialEq for TokenKind {
-    fn eq(&self, other: &Self) -> bool {
-        core::mem::discriminant(self) == core::mem::discriminant(other)
-    }
-}
-
-impl Eq for TokenKind {
-}
-
 impl TokenKind {
     #[must_use]
     pub fn keyword(s: &str) -> Self {
@@ -137,14 +128,6 @@ impl TokenKind {
         }
     }
 
-    pub const fn as_string(&self) -> Option<Symbol> {
-        if let Self::String(v) = self {
-            Some(*v)
-        } else {
-            None
-        }
-    }
-
     pub const fn as_operator(&self) -> Option<Symbol> {
         if let Self::Operator(v) = self {
             Some(*v)
@@ -159,36 +142,6 @@ impl TokenKind {
         } else {
             None
         }
-    }
-
-    pub const fn is_keyword(&self) -> bool {
-        matches!(
-            self,
-            Self::KwTrue
-                | Self::KwFalse
-                | Self::KwType
-                | Self::KwAlias
-                | Self::KwLet
-                | Self::KwVal
-                | Self::KwIn
-                | Self::KwModule
-                | Self::KwClass
-                | Self::KwInstance
-                | Self::KwInfix
-                | Self::KwInfixl
-                | Self::KwInfixr
-                | Self::KwPrefix
-                | Self::KwSelf
-                | Self::KwInt
-                | Self::KwBool
-                | Self::KwChar
-                | Self::KwReal
-                | Self::KwMatch
-                | Self::KwWith
-                | Self::KwIf
-                | Self::KwThen
-                | Self::KwElse
-        )
     }
 }
 

@@ -1,0 +1,13 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(r\"'a'\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Char(
+            97,
+        ),
+        span: SpanData { file_id: 0, start: 0, end: 3 },
+        ty: (),
+    },
+)

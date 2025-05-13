@@ -6,7 +6,7 @@ use super::ast::{Ident, Path};
 use super::ctx::Ctx;
 use super::error::Uninferable;
 use super::types::{Ty, TyId};
-use crate::span::Span;
+use crate::global::Span;
 
 #[derive(Debug, Clone)]
 pub struct Subs {

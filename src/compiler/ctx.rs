@@ -11,9 +11,8 @@ use super::ast::{
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::types::{Ty, TyId};
-use crate::global::Symbol;
+use crate::global::{Span, Symbol};
 use crate::separated_fmt;
-use crate::span::Span;
 
 #[derive(Debug, Clone)]
 pub struct VarData {

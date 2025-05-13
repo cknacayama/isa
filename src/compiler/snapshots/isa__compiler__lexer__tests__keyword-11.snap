@@ -1,0 +1,12 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \"real\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: KwReal,
+            span: SpanData { file_id: 0, start: 0, end: 4 },
+        },
+    ),
+)

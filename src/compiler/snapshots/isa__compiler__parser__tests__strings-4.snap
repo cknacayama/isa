@@ -1,0 +1,13 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(r#\"\"ba5\\t\"\"#).parse_expr()"
+---
+Ok(
+    Expr {
+        kind: String(
+            "ba5\t",
+        ),
+        span: SpanData { file_id: 0, start: 0, end: 7 },
+        ty: (),
+    },
+)

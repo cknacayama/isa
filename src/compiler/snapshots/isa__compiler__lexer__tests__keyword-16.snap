@@ -1,0 +1,12 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \"infix\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: KwInfix,
+            span: SpanData { file_id: 0, start: 0, end: 5 },
+        },
+    ),
+)

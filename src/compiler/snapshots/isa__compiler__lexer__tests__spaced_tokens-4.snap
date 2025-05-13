@@ -1,0 +1,5 @@
+---
+source: src/compiler/lexer.rs
+expression: lexer.next()
+---
+None

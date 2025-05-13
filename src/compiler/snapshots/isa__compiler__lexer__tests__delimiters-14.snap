@@ -1,0 +1,12 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \",\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 0, end: 1 },
+        },
+    ),
+)

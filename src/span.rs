@@ -1,6 +1,8 @@
 use std::error::Error;
 use std::fmt::{Debug, Display};
 
+use crate::global::Span;
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SpanData {
     file_id: usize,
@@ -42,38 +44,7 @@ impl SpanData {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Span(u32);
-
-impl Default for Span {
-    fn default() -> Self {
-        Self::zero()
-    }
-}
-
-impl Span {
-    #[must_use]
-    pub const fn new(idx: u32) -> Self {
-        Self(idx)
-    }
-
-    #[must_use]
-    pub const fn index(self) -> usize {
-        self.0 as usize
-    }
-
-    pub const fn zero() -> Self {
-        Self(0)
-    }
-}
-
-impl Display for SpanData {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}..{}", self.start, self.end)
-    }
-}
-
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct Spand<T> {
     pub data: T,
     pub span: Span,
@@ -85,12 +56,6 @@ impl<T: Eq> Eq for Spand<T> {
 impl<T: PartialEq> PartialEq for Spand<T> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
-    }
-}
-
-impl<T: Debug> Debug for Spand<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.data.fmt(f)
     }
 }
 

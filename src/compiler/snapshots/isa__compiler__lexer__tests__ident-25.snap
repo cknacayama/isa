@@ -1,0 +1,14 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \"self\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: Ident(
+                "self",
+            ),
+            span: SpanData { file_id: 0, start: 0, end: 4 },
+        },
+    ),
+)

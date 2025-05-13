@@ -1,0 +1,14 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, r\"'\\z'\").next()"
+---
+Some(
+    Err(
+        Spand {
+            data: UnrecognizedEscape(
+                'z',
+            ),
+            span: SpanData { file_id: 0, start: 0, end: 4 },
+        },
+    ),
+)

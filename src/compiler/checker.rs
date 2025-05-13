@@ -18,8 +18,7 @@ use super::infer::{
 };
 use super::types::{Ty, TyId};
 use crate::compiler::ctx::OperatorData;
-use crate::global::Symbol;
-use crate::span::Span;
+use crate::global::{Span, Symbol};
 
 #[derive(Debug, Default)]
 pub struct Checker {

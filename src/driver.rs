@@ -430,29 +430,45 @@ impl<'a> Files<'a> for FilesDatabase {
     }
 }
 
-struct Tokens(FxHashMap<TokenKind, usize>);
+#[derive(Default)]
+struct Tokens {
+    simple:    FxHashMap<String, usize>,
+    idents:    usize,
+    operators: usize,
+    integers:  usize,
+    reals:     usize,
+    chars:     usize,
+    strings:   usize,
+}
 
 impl Tokens {
     fn new(tokens: impl IntoIterator<Item = TokenKind>) -> Self {
-        let mut occ = FxHashMap::default();
+        let mut tks = Self::default();
         for tk in tokens {
-            *occ.entry(tk).or_default() += 1;
+            match tk {
+                TokenKind::Integer(_) => tks.integers += 1,
+                TokenKind::Real(_) => tks.reals += 1,
+                TokenKind::Ident(_) => tks.idents += 1,
+                TokenKind::Char(_) => tks.chars += 1,
+                TokenKind::String(_) => tks.strings += 1,
+                TokenKind::Operator(_) => tks.operators += 1,
+                _ => *tks.simple.entry(tk.to_string()).or_default() += 1,
+            }
         }
-        Self(occ)
-    }
-
-    fn keyword_count(&self) -> usize {
-        self.0
-            .iter()
-            .filter_map(|(k, v)| if k.is_keyword() { Some(v) } else { None })
-            .sum()
+        tks
     }
 }
 
 impl Display for Tokens {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "tokens ({} keywords):", self.keyword_count())?;
-        for (tk, count) in &self.0 {
+        writeln!(f, "tokens:")?;
+        writeln!(f, "  idents: {}", self.idents)?;
+        writeln!(f, "  strings: {}", self.strings)?;
+        writeln!(f, "  chars: {}", self.chars)?;
+        writeln!(f, "  integers: {}", self.integers)?;
+        writeln!(f, "  reals: {}", self.reals)?;
+        writeln!(f, "  operators: {}", self.operators)?;
+        for (tk, count) in &self.simple {
             writeln!(f, "  [{tk}] = {count}")?;
         }
 

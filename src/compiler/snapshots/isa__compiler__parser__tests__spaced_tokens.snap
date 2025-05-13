@@ -1,0 +1,30 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"\\n\\n12 +\\n\\n// mengo mengo mengo mengo 123 && a aa^`\\t\\t\\t\\t\\n//foo bar baz\\n\\n   13\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Infix {
+            op: Ident {
+                ident: "+",
+                span: SpanData { file_id: 0, start: 5, end: 6 },
+            },
+            lhs: Expr {
+                kind: Int(
+                    12,
+                ),
+                span: SpanData { file_id: 0, start: 2, end: 4 },
+                ty: (),
+            },
+            rhs: Expr {
+                kind: Int(
+                    13,
+                ),
+                span: SpanData { file_id: 0, start: 71, end: 73 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, start: 2, end: 73 },
+        ty: (),
+    },
+)

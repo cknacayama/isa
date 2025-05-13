@@ -2,7 +2,8 @@ use std::str::Chars;
 
 use super::error::{LexError, LexErrorKind};
 use super::token::{Token, TokenKind};
-use crate::span::{Span, SpanData};
+use crate::global::Span;
+use crate::span::SpanData;
 
 const EOF: char = '\0';
 
@@ -247,139 +248,108 @@ impl Iterator for Lexer<'_> {
 mod tests {
     use super::*;
 
-    #[track_caller]
-    fn check_error(err: LexErrorKind, input: &str) {
-        let got = Lexer::new(0, input).next().unwrap().unwrap_err();
-        assert_eq!(err, got.data);
+    macro_rules! assert_tk {
+        ($input:literal) => {
+            insta::assert_debug_snapshot!(Lexer::new(0, $input).next())
+        };
     }
 
-    #[track_caller]
-    fn check_kind(expected: TokenKind, input: &str) {
-        let mut lexer = Lexer::new(0, input);
-        let got = lexer.next().unwrap().unwrap();
-        assert_eq!(expected, got.data);
-        assert!(lexer.next().is_none());
-    }
-
-    #[track_caller]
-    fn check_ident(input: &str) {
-        let mut lexer = Lexer::new(0, input);
-        let got = lexer.next().unwrap().unwrap();
-        let input = input.trim();
-        assert_eq!(input, got.data.as_ident().unwrap().get());
-        assert!(lexer.next().is_none());
-    }
-
-    #[track_caller]
-    fn check_operator(input: &str) {
-        let mut lexer = Lexer::new(0, input);
-        let got = lexer.next().unwrap().unwrap();
-        let input = input.trim();
-        assert_eq!(input, got.data.as_operator().unwrap().get());
-        assert!(lexer.next().is_none());
-    }
-
-    #[track_caller]
-    fn check_string(input: &str) {
-        let mut lexer = Lexer::new(0, input);
-        let got = lexer.next().unwrap().unwrap();
-        let input = input.trim();
-        assert_eq!(input, format!("{:?}", got.data.as_string().unwrap().get()));
-        assert!(lexer.next().is_none());
+    macro_rules! assert_all {
+        ($input:literal) => {
+            insta::assert_debug_snapshot!(Lexer::new(0, $input).collect::<Vec<_>>())
+        };
     }
 
     #[test]
     fn numbers() {
-        use TokenKind::{Integer, Real};
-        check_kind(Integer(0), "0000");
-        check_kind(Integer(120), "0120");
-        check_kind(Integer(12), "12");
-        check_kind(Real(4.0), "4.0");
-        check_kind(Real(5.0), "5.0");
-        check_kind(Real(1.2), "1.2");
-        check_kind(Real(111.2), "111.2");
+        assert_tk!("0000");
+        assert_tk!("0120");
+        assert_tk!("12");
+        assert_tk!("4.0");
+        assert_tk!("5.0");
+        assert_tk!("1.2");
+        assert_tk!("111.2");
     }
 
     #[test]
     fn keyword() {
-        use TokenKind::*;
-        check_kind(Underscore, "_");
-        check_kind(KwLet, "let");
-        check_kind(KwVal, "val");
-        check_kind(KwIf, "if");
-        check_kind(KwThen, "then");
-        check_kind(KwTrue, "true");
-        check_kind(KwFalse, "false");
-        check_kind(KwInt, "int");
-        check_kind(KwBool, "bool");
-        check_kind(KwChar, "char");
-        check_kind(KwReal, "real");
-        check_kind(KwType, "type");
-        check_kind(KwAlias, "alias");
-        check_kind(KwClass, "class");
-        check_kind(KwInstance, "instance");
-        check_kind(KwInfix, "infix");
-        check_kind(KwInfixl, "infixl");
-        check_kind(KwInfixr, "infixr");
-        check_kind(KwPrefix, "prefix");
-        check_kind(KwMatch, "match");
-        check_kind(KwElse, "else");
-        check_kind(KwIn, "in");
-        check_kind(KwWith, "with");
-        check_kind(KwModule, "module");
-        check_kind(KwSelf, "Self");
+        assert_tk!("_");
+        assert_tk!("let");
+        assert_tk!("val");
+        assert_tk!("if");
+        assert_tk!("then");
+        assert_tk!("true");
+        assert_tk!("false");
+        assert_tk!("int");
+        assert_tk!("bool");
+        assert_tk!("char");
+        assert_tk!("real");
+        assert_tk!("type");
+        assert_tk!("alias");
+        assert_tk!("class");
+        assert_tk!("instance");
+        assert_tk!("infix");
+        assert_tk!("infixl");
+        assert_tk!("infixr");
+        assert_tk!("prefix");
+        assert_tk!("match");
+        assert_tk!("else");
+        assert_tk!("in");
+        assert_tk!("with");
+        assert_tk!("module");
+        assert_tk!("Self");
     }
 
     #[test]
     fn ident() {
-        check_ident("_i");
-        check_ident("letf");
-        check_ident("vals");
-        check_ident("ifs");
-        check_ident("thenz");
-        check_ident("true10");
-        check_ident("false18");
-        check_ident("aint");
-        check_ident("lbool");
-        check_ident("_char");
-        check_ident("real_");
-        check_ident("Type");
-        check_ident("aliass");
-        check_ident("classes");
-        check_ident("_8instance");
-        check_ident("_01infix");
-        check_ident("_01infixl");
-        check_ident("_01infixr");
-        check_ident("mengoprefix");
-        check_ident("amatch");
-        check_ident("belse");
-        check_ident("cin");
-        check_ident("dwith");
-        check_ident("emodule");
-        check_ident("self");
+        assert_tk!("_i");
+        assert_tk!("letf");
+        assert_tk!("vals");
+        assert_tk!("ifs");
+        assert_tk!("thenz");
+        assert_tk!("true10");
+        assert_tk!("false18");
+        assert_tk!("aint");
+        assert_tk!("lbool");
+        assert_tk!("_char");
+        assert_tk!("real_");
+        assert_tk!("Type");
+        assert_tk!("aliass");
+        assert_tk!("classes");
+        assert_tk!("_8instance");
+        assert_tk!("_01infix");
+        assert_tk!("_01infixl");
+        assert_tk!("_01infixr");
+        assert_tk!("mengoprefix");
+        assert_tk!("amatch");
+        assert_tk!("belse");
+        assert_tk!("cin");
+        assert_tk!("dwith");
+        assert_tk!("emodule");
+        assert_tk!("self");
     }
 
     #[test]
     fn operator() {
-        check_operator("+");
-        check_operator("-");
-        check_operator("/");
-        check_operator("*");
-        check_operator("^");
-        check_operator("^^");
-        check_operator("!");
-        check_operator("==");
-        check_operator("!=");
-        check_operator(">");
-        check_operator(">=");
-        check_operator("<");
-        check_operator("<=");
-        check_operator("&&");
-        check_operator("||");
-        check_operator(">>");
-        check_operator(">>=");
-        check_operator("$");
-        check_operator(".");
+        assert_tk!("+");
+        assert_tk!("-");
+        assert_tk!("/");
+        assert_tk!("*");
+        assert_tk!("^");
+        assert_tk!("^^");
+        assert_tk!("!");
+        assert_tk!("==");
+        assert_tk!("!=");
+        assert_tk!(">");
+        assert_tk!(">=");
+        assert_tk!("<");
+        assert_tk!("<=");
+        assert_tk!("&&");
+        assert_tk!("||");
+        assert_tk!(">>");
+        assert_tk!(">>=");
+        assert_tk!("$");
+        assert_tk!(".");
     }
 
     #[test]
@@ -399,74 +369,176 @@ mod tests {
     #[test]
     fn spaced_tokens() {
         let input =
-            "\n\n12\n\n// mengo mengo mengo mengo 123 && a aa^`\t\t\t\t\n//foo bar baz\n\n   13";
+            "\n\n12 +\n\n// mengo mengo mengo mengo 123 && a aa^`\t\t\t\t\n//foo bar baz\n\n   13";
         let mut lexer = Lexer::new(0, input);
-        assert_eq!(TokenKind::Integer(12), lexer.next().unwrap().unwrap().data);
-        assert_eq!(TokenKind::Integer(13), lexer.next().unwrap().unwrap().data);
-        assert_eq!(None, lexer.next());
+        insta::assert_debug_snapshot!(lexer.next());
+        insta::assert_debug_snapshot!(lexer.next());
+        insta::assert_debug_snapshot!(lexer.next());
+        insta::assert_debug_snapshot!(lexer.next());
     }
 
     #[test]
     fn chars() {
-        use TokenKind::Char;
-        check_kind(Char(b'a'), r"'a'");
-        check_kind(Char(b'\n'), r"'\n'");
-        check_kind(Char(b'\t'), r"'\t'");
-        check_kind(Char(b'\r'), r"'\r'");
-        check_kind(Char(b'\\'), r"'\\'");
-        check_kind(Char(b'\''), r"'\''");
-        check_kind(Char(b'\"'), r#"'\"'"#);
-        check_kind(Char(b'\0'), r"'\0'");
-        check_kind(Char(b'1'), r"'1'");
+        assert_tk!(r"'a'");
+        assert_tk!(r"'\n'");
+        assert_tk!(r"'\t'");
+        assert_tk!(r"'\r'");
+        assert_tk!(r"'\\'");
+        assert_tk!(r"'\''");
+        assert_tk!(r#"'\"'"#);
+        assert_tk!(r"'\0'");
+        assert_tk!(r"'1'");
     }
 
     #[test]
     fn strings() {
-        check_string(r#""foo""#);
-        check_string(r#""foo\n""#);
-        check_string(r#""bar\r""#);
-        check_string(r#""ba5\t""#);
-        check_string(r#""ba3\"""#);
-        check_string(r#""ba2\0a""#);
+        assert_tk!(r#""foo""#);
+        assert_tk!(r#""foo\n""#);
+        assert_tk!(r#""bar\r""#);
+        assert_tk!(r#""ba5\t""#);
+        assert_tk!(r#""ba3\"""#);
+        assert_tk!(r#""ba2\0a""#);
     }
 
     #[test]
     fn delimiters() {
-        use TokenKind::*;
-        check_kind(LParen, "(");
-        check_kind(RParen, ")");
-        check_kind(LBrace, "{");
-        check_kind(RBrace, "}");
-        check_kind(LBracket, "[");
-        check_kind(RBracket, "]");
-        check_kind(Comma, ",");
-        check_kind(Colon, ":");
-        check_kind(ColonColon, "::");
-        check_kind(Semicolon, ";");
-        check_kind(At, "@");
-        check_kind(Arrow, "->");
-        check_kind(Rocket, "=>");
-        check_kind(Backslash, "\\");
+        assert_tk!("(");
+        assert_tk!(")");
+        assert_tk!("{");
+        assert_tk!("}");
+        assert_tk!("[");
+        assert_tk!("]");
+        assert_tk!(":");
+        assert_tk!("::");
+        assert_tk!(";");
+        assert_tk!("@");
+        assert_tk!("->");
+        assert_tk!("=>");
+        assert_tk!("\\");
+        assert_tk!(",");
     }
 
     #[test]
     fn char_errors() {
-        check_error(LexErrorKind::EmptyChar, "''");
-        check_error(LexErrorKind::UnrecognizedEscape('z'), r"'\z'");
-        check_error(LexErrorKind::InvalidChar('λ'), r"'λ'");
-        check_error(LexErrorKind::UnterminatedChar, r"'aa'");
+        assert_tk!("''");
+        assert_tk!(r"'\z'");
+        assert_tk!(r"'λ'");
+        assert_tk!(r"'aa'");
     }
 
     #[test]
     fn string_errors() {
-        check_error(LexErrorKind::UnterminatedString, r#""foo"#);
-        check_error(LexErrorKind::UnterminatedString, r#""foo\n"#);
-        check_error(LexErrorKind::UnterminatedString, r#""bar\"#);
-        check_error(
-            LexErrorKind::UnterminatedString,
+        assert_tk!(r#""foo"#);
+        assert_tk!(r#""foo\n"#);
+        assert_tk!(r#""bar\"#);
+        assert_tk!(
             r#""ba3\"
-            ""#,
+            ""#
         );
-        check_error(LexErrorKind::UnrecognizedEscape('c'), r#""ba5\c""#);
+        assert_tk!(r#""ba5\c""#);
+    }
+
+    #[test]
+    fn program() {
+        assert_all!(
+            r#"
+module main
+
+let a = 10;
+let c = 1234;
+let b = a + b * c;
+// comment abc &&
+(&&) && (&&);
+match c with _ -> 10;
+match c with ..10 -> 6.2, 10.. -> 3.14;
+"#
+        )
+    }
+
+    #[test]
+    fn list_stdlib() {
+        assert_all!(
+            r#"
+module @list with {
+    ops::_,
+    monad::_,
+    option::_,
+    prelude::panic
+}
+
+type List a = Nil | Cons a (List a);
+
+val {a} at: List a -> int -> Option a;
+let at list idx = match (list, idx) with
+    ([], _) | (_, ..0) -> None,
+    ([a]_, 0) -> Some a,
+    ([_]list, idx) -> at list $ idx - 1,
+;
+
+val {a} lenght: List a -> int;
+let lenght a = match a with
+    [] -> 0,
+    [_]rest -> 1 + lenght rest
+;
+
+val {a} head: List a -> Option a;
+let head a = match a with
+    [] -> None,
+    [a]_ -> Some a,
+;
+
+val {a} last: List a -> Option a;
+let last a = match a with
+    [] -> None,
+    [a] -> Some a,
+    [_]rest -> last rest,
+;
+
+val {a} tail: List a -> List a;
+let tail a = match a with
+    [] -> [],
+    [_]rest -> rest,
+;
+
+instance List: Functor =
+    let fmap f a = match a with
+        [] -> [],
+        [a]rest -> f a & (f <$> rest),
+;
+
+instance List: Applicative =
+    let pure a = [a],
+    let (<*>) f a = match (f,a) with
+        ([f]restf, [a]resta) -> f a & (restf <*> resta),
+        _ -> [],
+;
+
+instance List: Monad =
+    let (>>=) a f = match a with
+        [] -> [],
+        [a]rest -> f a ++ (rest >>= f),
+;
+
+instance {a: Eq} List a: Eq =
+    let (==) a b = match (a,b) with
+        ([], []) -> true,
+        ([a]resta, [b]restb) -> a == b && resta == restb,
+        _ -> false,
+;
+
+infixr 5 {a} (++): List a -> List a -> List a;
+let (++) a b = match (a,b) with
+    (a, []) -> a,
+    (a, [b]restb) -> a ++ b & restb,
+;
+
+infixr 5 {a} (&): a -> List a -> List a;
+let (&) = List::Cons;
+
+// partial function (panics on out of bounds index)
+infixl 9 {a} (!!): List a -> int -> a;
+let (!!) list idx = unwrap $ at list idx;
+"#
+        )
     }
 }

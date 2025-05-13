@@ -1,10 +1,9 @@
 use std::fmt::{Debug, Display};
 
-use super::super::span::Span;
 use super::infer::{ClassConstraintSet, Substitute};
 use super::token::TokenKind;
 use super::types::Ty;
-use crate::global::Symbol;
+use crate::global::{Span, Symbol};
 use crate::separated_fmt;
 
 #[derive(Clone, Copy, Debug)]
@@ -151,8 +150,7 @@ impl Path {
 macro_rules! mod_path {
     ($seg:ident) => {{
         use crate::compiler::ast::{Ident, Path};
-        use crate::global::Symbol;
-        use crate::span::Span;
+        use crate::global::{Span, Symbol};
         Path::from_one(Ident {
             ident: Symbol::intern(stringify!($seg)),
             span:  Span::zero(),
@@ -160,8 +158,7 @@ macro_rules! mod_path {
     }};
     ($fst:ident::$snd:ident) => {{
         use crate::compiler::ast::{Ident, Path};
-        use crate::global::Symbol;
-        use crate::span::Span;
+        use crate::global::{Span, Symbol};
         Path::from_two(
             Ident {
                 ident: Symbol::intern(stringify!($fst)),
@@ -345,7 +342,7 @@ pub struct Import {
     pub wildcard: ImportWildcard,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Module<T> {
     pub no_prelude: bool,
     pub name:       Ident,
@@ -370,15 +367,6 @@ impl<T> Module<T> {
             stmts,
             span,
         }
-    }
-}
-
-impl<T: Debug> Debug for Module<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Module")
-            .field("name", &self.name)
-            .field("exprs", &self.stmts)
-            .finish_non_exhaustive()
     }
 }
 
@@ -446,20 +434,11 @@ impl<T> PatKind<T> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Pat<T> {
     pub kind: PatKind<T>,
     pub span: Span,
     pub ty:   T,
-}
-
-impl<T: Debug> Debug for Pat<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Pat")
-            .field("kind", &self.kind)
-            .field("ty", &self.ty)
-            .finish_non_exhaustive()
-    }
 }
 
 impl<T> Pat<T> {
@@ -469,23 +448,14 @@ impl<T> Pat<T> {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Expr<T> {
     pub kind: ExprKind<T>,
     pub span: Span,
     pub ty:   T,
 }
 
-impl<T: Debug> Debug for Expr<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Expr")
-            .field("kind", &self.kind)
-            .field("ty", &self.ty)
-            .finish_non_exhaustive()
-    }
-}
-
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Stmt<T> {
     pub kind: StmtKind<T>,
     pub span: Span,
@@ -494,14 +464,6 @@ pub struct Stmt<T> {
 impl<T> Stmt<T> {
     pub const fn new(kind: StmtKind<T>, span: Span) -> Self {
         Self { kind, span }
-    }
-}
-
-impl<T: Debug> Debug for Stmt<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Stmt")
-            .field("kind", &self.kind)
-            .finish_non_exhaustive()
     }
 }
 

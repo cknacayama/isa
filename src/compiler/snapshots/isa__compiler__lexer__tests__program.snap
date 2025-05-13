@@ -1,0 +1,342 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer ::\nnew(0,\nr#\"\nmodule main\n\nlet a = 10;\nlet c = 1234;\nlet b = a + b * c;\n// comment abc &&\n(&&) && (&&);\nmatch c with _ -> 10;\nmatch c with ..10 -> 6.2, 10.. -> 3.14;\n\"#).collect\n:: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: KwModule,
+            span: SpanData { file_id: 0, start: 1, end: 7 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "main",
+            ),
+            span: SpanData { file_id: 0, start: 8, end: 12 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 14, end: 17 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 18, end: 19 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 20, end: 21 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                10,
+            ),
+            span: SpanData { file_id: 0, start: 22, end: 24 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 24, end: 25 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 26, end: 29 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "c",
+            ),
+            span: SpanData { file_id: 0, start: 30, end: 31 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 32, end: 33 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                1234,
+            ),
+            span: SpanData { file_id: 0, start: 34, end: 38 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 38, end: 39 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 40, end: 43 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 44, end: 45 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 46, end: 47 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 48, end: 49 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "+",
+            ),
+            span: SpanData { file_id: 0, start: 50, end: 51 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 52, end: 53 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "*",
+            ),
+            span: SpanData { file_id: 0, start: 54, end: 55 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "c",
+            ),
+            span: SpanData { file_id: 0, start: 56, end: 57 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 57, end: 58 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 77, end: 78 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "&&",
+            ),
+            span: SpanData { file_id: 0, start: 78, end: 80 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 80, end: 81 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "&&",
+            ),
+            span: SpanData { file_id: 0, start: 82, end: 84 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 85, end: 86 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "&&",
+            ),
+            span: SpanData { file_id: 0, start: 86, end: 88 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 88, end: 89 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 89, end: 90 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 91, end: 96 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "c",
+            ),
+            span: SpanData { file_id: 0, start: 97, end: 98 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 99, end: 103 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 104, end: 105 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 106, end: 108 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                10,
+            ),
+            span: SpanData { file_id: 0, start: 109, end: 111 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 111, end: 112 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 113, end: 118 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "c",
+            ),
+            span: SpanData { file_id: 0, start: 119, end: 120 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 121, end: 125 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: DotDot,
+            span: SpanData { file_id: 0, start: 126, end: 128 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                10,
+            ),
+            span: SpanData { file_id: 0, start: 128, end: 130 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 131, end: 133 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Real(
+                6.2,
+            ),
+            span: SpanData { file_id: 0, start: 134, end: 137 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 137, end: 138 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                10,
+            ),
+            span: SpanData { file_id: 0, start: 139, end: 141 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: DotDot,
+            span: SpanData { file_id: 0, start: 141, end: 143 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 144, end: 146 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Real(
+                3.14,
+            ),
+            span: SpanData { file_id: 0, start: 147, end: 151 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 151, end: 152 },
+        },
+    ),
+]

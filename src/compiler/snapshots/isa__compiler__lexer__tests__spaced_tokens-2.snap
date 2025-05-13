@@ -1,0 +1,14 @@
+---
+source: src/compiler/lexer.rs
+expression: lexer.next()
+---
+Some(
+    Ok(
+        Spand {
+            data: Operator(
+                "+",
+            ),
+            span: SpanData { file_id: 0, start: 5, end: 6 },
+        },
+    ),
+)

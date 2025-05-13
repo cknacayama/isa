@@ -8,8 +8,8 @@ use super::error::{ParseError, ParseErrorKind};
 use super::infer::{ClassConstraint, ClassConstraintSet};
 use super::token::{Token, TokenKind};
 use super::types::Ty;
-use crate::global::Symbol;
-use crate::span::{Span, Spand};
+use crate::global::{Span, Symbol};
+use crate::span::Spand;
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
@@ -1347,5 +1347,108 @@ impl Iterator for Parser {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compiler::lexer::{LexResult, Lexer};
+
+    macro_rules! assert_expr {
+        ($input:literal) => {
+            insta::assert_debug_snapshot!(create_parser($input).parse_expr())
+        };
+    }
+
+    #[track_caller]
+    fn create_parser(input: &str) -> Parser {
+        let tokens = Lexer::new(0, input).collect::<LexResult<_>>().unwrap();
+        Parser::new(tokens)
+    }
+
+    #[test]
+    fn numbers() {
+        assert_expr!("0000");
+        assert_expr!("0120");
+        assert_expr!("12");
+        assert_expr!("4.0");
+        assert_expr!("5.0");
+        assert_expr!("1.2");
+        assert_expr!("111.2");
+    }
+
+    #[test]
+    fn idents() {
+        assert_expr!("_i");
+        assert_expr!("letf");
+        assert_expr!("vals");
+        assert_expr!("ifs");
+        assert_expr!("thenz");
+        assert_expr!("true10");
+        assert_expr!("false18");
+        assert_expr!("aint");
+        assert_expr!("lbool");
+        assert_expr!("_char");
+        assert_expr!("real_");
+        assert_expr!("Type");
+        assert_expr!("aliass");
+        assert_expr!("classes");
+        assert_expr!("_8instance");
+        assert_expr!("_01infix");
+        assert_expr!("_01infixl");
+        assert_expr!("_01infixr");
+        assert_expr!("mengoprefix");
+        assert_expr!("amatch");
+        assert_expr!("belse");
+        assert_expr!("cin");
+        assert_expr!("dwith");
+        assert_expr!("emodule");
+        assert_expr!("self");
+    }
+
+    #[test]
+    fn chars() {
+        assert_expr!(r"'a'");
+        assert_expr!(r"'\n'");
+        assert_expr!(r"'\t'");
+        assert_expr!(r"'\r'");
+        assert_expr!(r"'\\'");
+        assert_expr!(r"'\''");
+        assert_expr!(r#"'\"'"#);
+        assert_expr!(r"'\0'");
+        assert_expr!(r"'1'");
+    }
+
+    #[test]
+    fn strings() {
+        assert_expr!(r#""foo""#);
+        assert_expr!(r#""foo\n""#);
+        assert_expr!(r#""bar\r""#);
+        assert_expr!(r#""ba5\t""#);
+        assert_expr!(r#""ba3\"""#);
+        assert_expr!(r#""ba2\0a""#);
+    }
+
+    #[test]
+    fn lets() {
+        assert_expr!("let a = 10 in 10");
+        assert_expr!("let a c = 10 in let b = a in b");
+    }
+
+    #[test]
+    fn prefix() {
+        assert_expr!("-1");
+        assert_expr!("-a");
+        assert_expr!(r#"-"string""#);
+        assert_expr!(r#"-'c'"#);
+        assert_expr!(r#"- - - - - - - + - + 1"#);
+    }
+
+    #[test]
+    fn spaced_tokens() {
+        assert_expr!(
+            "\n\n12 +\n\n// mengo mengo mengo mengo 123 && a aa^`\t\t\t\t\n//foo bar baz\n\n   13"
+        );
     }
 }

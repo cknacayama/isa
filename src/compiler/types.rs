@@ -3,7 +3,7 @@ use std::rc::Rc;
 use super::ast::{Ident, Path, mod_path};
 use super::ctx::Generator;
 use super::infer::{Subs, Substitute};
-use crate::span::Span;
+use crate::global::Span;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TyId(u32);

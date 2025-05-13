@@ -1,0 +1,90 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"let a c = 10 in let b = a in b\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Let {
+            bind: LetBind {
+                operator: false,
+                name: Ident {
+                    ident: "a",
+                    span: SpanData { file_id: 0, start: 4, end: 5 },
+                },
+                params: [
+                    Param {
+                        pat: Pat {
+                            kind: Constructor {
+                                name: Path {
+                                    segments: [
+                                        Ident {
+                                            ident: "c",
+                                            span: SpanData { file_id: 0, start: 6, end: 7 },
+                                        },
+                                    ],
+                                    ..
+                                },
+                                args: [],
+                            },
+                            span: SpanData { file_id: 0, start: 6, end: 7 },
+                            ty: (),
+                        },
+                    },
+                ],
+                expr: Expr {
+                    kind: Int(
+                        10,
+                    ),
+                    span: SpanData { file_id: 0, start: 10, end: 12 },
+                    ty: (),
+                },
+            },
+            body: Expr {
+                kind: Let {
+                    bind: LetBind {
+                        operator: false,
+                        name: Ident {
+                            ident: "b",
+                            span: SpanData { file_id: 0, start: 20, end: 21 },
+                        },
+                        params: [],
+                        expr: Expr {
+                            kind: Path(
+                                Path {
+                                    segments: [
+                                        Ident {
+                                            ident: "a",
+                                            span: SpanData { file_id: 0, start: 24, end: 25 },
+                                        },
+                                    ],
+                                    ..
+                                },
+                            ),
+                            span: SpanData { file_id: 0, start: 24, end: 25 },
+                            ty: (),
+                        },
+                    },
+                    body: Expr {
+                        kind: Path(
+                            Path {
+                                segments: [
+                                    Ident {
+                                        ident: "b",
+                                        span: SpanData { file_id: 0, start: 29, end: 30 },
+                                    },
+                                ],
+                                ..
+                            },
+                        ),
+                        span: SpanData { file_id: 0, start: 29, end: 30 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, start: 16, end: 30 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, start: 0, end: 30 },
+        ty: (),
+    },
+)

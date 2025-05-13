@@ -1,0 +1,13 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"12\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Int(
+            12,
+        ),
+        span: SpanData { file_id: 0, start: 0, end: 2 },
+        ty: (),
+    },
+)

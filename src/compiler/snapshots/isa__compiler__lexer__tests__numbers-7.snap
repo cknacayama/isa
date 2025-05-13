@@ -1,0 +1,14 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \"111.2\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: Real(
+                111.2,
+            ),
+            span: SpanData { file_id: 0, start: 0, end: 5 },
+        },
+    ),
+)

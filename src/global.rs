@@ -4,10 +4,35 @@ use std::ops::Range;
 
 use rustc_hash::FxHashMap;
 
-use crate::span::{Span, SpanData};
+use crate::span::SpanData;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(u32);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Span(u32);
+
+impl Default for Span {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
+impl Span {
+    #[must_use]
+    pub const fn new(idx: u32) -> Self {
+        Self(idx)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+
+    pub const fn zero() -> Self {
+        Self(0)
+    }
+}
 
 impl Default for Symbol {
     fn default() -> Self {
@@ -22,10 +47,6 @@ impl Symbol {
 
     pub fn intern(symbol: &str) -> Self {
         Env::get(|e| e.symbols.intern(symbol))
-    }
-
-    pub fn get(self) -> &'static str {
-        Env::get(|e| e.symbols.get(self).unwrap())
     }
 }
 
@@ -70,6 +91,15 @@ impl From<Span> for Range<usize> {
     fn from(value: Span) -> Self {
         let data = Env::get(|e| e.spans.get(value).unwrap_or_default());
         data.start()..data.end()
+    }
+}
+
+impl std::fmt::Debug for Span {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match Env::get(|e| e.spans.get(*self)) {
+            Some(span) => write!(f, "{span:?}"),
+            None => f.debug_tuple("Span").field(&self.0).finish(),
+        }
     }
 }
 

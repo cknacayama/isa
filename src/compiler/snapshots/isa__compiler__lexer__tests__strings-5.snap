@@ -1,0 +1,14 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, r#\"\"ba3\\\"\"\"#).next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: String(
+                "ba3\"",
+            ),
+            span: SpanData { file_id: 0, start: 0, end: 7 },
+        },
+    ),
+)

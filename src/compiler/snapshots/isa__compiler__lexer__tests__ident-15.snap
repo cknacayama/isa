@@ -1,0 +1,14 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \"_8instance\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: Ident(
+                "_8instance",
+            ),
+            span: SpanData { file_id: 0, start: 0, end: 10 },
+        },
+    ),
+)

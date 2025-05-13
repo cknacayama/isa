@@ -1,0 +1,23 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(r#\"-\"string\"\"#).parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Prefix {
+            op: Ident {
+                ident: "-",
+                span: SpanData { file_id: 0, start: 0, end: 1 },
+            },
+            expr: Expr {
+                kind: String(
+                    "string",
+                ),
+                span: SpanData { file_id: 0, start: 1, end: 9 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, start: 0, end: 9 },
+        ty: (),
+    },
+)
