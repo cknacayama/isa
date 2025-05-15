@@ -2,9 +2,9 @@ use std::error::Error;
 
 use codespan_reporting::diagnostic::{Diagnostic, Label};
 
+use crate::comma_fmt;
 use crate::compiler::ctx::{Ctx, CtxFmt};
 use crate::compiler::error::{DiagnosticLabel, IsaError, MatchNonExhaustive};
-use crate::separated_fmt;
 use crate::span::Spand;
 
 pub struct Diagnosed {
@@ -83,7 +83,7 @@ impl MatchNonExhaustive {
         } else {
             out.push_str("pattern ");
         }
-        let _ = separated_fmt(&mut out, self.witnessess(), ", ", |w, out| {
+        let _ = comma_fmt(&mut out, self.witnessess(), |w, out| {
             out.push('`');
             w.ctx_fmt(out, ctx)?;
             out.push('`');

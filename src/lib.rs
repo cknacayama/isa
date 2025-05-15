@@ -7,7 +7,15 @@ pub(crate) mod global;
 pub(crate) mod report;
 pub(crate) mod span;
 
-pub fn separated_fmt<'a, T: 'a, W: Write>(
+pub(crate) fn comma_fmt<'a, T: 'a, W: Write>(
+    w: &mut W,
+    data: impl IntoIterator<Item = &'a T>,
+    display: impl FnMut(&T, &mut W) -> fmt::Result,
+) -> fmt::Result {
+    separated_fmt(w, data, ", ", display)
+}
+
+pub(crate) fn separated_fmt<'a, T: 'a, W: Write>(
     w: &mut W,
     data: impl IntoIterator<Item = &'a T>,
     sep: impl Display,

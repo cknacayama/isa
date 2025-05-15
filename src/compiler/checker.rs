@@ -27,6 +27,17 @@ pub struct Checker {
 
 pub type IsaResult<T> = Result<T, IsaError>;
 
+impl Set {
+    fn normalize_names(&mut self, module: Ident, module_subs: &impl Fn(&TyKind) -> Option<Ty>) {
+        for (class, ty) in self.iter_mut().map(ClassConstraint::get_mut) {
+            if let Some(class_name) = class.as_ident() {
+                *class = Path::from_two(module, class_name);
+            }
+            ty.substitute(module_subs);
+        }
+    }
+}
+
 impl Checker {
     pub const fn with_ctx(ctx: Ctx) -> Self {
         Self {
@@ -330,9 +341,7 @@ impl Checker {
             let (mut expr, set) = self.check_expr(bind.expr)?;
 
             let subs = self.subs_from(pos);
-            for p in &mut typed_params {
-                p.pat.ty.substitute_many(subs);
-            }
+            typed_params.substitute_many(subs);
 
             expr.ty = Ty::function(typed_params.iter().map(|p| p.pat.ty), expr.ty);
             (expr, set)
@@ -383,9 +392,7 @@ impl Checker {
         }
 
         expr.ty.substitute_many(&subs);
-        for p in &mut typed_params {
-            p.pat.ty.substitute_many(&subs);
-        }
+        typed_params.substitute_many(&subs);
 
         let ty = self.ctx.generalize(expr.ty);
 
@@ -434,9 +441,7 @@ impl Checker {
             let (mut expr, set) = self.check_expr(bind.expr)?;
 
             let subs = self.subs_from(pos);
-            for p in &mut typed_params {
-                p.pat.ty.substitute_many(subs);
-            }
+            typed_params.substitute_many(subs);
 
             expr.ty = Ty::function(typed_params.iter().map(|p| p.pat.ty), expr.ty);
 
@@ -675,9 +680,7 @@ impl Checker {
 
         let (subs, _) = self.unify(c, [])?;
 
-        for arg in &mut typed_args {
-            arg.substitute_many(&subs);
-        }
+        typed_args.substitute_many(&subs);
         ty.substitute_many(&subs);
 
         let kind = PatKind::Constructor {
@@ -955,9 +958,7 @@ impl Checker {
                     IsaError::from(err).with_note("or sub-patterns should have same type")
                 })?;
 
-                for p in &mut patterns {
-                    p.substitute_many(&subs);
-                }
+                patterns.substitute_many(&subs);
                 var.substitute_many(&subs);
 
                 Ok(Pat::new(
@@ -1074,10 +1075,7 @@ impl Checker {
         })?;
 
         expr.substitute_many(&subs);
-        for arm in &mut typed_arms {
-            arm.pat.substitute_many(&subs);
-            arm.expr.substitute_many(&subs);
-        }
+        typed_arms.substitute_many(&subs);
         var.substitute_many(&subs);
 
         let kind = ExprKind::Match {
@@ -1291,8 +1289,23 @@ impl Checker {
     fn check_module_types(&mut self, module: &mut Module<()>) -> IsaResult<()> {
         self.ctx.create_module(module.name);
         let mut declared = FxHashMap::default();
+
+        let mod_name = module.name;
+        let subs = |ty: &TyKind| {
+            if let TyKind::Named { name, args } = ty
+                && let Some(name) = name.as_ident()
+            {
+                Some(Ty::intern(TyKind::Named {
+                    name: Path::from_two(mod_name, name),
+                    args: *args,
+                }))
+            } else {
+                None
+            }
+        };
+
         for expr in &mut module.stmts {
-            self.check_type_declaration(expr, &mut declared)?;
+            self.check_type_declaration(expr, &mut declared, mod_name, &subs)?;
         }
 
         Ok(())
@@ -1319,6 +1332,8 @@ impl Checker {
         &mut self,
         stmt: &mut Stmt<()>,
         declared: &mut FxHashMap<Ident, Span>,
+        module: Ident,
+        module_subs: &impl Fn(&TyKind) -> Option<Ty>,
     ) -> IsaResult<()> {
         let (name, span) = match &mut stmt.kind {
             StmtKind::Type {
@@ -1328,9 +1343,8 @@ impl Checker {
             } => {
                 let (subs, params) = self.substitute_params(params);
 
-                for ctor in constructors {
-                    ctor.substitute_param(&subs);
-                }
+                constructors.substitute_param(&subs);
+                constructors.substitute(module_subs);
 
                 self.ctx.insert_ty(*name, Ty::intern_quant(params))?;
 
@@ -1344,12 +1358,16 @@ impl Checker {
                 ty.substitute_param(&subs);
                 set.substitute_param(&subs);
 
+                ty.substitute(module_subs);
+                set.normalize_names(module, module_subs);
+
                 return Ok(());
             }
             StmtKind::Alias { name, params, ty } => {
                 let (subs, params) = self.substitute_params(params);
 
                 ty.substitute_param(&subs);
+                ty.substitute(module_subs);
 
                 self.ctx.insert_ty(*name, Ty::intern_quant(params))?;
 
@@ -1359,15 +1377,25 @@ impl Checker {
                 name,
                 signatures,
                 ops,
+                parents,
                 ..
             } => {
+                for parent in parents {
+                    if let Some(class) = parent.as_ident() {
+                        *parent = Path::from_two(module, class);
+                    }
+                }
                 for sig in signatures {
                     let (subs, _) = self.substitute_params(&mut sig.params);
                     sig.substitute_param(&subs);
+                    sig.ty.substitute(module_subs);
+                    sig.set.normalize_names(module, module_subs);
                 }
                 for op in ops {
                     let (subs, _) = self.substitute_params(&mut op.params);
                     op.substitute_param(&subs);
+                    op.ty.substitute(module_subs);
+                    op.set.normalize_names(module, module_subs);
                 }
 
                 let class = ClassData::new(stmt.span);
@@ -1382,6 +1410,8 @@ impl Checker {
 
                 set.substitute_param(&subs);
                 ty.substitute_param(&subs);
+                set.normalize_names(module, module_subs);
+                ty.substitute(module_subs);
 
                 return Ok(());
             }
@@ -1395,6 +1425,9 @@ impl Checker {
 
                 set.substitute_param(&subs);
                 instance.substitute_param(&subs);
+
+                set.normalize_names(module, module_subs);
+                instance.substitute(module_subs);
 
                 return Ok(());
             }
@@ -1662,7 +1695,7 @@ impl Checker {
     fn resolve_signature_names(
         &self,
         set: &mut Set,
-        subs: &mut impl Fn(&TyKind) -> Option<Ty>,
+        subs: &impl Fn(&TyKind) -> Option<Ty>,
     ) -> IsaResult<()> {
         for (class, ty) in set.iter_mut().map(ClassConstraint::get_mut) {
             *class = self.ctx.resolve_class_name(class)?;
@@ -1674,7 +1707,7 @@ impl Checker {
     fn resolve_names(
         &self,
         stmt: &mut StmtKind<()>,
-        subs: &mut impl Fn(&TyKind) -> Option<Ty>,
+        subs: &impl Fn(&TyKind) -> Option<Ty>,
     ) -> IsaResult<()> {
         match stmt {
             StmtKind::Semi(_) | StmtKind::Let(_) => (),
@@ -1717,9 +1750,7 @@ impl Checker {
             }
 
             StmtKind::Type { constructors, .. } => {
-                for c in constructors {
-                    c.substitute(subs);
-                }
+                constructors.substitute(subs);
             }
 
             StmtKind::Alias { ty, .. } => {
@@ -1740,7 +1771,7 @@ impl Checker {
 
         self.resolve_imports(&mut modules);
 
-        let mut subs = |ty: &TyKind| match ty {
+        let subs = |ty: &TyKind| match ty {
             TyKind::Named { name, args } => {
                 let name = self.ctx.resolve_type_name(name).ok()?;
                 Some(Ty::intern(TyKind::Named { name, args: *args }))
@@ -1751,7 +1782,7 @@ impl Checker {
         let mut aliases = Vec::new();
         for module in &mut modules {
             for stmt in &mut module.stmts {
-                self.resolve_names(&mut stmt.kind, &mut subs)?;
+                self.resolve_names(&mut stmt.kind, &subs)?;
                 if let Some(alias) = self.check_alias_declaration(module.name, stmt) {
                     aliases.push(alias?);
                 }
@@ -1766,7 +1797,7 @@ impl Checker {
             }
         }
 
-        let mut subs = |ty: &TyKind| match ty {
+        let subs = |ty: &TyKind| match ty {
             TyKind::Named { name, args } => aliases
                 .iter()
                 .find_map(|(syn, data)| (name == syn).then(|| data.subs(args))),
@@ -1780,7 +1811,7 @@ impl Checker {
 
             for stmt in &mut module.stmts {
                 if !aliases.is_empty() {
-                    stmt.substitute(&mut subs);
+                    stmt.substitute(&subs);
                 }
                 // We check type class signatures before
                 // other because we don't extract it

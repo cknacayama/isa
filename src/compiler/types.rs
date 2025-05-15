@@ -15,7 +15,7 @@ impl TyId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TyKind {
     Int,
     Bool,
@@ -233,11 +233,7 @@ impl Ty {
 
     #[must_use]
     pub const fn as_var(self) -> Option<TyId> {
-        if let TyKind::Var(v) = self.kind() {
-            Some(*v)
-        } else {
-            None
-        }
+        self.kind().as_var()
     }
 
     fn free_type_variables_inner(self, free: &mut Vec<TyId>) {
@@ -301,9 +297,9 @@ impl Ty {
 }
 
 impl Substitute for Ty {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Self>,
+        S: Fn(&TyKind) -> Option<Self>,
     {
         let ty = match self.kind() {
             TyKind::Fn { param, ret } => {
@@ -316,10 +312,8 @@ impl Substitute for Ty {
             }
             TyKind::Scheme { quant, ty } => {
                 let mut ty = *ty;
-                ty.substitute(subs).then(|| TyKind::Scheme {
-                    quant: quant.clone(),
-                    ty,
-                })
+                ty.substitute(subs)
+                    .then_some(TyKind::Scheme { quant: *quant, ty })
             }
             TyKind::Named { name, args } => {
                 let mut args = args.to_vec();
@@ -361,10 +355,7 @@ impl Substitute for Ty {
         };
 
         if let Some(ty) = ty {
-            *self = match subs(&ty) {
-                Some(x) => x,
-                None => Self::intern(ty),
-            };
+            *self = subs(&ty).unwrap_or_else(|| Self::intern(ty));
             true
         } else if let Some(new) = subs(self.kind()) {
             *self = new;
@@ -376,9 +367,9 @@ impl Substitute for Ty {
 }
 
 impl Substitute for TySlice {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         let mut slice = self.to_vec();
         if slice.substitute(subs) {

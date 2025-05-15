@@ -31,6 +31,18 @@ impl Deref for TySlice {
     }
 }
 
+impl Default for TySlice {
+    fn default() -> Self {
+        Ty::empty_slice()
+    }
+}
+
+impl Default for TyQuant {
+    fn default() -> Self {
+        Ty::empty_quant()
+    }
+}
+
 impl Deref for TyQuant {
     type Target = [TyId];
 

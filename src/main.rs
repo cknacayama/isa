@@ -1,10 +1,10 @@
 use std::process::ExitCode;
 
-use isa::driver::Config;
+use isa::driver::Driver;
 
 fn main() -> ExitCode {
-    let config = Config::from_env(std::env::args());
-    match config.run() {
+    let driver = Driver::new();
+    match driver.run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(()) => ExitCode::FAILURE,
     }

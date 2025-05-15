@@ -31,16 +31,16 @@ impl Subs {
 }
 
 pub trait Substitute {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>;
+        S: Fn(&TyKind) -> Option<Ty>;
 
     /// Used mainly for type inference and unification of constraint sets
     fn substitute_eq(&mut self, subs: &Subs) -> bool {
         if subs.subs().kind().as_var().is_some_and(|t| t == subs.old()) {
             return false;
         }
-        self.substitute(&mut |t| match t {
+        self.substitute(&|t| match t {
             TyKind::Var(id) if *id == subs.old => Some(subs.subs),
             TyKind::Generic { var, args } if *var == subs.old => match subs.subs.kind() {
                 TyKind::Var(new) => Some(Ty::intern(TyKind::Generic {
@@ -80,7 +80,7 @@ pub trait Substitute {
     }
 
     fn substitute_self(&mut self, instance: Ty) -> bool {
-        self.substitute(&mut |ty| match ty {
+        self.substitute(&|ty| match ty {
             TyKind::This(args) if args.is_empty() => Some(instance),
             TyKind::This(args) => match instance.kind() {
                 TyKind::Var(new) => Some(Ty::intern(TyKind::Generic {
@@ -114,7 +114,7 @@ pub trait Substitute {
         if subs.is_empty() {
             return false;
         }
-        self.substitute(&mut |ty| match ty {
+        self.substitute(&|ty| match ty {
             TyKind::Named { name, args } if args.is_empty() => subs
                 .iter()
                 .find_map(|(s, v)| name.is_ident(*s).then_some(Ty::intern(TyKind::Var(*v)))),
@@ -140,9 +140,9 @@ pub struct EqConstraint {
 }
 
 impl Substitute for EqConstraint {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.lhs.substitute(subs) | self.rhs.substitute(subs)
     }
@@ -217,9 +217,9 @@ impl DerefMut for EqConstraintSet {
 }
 
 impl Substitute for EqConstraintSet {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.constrs
             .iter_mut()
@@ -234,9 +234,9 @@ where
     T: Substitute,
 {
     #[inline]
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.iter_mut()
             .map(|t| t.substitute(subs))
@@ -307,9 +307,9 @@ impl ClassConstraint {
 }
 
 impl Substitute for ClassConstraint {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.ty.substitute(subs)
     }

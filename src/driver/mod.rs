@@ -1,8 +1,10 @@
-use std::ffi::OsStr;
+mod cli;
+
 use std::fmt::{Debug, Display, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
+use cli::{Cli, Command};
 use codespan_reporting::diagnostic::Diagnostic;
 use codespan_reporting::files::{Files, SimpleFile};
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
@@ -21,100 +23,38 @@ use crate::compiler::types::Ty;
 use crate::report::{Report, report_collection};
 use crate::separated_fmt;
 
-/// TODO: add more options
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Opt {
-    Lex,
-    Parse,
-    Infer,
-    #[default]
-    Exhaust,
-}
+pub struct Driver {
+    db: FilesDatabase,
 
-impl Opt {
-    #[must_use]
-    const fn is_lex(self) -> bool {
-        matches!(self, Self::Lex)
-    }
-
-    #[must_use]
-    const fn is_parse(self) -> bool {
-        matches!(self, Self::Parse)
-    }
-
-    #[allow(dead_code)]
-    #[must_use]
-    const fn is_infer(self) -> bool {
-        matches!(self, Self::Infer)
-    }
-
-    #[must_use]
-    const fn is_exhaust(self) -> bool {
-        matches!(self, Self::Exhaust)
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Config {
-    silence:    bool,
-    opt:        Opt,
-    db:         FilesDatabase,
+    quiet:      bool,
+    command:    Command,
     max_errors: usize,
 }
 
-impl Config {
+impl Default for Driver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Driver {
     #[must_use]
-    pub fn from_env(mut env: std::env::Args) -> Self {
-        env.next()
-            .expect("Should have binary path as first argument");
-
-        let input_path = PathBuf::from(
-            env.next()
-                .expect("Should have input path as second argument"),
-        );
-
-        let mut db = FilesDatabase::default();
-
-        let input = std::fs::read_to_string(&input_path).expect("Should have valid path as input");
-        let input_file_name = input_path
-            .file_name()
-            .and_then(OsStr::to_str)
-            .unwrap_or_default()
-            .to_owned();
-        db.add_prelude();
-        db.add(input_file_name, input);
-
-        let opt = env
-            .next()
-            .and_then(|opt| match opt.as_str() {
-                "-l" => Some(Opt::Lex),
-                "-p" => Some(Opt::Parse),
-                "-i" => Some(Opt::Infer),
-                "-e" => Some(Opt::Exhaust),
-                _ => None,
-            })
-            .unwrap_or_default();
-
-        Self {
-            silence: false,
-            opt,
-            db,
-            max_errors: 4,
-        }
+    pub fn new() -> Self {
+        Self::from_config(&<Cli as clap::Parser>::parse())
     }
 
     #[must_use]
-    pub fn from_dir(opt: Opt, dir: impl AsRef<Path>) -> Self {
+    fn from_config(cfg: &Cli) -> Self {
         let mut db = FilesDatabase::default();
 
+        db.add_files(cfg.files.iter());
         db.add_prelude();
-        db.add_dir(dir);
 
         Self {
-            silence: true,
-            opt,
             db,
-            max_errors: 4,
+            quiet: cfg.quiet,
+            command: cfg.command.unwrap_or_default(),
+            max_errors: cfg.max_errors,
         }
     }
 
@@ -123,7 +63,7 @@ impl Config {
         I: IntoIterator<Item = T>,
         T: Report,
     {
-        if self.silence {
+        if self.quiet {
             return;
         }
 
@@ -212,9 +152,9 @@ impl Config {
         let tokens = self.lex().map_err(|e| self.report(e, &ctx))?;
 
         let instants = instants.with_lex();
-        if self.opt.is_lex() {
+        if self.command.is_lex() {
             let tokens = Tokens::new(tokens.into_iter().map(|tk| tk.data));
-            if !self.silence {
+            if !self.quiet {
                 println!("{tokens}");
                 print!("{}", instants.finish());
             }
@@ -224,8 +164,8 @@ impl Config {
         let modules = Self::parse(tokens).map_err(|e| self.report(e, &ctx))?;
 
         let instants = instants.with_parse();
-        if self.opt.is_parse() {
-            if !self.silence {
+        if self.command.is_parse() {
+            if !self.quiet {
                 println!("parsed {} modules", modules.len());
                 print!("{}", instants.finish());
             }
@@ -238,12 +178,12 @@ impl Config {
             .map_err(|e| self.report([e], checker.ctx()))?;
 
         let mut instants = instants.with_check();
-        if self.opt.is_exhaust() {
+        if self.command.is_exhaust() {
             Self::exhaust(&modules, checker.ctx()).map_err(|e| self.report(e, checker.ctx()))?;
             instants = instants.with_exhaust();
         }
 
-        if !self.silence {
+        if !self.quiet {
             println!("{}", checker.ctx());
             print!("{}", instants.finish());
         }
@@ -385,15 +325,17 @@ impl FilesDatabase {
         }
     }
 
-    fn add_files<'a, I>(&mut self, files: I)
+    fn add_files<I, P>(&mut self, files: I)
     where
-        I: IntoIterator<Item = &'a str>,
+        I: IntoIterator<Item = P>,
+        P: AsRef<Path>,
     {
         use std::fs;
 
         for file in files {
-            let input = fs::read_to_string(file).expect("Should be valid file path");
-            self.add(file.to_owned(), input);
+            let path = file.as_ref();
+            let input = fs::read_to_string(path).expect("Should be valid file path");
+            self.add(path.display().to_string(), input);
         }
     }
 

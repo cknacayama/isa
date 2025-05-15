@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 
 use crate::compiler::ctx::{Ctx as TypeCtx, CtxFmt};
 use crate::compiler::types::Ty;
-use crate::separated_fmt;
+use crate::{comma_fmt, separated_fmt};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Ctor {
@@ -81,7 +81,7 @@ impl Ctor {
         match self {
             Self::Single => {
                 write!(f, "(")?;
-                separated_fmt(f, fields, ", ", |p, f| p.ctx_simple_fmt(f, ctx))?;
+                comma_fmt(f, fields, |p, f| p.ctx_simple_fmt(f, ctx))?;
                 write!(f, ")")?;
             }
             Self::Type(idx) => {

@@ -10,8 +10,8 @@ use super::ast::{
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::types::{Ty, TyId, TyKind, TyQuant, TySlice};
+use crate::comma_fmt;
 use crate::global::{Span, Symbol};
-use crate::separated_fmt;
 
 #[derive(Debug, Clone)]
 pub struct VarData {
@@ -155,9 +155,9 @@ impl Generator for IdGenerator {
 }
 
 impl Substitute for VarData {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.ty.substitute(subs) | self.constrs.substitute(subs)
     }
@@ -181,21 +181,11 @@ pub trait CtxFmt {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct TyData {
     params:       TyQuant,
     constructors: Vec<Constructor<Ty>>,
     span:         Span,
-}
-
-impl Default for TyData {
-    fn default() -> Self {
-        Self {
-            params:       Ty::empty_quant(),
-            constructors: Default::default(),
-            span:         Default::default(),
-        }
-    }
 }
 
 impl TyData {
@@ -246,7 +236,7 @@ impl AliasData {
 
     pub fn subs(&self, args: &[Ty]) -> Ty {
         let mut ty = *self.ty();
-        ty.substitute(&mut |ty| {
+        ty.substitute(&|ty| {
             self.params()
                 .iter()
                 .copied()
@@ -262,15 +252,12 @@ impl AliasData {
             changed = false;
             let cloned = aliases.to_vec();
             for (alias, data) in cloned {
-                let mut subs = |ty: &TyKind| match ty {
-                    TyKind::Named { name, args } if name == &alias => {
-                        changed = true;
-                        Some(data.subs(args))
-                    }
+                let subs = |ty: &TyKind| match ty {
+                    TyKind::Named { name, args } if name == &alias => Some(data.subs(args)),
                     _ => None,
                 };
                 for (_, alias) in aliases.iter_mut().filter(|(name, _)| name != &alias) {
-                    alias.substitute(&mut subs);
+                    changed |= alias.substitute(&subs);
                 }
             }
         }
@@ -1151,9 +1138,9 @@ impl Ctx {
 }
 
 impl Substitute for Ctx {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         let mut res = false;
         // We can skip the first scope
@@ -1172,9 +1159,9 @@ impl Substitute for Ctx {
 }
 
 impl Substitute for AliasData {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.ty.substitute(subs)
     }
@@ -1280,7 +1267,7 @@ impl Ty {
             }
             TyKind::Tuple(types) => {
                 write!(f, "(")?;
-                separated_fmt(f, types.iter(), ", ", |ty, f| ty.fmt_var(f, chars))?;
+                comma_fmt(f, types.iter(), |ty, f| ty.fmt_var(f, chars))?;
                 write!(f, ")")?;
                 Ok(())
             }
@@ -1397,7 +1384,7 @@ impl ClassConstraintSet {
             return Ok(());
         }
         write!(f, "{{")?;
-        separated_fmt(f, self.iter(), ", ", |ty, f| {
+        comma_fmt(f, self.iter(), |ty, f| {
             write!(f, "{} ", ty.class().base_name())?;
             ty.ty().fmt_var(f, chars)
         })?;

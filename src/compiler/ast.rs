@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Display};
+use std::num::NonZeroU8;
 
 use super::infer::{ClassConstraintSet, Substitute};
 use super::token::TokenKind;
@@ -31,7 +32,10 @@ impl Ident {
     }
 }
 
-impl Eq for Ident {
+impl std::hash::Hash for Ident {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.ident.hash(state);
+    }
 }
 
 impl PartialEq for Ident {
@@ -40,16 +44,13 @@ impl PartialEq for Ident {
     }
 }
 
-impl std::hash::Hash for Ident {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.ident.hash(state);
-    }
+impl Eq for Ident {
 }
 
 #[derive(Clone, Copy)]
 pub struct Path {
     segments: [Ident; 3],
-    len:      u8,
+    len:      NonZeroU8,
 }
 
 impl Debug for Path {
@@ -77,17 +78,17 @@ impl PartialEq for Path {
 
 impl Path {
     pub const fn push(&mut self, id: Ident) -> bool {
-        if self.len == 3 {
+        if self.len.get() >= 3 {
             false
         } else {
-            self.segments[self.len as usize] = id;
-            self.len += 1;
+            self.segments[self.len.get() as usize] = id;
+            self.len = self.len.saturating_add(1);
             true
         }
     }
 
     pub fn as_slice(&self) -> &[Ident] {
-        &self.segments[..self.len as usize]
+        &self.segments[..self.len.get() as usize]
     }
 
     pub const fn from_slice(seg: &[Ident]) -> Option<Self> {
@@ -103,7 +104,7 @@ impl Path {
         let zero = Ident::zero();
         Self {
             segments: [ident, zero, zero],
-            len:      1,
+            len:      NonZeroU8::new(1).unwrap(),
         }
     }
 
@@ -111,14 +112,14 @@ impl Path {
         let zero = Ident::zero();
         Self {
             segments: [fst, snd, zero],
-            len:      2,
+            len:      NonZeroU8::new(2).unwrap(),
         }
     }
 
     pub const fn from_three(fst: Ident, snd: Ident, trd: Ident) -> Self {
         Self {
             segments: [fst, snd, trd],
-            len:      3,
+            len:      NonZeroU8::new(3).unwrap(),
         }
     }
 
@@ -131,15 +132,15 @@ impl Path {
     }
 
     pub const fn base_name(&self) -> Ident {
-        self.segments[(self.len as usize) - 1]
+        self.segments[(self.len.get() as usize) - 1]
     }
 
     pub fn is_ident(&self, name: Ident) -> bool {
-        self.len == 1 && self.segments[0] == name
+        self.len.get() == 1 && self.segments[0] == name
     }
 
     pub const fn as_ident(&self) -> Option<Ident> {
-        if self.len == 1 {
+        if self.len.get() == 1 {
             Some(self.segments[0])
         } else {
             None
@@ -666,54 +667,54 @@ impl<T> Expr<T> {
 }
 
 impl Substitute for Param<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.pat.substitute(subs)
     }
 }
 
 impl Substitute for Constructor<()> {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.params.substitute(subs)
     }
 }
 
 impl Substitute for Constructor<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.ty.substitute(subs) | self.params.substitute(subs)
     }
 }
 
 impl Substitute for Val {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.set.substitute(subs) | self.ty.substitute(subs) | self.params.substitute(subs)
     }
 }
 
 impl Substitute for Operator {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.set.substitute(subs) | self.ty.substitute(subs) | self.params.substitute(subs)
     }
 }
 
 impl Substitute for Stmt<()> {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         match &mut self.kind {
             StmtKind::Type { constructors, .. } => constructors.substitute(subs),
@@ -737,18 +738,18 @@ impl Substitute for Stmt<()> {
 }
 
 impl Substitute for LetBind<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.expr.substitute(subs) | self.params.substitute(subs)
     }
 }
 
 impl Substitute for StmtKind<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         match self {
             Self::Let(bind) => bind.substitute(subs),
@@ -783,27 +784,27 @@ impl Substitute for StmtKind<Ty> {
 
 impl Substitute for Stmt<Ty> {
     #[inline]
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.kind.substitute(subs)
     }
 }
 
 impl Substitute for MatchArm<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.pat.substitute(subs) | self.expr.substitute(subs)
     }
 }
 
 impl Substitute for Expr<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         let kind = match &mut self.kind {
             ExprKind::Let { bind, body } => bind.substitute(subs) | body.substitute(subs),
@@ -836,18 +837,18 @@ impl<T> Substitute for Module<T>
 where
     Stmt<T>: Substitute,
 {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         self.stmts.substitute(subs)
     }
 }
 
 impl Substitute for ListPat<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         match self {
             Self::Nil => false,
@@ -858,9 +859,9 @@ impl Substitute for ListPat<Ty> {
 }
 
 impl Substitute for Pat<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    fn substitute<S>(&mut self, subs: &S) -> bool
     where
-        S: FnMut(&TyKind) -> Option<Ty>,
+        S: Fn(&TyKind) -> Option<Ty>,
     {
         let kind = match &mut self.kind {
             PatKind::Tuple(args) | PatKind::Or(args) | PatKind::Constructor { args, .. } => {
