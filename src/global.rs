@@ -1,9 +1,11 @@
-use std::cell::RefCell;
 use std::fmt::Display;
-use std::ops::Range;
+use std::hash::{Hash, Hasher};
+use std::ops::{Deref, Range};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::compiler::types::{TyId, TyKind};
 use crate::span::SpanData;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -11,6 +13,76 @@ pub struct Symbol(u32);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Span(u32);
+
+#[derive(Debug, Clone, Copy)]
+pub struct Ty(&'static TyKind);
+
+#[derive(Debug, Clone, Copy)]
+pub struct TySlice(&'static [Ty]);
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyQuant(&'static [TyId]);
+
+impl Deref for TySlice {
+    type Target = [Ty];
+
+    fn deref(&self) -> &'static Self::Target {
+        self.0
+    }
+}
+
+impl Deref for TyQuant {
+    type Target = [TyId];
+
+    fn deref(&self) -> &'static Self::Target {
+        self.0
+    }
+}
+
+impl Hash for Ty {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::ptr::hash(self.0, state);
+    }
+}
+
+impl PartialEq for Ty {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.0, other.0)
+    }
+}
+
+impl Eq for Ty {
+}
+
+impl Hash for TySlice {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::ptr::hash(self.0, state);
+    }
+}
+
+impl PartialEq for TySlice {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.0, other.0)
+    }
+}
+
+impl Eq for TySlice {
+}
+
+impl Hash for TyQuant {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::ptr::hash(self.0, state);
+    }
+}
+
+impl PartialEq for TyQuant {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self.0, other.0)
+    }
+}
+
+impl Eq for TyQuant {
+}
 
 impl Default for Span {
     fn default() -> Self {
@@ -46,7 +118,7 @@ impl Symbol {
     }
 
     pub fn intern(symbol: &str) -> Self {
-        Env::get(|e| e.symbols.intern(symbol))
+        Env::get(|mut e| e.symbols.intern(symbol))
     }
 }
 
@@ -70,7 +142,7 @@ impl Display for Symbol {
 
 impl Span {
     pub fn intern(span: SpanData) -> Self {
-        Env::get(|e| e.spans.intern(span))
+        Env::get(|mut e| e.spans.intern(span))
     }
 
     #[must_use]
@@ -107,25 +179,66 @@ impl std::fmt::Debug for Span {
 struct Env {
     symbols: SymbolInterner,
     spans:   SpanInterner,
+    ctx:     GlobalCtx,
 }
 
 impl Env {
-    fn new() -> Self {
-        Self::default()
-    }
-
-    fn get<T>(f: impl FnOnce(&mut Self) -> T) -> T {
-        GLOBAL_DATA.with_borrow_mut(f)
+    fn get<T>(f: impl FnOnce(MutexGuard<'_, Self>) -> T) -> T {
+        static GLOBAL_DATA: OnceLock<Mutex<Env>> = OnceLock::new();
+        f(GLOBAL_DATA.get_or_init(Default::default).lock().unwrap())
     }
 }
 
-thread_local! {
-    static GLOBAL_DATA: RefCell<Env> = RefCell::new(Env::new());
+impl Ty {
+    pub const fn new_unchecked(kind: &'static TyKind) -> Self {
+        Self(kind)
+    }
+
+    #[inline]
+    pub const fn kind(self) -> &'static TyKind {
+        self.0
+    }
+
+    pub fn intern(ty: TyKind) -> Self {
+        Env::get(|mut e| e.ctx.intern(ty))
+    }
+
+    pub fn intern_slice(ty: Vec<Self>) -> TySlice {
+        Env::get(|mut e| e.ctx.intern_slice(ty))
+    }
+
+    pub fn intern_quant(ty: Vec<TyId>) -> TyQuant {
+        Env::get(|mut e| e.ctx.intern_quant(ty))
+    }
+
+    pub const fn int() -> Self {
+        INT
+    }
+
+    pub const fn bool() -> Self {
+        BOOL
+    }
+
+    pub const fn char() -> Self {
+        CHAR
+    }
+
+    pub const fn real() -> Self {
+        REAL
+    }
+
+    pub const fn empty_slice() -> TySlice {
+        EMPTY_SLICE
+    }
+
+    pub const fn empty_quant() -> TyQuant {
+        EMPTY_QUANT
+    }
 }
 
 #[must_use]
 pub fn intern_owned_symbol(symbol: String) -> Symbol {
-    Env::get(|e| e.symbols.intern_owned(symbol))
+    Env::get(|mut e| e.symbols.intern_owned(symbol))
 }
 
 struct SymbolInterner {
@@ -207,5 +320,72 @@ impl SpanInterner {
         let idx = self.spans.len().try_into().unwrap();
         self.spans.push(span);
         Span::new(idx)
+    }
+}
+
+#[derive(Default)]
+struct GlobalCtx {
+    types:       FxHashSet<&'static TyKind>,
+    slices:      FxHashSet<&'static [Ty]>,
+    quantifiers: FxHashSet<&'static [TyId]>,
+}
+
+static INT: Ty = Ty(&TyKind::Int);
+static BOOL: Ty = Ty(&TyKind::Bool);
+static CHAR: Ty = Ty(&TyKind::Char);
+static REAL: Ty = Ty(&TyKind::Real);
+static EMPTY_SLICE: TySlice = TySlice(&[]);
+static EMPTY_QUANT: TyQuant = TyQuant(&[]);
+
+impl GlobalCtx {
+    const fn try_get_primitive(ty: &TyKind) -> Option<Ty> {
+        match ty {
+            TyKind::Int => Some(INT),
+            TyKind::Bool => Some(BOOL),
+            TyKind::Char => Some(CHAR),
+            TyKind::Real => Some(REAL),
+            _ => None,
+        }
+    }
+
+    fn intern(&mut self, ty: TyKind) -> Ty {
+        if let Some(ty) = Self::try_get_primitive(&ty) {
+            return ty;
+        }
+        if let Some(ty) = self.types.get(&ty) {
+            return Ty(ty);
+        }
+
+        let ty = Box::leak(Box::new(ty));
+        self.types.insert(ty);
+        Ty(ty)
+    }
+
+    fn intern_slice(&mut self, ty: Vec<Ty>) -> TySlice {
+        if ty.is_empty() {
+            return EMPTY_SLICE;
+        }
+
+        if let Some(slice) = self.slices.get(ty.as_slice()) {
+            return TySlice(slice);
+        }
+
+        let slice = Box::leak(ty.into_boxed_slice());
+        self.slices.insert(slice);
+        TySlice(slice)
+    }
+
+    fn intern_quant(&mut self, ty: Vec<TyId>) -> TyQuant {
+        if ty.is_empty() {
+            return EMPTY_QUANT;
+        }
+
+        if let Some(slice) = self.quantifiers.get(ty.as_slice()) {
+            return TyQuant(slice);
+        }
+
+        let slice = Box::leak(ty.into_boxed_slice());
+        self.quantifiers.insert(slice);
+        TyQuant(slice)
     }
 }

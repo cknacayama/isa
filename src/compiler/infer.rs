@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
-use std::ops::{Deref, DerefMut};
+use std::ops::{BitOr, Deref, DerefMut};
 use std::rc::Rc;
 
 use super::ast::{Ident, Path};
 use super::ctx::Ctx;
 use super::error::Uninferable;
-use super::types::{Ty, TyId};
+use super::types::{Ty, TyId, TyKind};
 use crate::global::Span;
 
 #[derive(Debug, Clone)]
@@ -25,116 +25,109 @@ impl Subs {
         self.old
     }
 
-    pub const fn subs(&self) -> &Ty {
-        &self.subs
+    pub const fn subs(&self) -> Ty {
+        self.subs
     }
 }
 
 pub trait Substitute {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>;
+        S: FnMut(&TyKind) -> Option<Ty>;
 
     /// Used mainly for type inference and unification of constraint sets
-    fn substitute_eq(&mut self, subs: &Subs)
-    where
-        Self: Sized,
-    {
-        if &Ty::Var(subs.old) == subs.subs() {
-            return;
+    fn substitute_eq(&mut self, subs: &Subs) -> bool {
+        if subs.subs().kind().as_var().is_some_and(|t| t == subs.old()) {
+            return false;
         }
         self.substitute(&mut |t| match t {
-            Ty::Var(id) if *id == subs.old => Some(subs.subs.clone()),
-            Ty::Generic { var, args } if *var == subs.old => match subs.subs.clone() {
-                Ty::Var(new) => Some(Ty::Generic {
-                    var:  new,
-                    args: args.clone(),
-                }),
-                Ty::Named { name, args: named } => {
+            TyKind::Var(id) if *id == subs.old => Some(subs.subs),
+            TyKind::Generic { var, args } if *var == subs.old => match subs.subs.kind() {
+                TyKind::Var(new) => Some(Ty::intern(TyKind::Generic {
+                    var:  *new,
+                    args: *args,
+                })),
+                TyKind::Named { name, args: named } => {
                     let mut named = named.to_vec();
                     named.extend_from_slice(args);
-                    Some(Ty::Named {
-                        name,
-                        args: named.into(),
-                    })
+                    Some(Ty::intern(TyKind::Named {
+                        name: *name,
+                        args: Ty::intern_slice(named),
+                    }))
                 }
-                Ty::Generic { var, args: generic } => {
+                TyKind::Generic { var, args: generic } => {
                     let mut generic = generic.to_vec();
                     generic.extend_from_slice(args);
-                    Some(Ty::Generic {
-                        var,
-                        args: generic.into(),
-                    })
+                    Some(Ty::intern(TyKind::Generic {
+                        var:  *var,
+                        args: Ty::intern_slice(generic),
+                    }))
                 }
                 _ => None,
             },
             _ => None,
-        });
+        })
     }
 
-    fn substitute_many<'a, T>(&mut self, subs: T)
+    fn substitute_many<'a, T>(&mut self, subs: T) -> bool
     where
-        Self: Sized,
         T: IntoIterator<Item = &'a Subs>,
     {
-        for s in subs {
-            self.substitute_eq(s);
-        }
+        subs.into_iter()
+            .map(|s| self.substitute_eq(s))
+            .reduce(BitOr::bitor)
+            .unwrap_or(false)
     }
 
-    fn substitute_self(&mut self, instance: &Ty)
-    where
-        Self: Sized,
-    {
+    fn substitute_self(&mut self, instance: Ty) -> bool {
         self.substitute(&mut |ty| match ty {
-            Ty::This(args) if args.is_empty() => Some(instance.clone()),
-            Ty::This(args) => match instance.clone() {
-                Ty::Var(new) => Some(Ty::Generic {
-                    var:  new,
-                    args: args.clone(),
-                }),
-                Ty::Named { name, args: named } => {
+            TyKind::This(args) if args.is_empty() => Some(instance),
+            TyKind::This(args) => match instance.kind() {
+                TyKind::Var(new) => Some(Ty::intern(TyKind::Generic {
+                    var:  *new,
+                    args: *args,
+                })),
+                TyKind::Named { name, args: named } => {
                     let mut named = named.to_vec();
                     named.extend_from_slice(args);
-                    Some(Ty::Named {
-                        name,
-                        args: named.into(),
-                    })
+                    Some(Ty::intern(TyKind::Named {
+                        name: *name,
+                        args: Ty::intern_slice(named),
+                    }))
                 }
-                Ty::Generic { var, args: generic } => {
+                TyKind::Generic { var, args: generic } => {
                     let mut generic = generic.to_vec();
                     generic.extend_from_slice(args);
-                    Some(Ty::Generic {
-                        var,
-                        args: generic.into(),
-                    })
+                    Some(Ty::intern(TyKind::Generic {
+                        var:  *var,
+                        args: Ty::intern_slice(generic),
+                    }))
                 }
                 _ => None,
             },
 
             _ => None,
-        });
+        })
     }
 
-    fn substitute_param(&mut self, subs: &[(Ident, TyId)])
-    where
-        Self: Sized,
-    {
+    fn substitute_param(&mut self, subs: &[(Ident, TyId)]) -> bool {
         if subs.is_empty() {
-            return;
+            return false;
         }
         self.substitute(&mut |ty| match ty {
-            Ty::Named { name, args } if args.is_empty() => subs
+            TyKind::Named { name, args } if args.is_empty() => subs
                 .iter()
-                .find_map(|(s, v)| name.is_ident(*s).then_some(Ty::Var(*v))),
-            Ty::Named { name, args } => subs.iter().find_map(|(s, v)| {
-                name.is_ident(*s).then(|| Ty::Generic {
-                    var:  *v,
-                    args: args.clone(),
+                .find_map(|(s, v)| name.is_ident(*s).then_some(Ty::intern(TyKind::Var(*v)))),
+            TyKind::Named { name, args } => subs.iter().find_map(|(s, v)| {
+                name.is_ident(*s).then(|| {
+                    Ty::intern(TyKind::Generic {
+                        var:  *v,
+                        args: *args,
+                    })
                 })
             }),
             _ => None,
-        });
+        })
     }
 }
 
@@ -147,12 +140,11 @@ pub struct EqConstraint {
 }
 
 impl Substitute for EqConstraint {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        self.lhs.substitute(subs);
-        self.rhs.substitute(subs);
+        self.lhs.substitute(subs) | self.rhs.substitute(subs)
     }
 }
 
@@ -225,13 +217,31 @@ impl DerefMut for EqConstraintSet {
 }
 
 impl Substitute for EqConstraintSet {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        for c in &mut self.constrs {
-            c.substitute(subs);
-        }
+        self.constrs
+            .iter_mut()
+            .map(|t| t.substitute(subs))
+            .reduce(BitOr::bitor)
+            .unwrap_or(false)
+    }
+}
+
+impl<T> Substitute for [T]
+where
+    T: Substitute,
+{
+    #[inline]
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    where
+        S: FnMut(&TyKind) -> Option<Ty>,
+    {
+        self.iter_mut()
+            .map(|t| t.substitute(subs))
+            .reduce(BitOr::bitor)
+            .unwrap_or(false)
     }
 }
 
@@ -283,8 +293,8 @@ impl ClassConstraint {
         (&mut self.class, &mut self.ty)
     }
 
-    pub const fn ty(&self) -> &Ty {
-        &self.ty
+    pub const fn ty(&self) -> Ty {
+        self.ty
     }
 
     pub const fn span(&self) -> Span {
@@ -297,11 +307,11 @@ impl ClassConstraint {
 }
 
 impl Substitute for ClassConstraint {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        self.ty.substitute(subs);
+        self.ty.substitute(subs)
     }
 }
 
@@ -390,108 +400,104 @@ fn unify_eq(
     subs: &mut Vec<Subs>,
 ) -> Result<(), Uninferable> {
     let span = c.span;
-    match (&c.lhs, &c.rhs) {
-        (Ty::Int, Ty::Int) | (Ty::Bool, Ty::Bool) | (Ty::Char, Ty::Char) | (Ty::Real, Ty::Real) => {
-        }
+    match (c.lhs.kind(), c.rhs.kind()) {
+        (TyKind::Int, TyKind::Int)
+        | (TyKind::Bool, TyKind::Bool)
+        | (TyKind::Char, TyKind::Char)
+        | (TyKind::Real, TyKind::Real) => {}
 
-        (Ty::Var(v1), Ty::Var(v2)) if v1 == v2 => {}
+        (TyKind::Var(v1), TyKind::Var(v2)) if v1 == v2 => {}
 
-        (new, Ty::Var(old)) | (Ty::Var(old), new) if !new.occurs(*old) => {
-            let s = Subs::new(*old, new.clone());
+        (new, TyKind::Var(old)) | (TyKind::Var(old), new)
+            if !Ty::new_unchecked(new).occurs(*old) =>
+        {
+            let s = Subs::new(*old, Ty::new_unchecked(new));
 
             cset.substitute_eq(&s);
 
             subs.push(s);
         }
         (
-            Ty::Generic {
+            TyKind::Generic {
                 var: v1,
                 args: args1,
             },
-            Ty::Generic {
+            TyKind::Generic {
                 var: v2,
                 args: args2,
             },
         ) if args1.len() == args2.len() => {
-            let args1 = args1.clone();
-            let args2 = args2.clone();
+            let args1 = *args1;
+            let args2 = *args2;
             let v1 = *v1;
             let v2 = *v2;
             let parent = Rc::new(c);
             for (a1, a2) in args1.iter().zip(args2.iter()) {
-                cset.push_back(
-                    EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
-                );
+                cset.push_back(EqConstraint::new(*a1, *a2, span).with_parent(parent.clone()));
             }
             if v1 != v2 {
-                let s = Subs::new(v2, Ty::Var(v1));
+                let s = Subs::new(v2, Ty::intern(TyKind::Var(v1)));
                 cset.substitute_eq(&s);
                 subs.push(s);
             }
         }
-        (Ty::Generic { var, args: vars }, Ty::Named { name, args: named })
-        | (Ty::Named { name, args: named }, Ty::Generic { var, args: vars })
+        (TyKind::Generic { var, args: vars }, TyKind::Named { name, args: named })
+        | (TyKind::Named { name, args: named }, TyKind::Generic { var, args: vars })
             if vars.len() <= named.len() =>
         {
             let var = *var;
             let name = *name;
-            let vars = vars.clone();
-            let named = named.clone();
+            let vars = *vars;
+            let named = *named;
             let parent = Rc::new(c);
             let mut named_iter = named.iter().rev();
             for arg in vars.iter().rev() {
                 let named = named_iter.next().unwrap();
-                cset.push_back(
-                    EqConstraint::new(arg.clone(), named.clone(), span).with_parent(parent.clone()),
-                );
+                cset.push_back(EqConstraint::new(*arg, *named, span).with_parent(parent.clone()));
             }
-            let args = named_iter.cloned().rev().collect();
-            let s = Subs::new(var, Ty::Named { name, args });
+            let args = Ty::intern_slice(named_iter.rev().copied().collect());
+            let s = Subs::new(var, Ty::intern(TyKind::Named { name, args }));
             cset.substitute_eq(&s);
 
             subs.push(s);
         }
-        (Ty::Fn { param: i1, ret: o1 }, Ty::Fn { param: i2, ret: o2 }) => {
-            let c1 = EqConstraint::new(i1.into(), i2.into(), c.span);
-            let c2 = EqConstraint::new(o1.into(), o2.into(), c.span);
+        (TyKind::Fn { param: i1, ret: o1 }, TyKind::Fn { param: i2, ret: o2 }) => {
+            let c1 = EqConstraint::new(*i1, *i2, c.span);
+            let c2 = EqConstraint::new(*o1, *o2, c.span);
             let parent = Rc::new(c);
 
             cset.push_back(c1.with_parent(parent.clone()));
             cset.push_back(c2.with_parent(parent));
         }
         (
-            Ty::Named {
+            TyKind::Named {
                 name: n1,
                 args: args1,
             },
-            Ty::Named {
+            TyKind::Named {
                 name: n2,
                 args: args2,
             },
         ) if n1 == n2 && args1.len() == args2.len() => {
-            let args1 = args1.clone();
-            let args2 = args2.clone();
+            let args1 = *args1;
+            let args2 = *args2;
             let parent = Rc::new(c);
             for (a1, a2) in args1.iter().zip(args2.iter()) {
-                cset.push_back(
-                    EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
-                );
+                cset.push_back(EqConstraint::new(*a1, *a2, span).with_parent(parent.clone()));
             }
         }
-        (Ty::Tuple(t1), Ty::Tuple(t2)) if t1.len() == t2.len() => {
-            let args1 = t1.clone();
-            let args2 = t2.clone();
+        (TyKind::Tuple(t1), TyKind::Tuple(t2)) if t1.len() == t2.len() => {
+            let args1 = *t1;
+            let args2 = *t2;
             let parent = Rc::new(c);
             for (a1, a2) in args1.iter().zip(args2.iter()) {
-                cset.push_back(
-                    EqConstraint::new(a1.clone(), a2.clone(), span).with_parent(parent.clone()),
-                );
+                cset.push_back(EqConstraint::new(*a1, *a2, span).with_parent(parent.clone()));
             }
         }
-        (Ty::Scheme { quant: q1, ty: t1 }, Ty::Scheme { quant: q2, ty: t2 })
+        (TyKind::Scheme { quant: q1, ty: t1 }, TyKind::Scheme { quant: q2, ty: t2 })
             if q1.len() == q2.len() =>
         {
-            let constr = EqConstraint::new(t1.into(), t2.into(), span);
+            let constr = EqConstraint::new(*t1, *t2, span);
             let parent = Rc::new(c);
             cset.push_back(constr.with_parent(parent));
         }
@@ -572,16 +578,5 @@ impl EqConstraintSet {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
-    }
-}
-
-impl Substitute for ClassConstraintSet {
-    fn substitute<S>(&mut self, subs: &mut S)
-    where
-        S: FnMut(&Ty) -> Option<Ty>,
-    {
-        for ty in &mut self.constrs {
-            ty.substitute(subs);
-        }
     }
 }

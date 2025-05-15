@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use rustc_hash::FxHashMap;
 
 use super::ast::{
@@ -16,7 +14,7 @@ use super::infer::{
     ClassConstraint, ClassConstraintSet as Set, Constraint, EqConstraint, EqConstraintSet, Subs,
     Substitute,
 };
-use super::types::{Ty, TyId};
+use super::types::{Ty, TyId, TyKind, TyQuant, TySlice};
 use crate::compiler::ctx::OperatorData;
 use crate::global::{Span, Symbol};
 
@@ -81,49 +79,54 @@ impl Checker {
         self.generator.gen_type_var()
     }
 
-    fn check_valid_signature(&self, ty: &Ty) -> IsaResult<()> {
-        match ty {
-            Ty::Generic { args, .. } | Ty::Tuple(args) => args
+    fn check_valid_signature(&self, ty: Ty) -> IsaResult<()> {
+        match ty.kind() {
+            TyKind::Generic { args, .. } | TyKind::Tuple(args) => args
                 .iter()
-                .try_for_each(|ty| self.check_valid_signature(ty)),
-            Ty::Fn { param, ret } => {
-                self.check_valid_signature(param)?;
-                self.check_valid_signature(ret)
+                .try_for_each(|&ty| self.check_valid_signature(ty)),
+            TyKind::Fn { param, ret } => {
+                self.check_valid_signature(*param)?;
+                self.check_valid_signature(*ret)
             }
-            Ty::Scheme { ty, .. } => self.check_valid_signature(ty),
-            Ty::Named { name, args } => {
+            TyKind::Scheme { ty, .. } => self.check_valid_signature(*ty),
+            TyKind::Named { name, args } => {
                 self.ctx.get_ty_data(name)?;
                 args.iter()
-                    .try_for_each(|ty| self.check_valid_signature(ty))
+                    .try_for_each(|&ty| self.check_valid_signature(ty))
             }
 
-            Ty::This(_) | Ty::Int | Ty::Bool | Ty::Char | Ty::Real | Ty::Var(_) => Ok(()),
+            TyKind::This(_)
+            | TyKind::Int
+            | TyKind::Bool
+            | TyKind::Char
+            | TyKind::Real
+            | TyKind::Var(_) => Ok(()),
         }
     }
 
-    fn check_valid_type(&self, ty: &Ty, span: Span) -> IsaResult<()> {
-        match ty {
-            Ty::Generic { args, .. } | Ty::Tuple(args) => args
+    fn check_valid_type(&self, ty: Ty, span: Span) -> IsaResult<()> {
+        match ty.kind() {
+            TyKind::Generic { args, .. } | TyKind::Tuple(args) => args
                 .iter()
-                .try_for_each(|ty| self.check_valid_type(ty, span)),
-            Ty::Fn { param, ret } => {
-                self.check_valid_type(param, span)?;
-                self.check_valid_type(ret, span)
+                .try_for_each(|&ty| self.check_valid_type(ty, span)),
+            TyKind::Fn { param, ret } => {
+                self.check_valid_type(*param, span)?;
+                self.check_valid_type(*ret, span)
             }
-            Ty::Scheme { ty, .. } => self.check_valid_type(ty, span),
-            Ty::Named { name, args } => {
+            TyKind::Scheme { ty, .. } => self.check_valid_type(*ty, span),
+            TyKind::Named { name, args } => {
                 self.ctx.get_ty_data(name)?;
                 args.iter()
-                    .try_for_each(|ty| self.check_valid_type(ty, span))
+                    .try_for_each(|ty| self.check_valid_type(*ty, span))
             }
 
-            Ty::This(_) => {
+            TyKind::This(_) => {
                 let fst =
                     DiagnosticLabel::new("`Self` type not allowed outside class definition", span);
                 Err(IsaError::new("invalid `Self`", fst, Vec::new()))
             }
 
-            Ty::Int | Ty::Bool | Ty::Char | Ty::Real | Ty::Var(_) => Ok(()),
+            TyKind::Int | TyKind::Bool | TyKind::Char | TyKind::Real | TyKind::Var(_) => Ok(()),
         }
     }
 
@@ -138,8 +141,8 @@ impl Checker {
         let (mut then, then_set) = self.check_expr(then)?;
         let (mut otherwise, else_set) = self.check_expr(otherwise)?;
 
-        let c_cond = EqConstraint::new(Ty::Bool, cond.ty.clone(), cond.span);
-        let c_body = EqConstraint::new(then.ty.clone(), otherwise.ty.clone(), otherwise.span);
+        let c_cond = EqConstraint::new(Ty::bool(), cond.ty, cond.span);
+        let c_body = EqConstraint::new(then.ty, otherwise.ty, otherwise.span);
 
         let (subs, set) = self
             .unify([c_cond, c_body], set.join(then_set).join(else_set))
@@ -163,8 +166,8 @@ impl Checker {
                         (fst, vec![snd])
                     }
                     Constraint::Eq(_) => {
-                        let mut then_ty = then.ty.clone();
-                        let mut els_ty = otherwise.ty.clone();
+                        let mut then_ty = then.ty;
+                        let mut els_ty = otherwise.ty;
                         then_ty.substitute_many(err.subs());
                         els_ty.substitute_many(err.subs());
                         let fst = DiagnosticLabel::new("if and else have different types", span);
@@ -187,7 +190,7 @@ impl Checker {
         then.substitute_many(&subs);
         otherwise.substitute_many(&subs);
 
-        let ty = then.ty.clone();
+        let ty = then.ty;
 
         let kind = ExprKind::If {
             cond:      Box::new(cond),
@@ -214,10 +217,10 @@ impl Checker {
 
         self.ctx.pop_scope();
 
-        let ty = Ty::Fn {
-            param: Rc::new(pat.ty.clone()),
-            ret:   Rc::new(expr.ty.clone()),
-        };
+        let ty = Ty::intern(TyKind::Fn {
+            param: pat.ty,
+            ret:   expr.ty,
+        });
 
         let kind = ExprKind::Fn {
             param: Param::new(pat),
@@ -237,11 +240,11 @@ impl Checker {
         let (mut arg, arg_set) = self.check_expr(arg)?;
 
         let mut var = self.gen_type_var();
-        let fn_ty = Ty::Fn {
-            param: Rc::new(arg.ty.clone()),
-            ret:   Rc::new(var.clone()),
-        };
-        let constr = EqConstraint::new(callee.ty.clone(), fn_ty, span);
+        let fn_ty = Ty::intern(TyKind::Fn {
+            param: arg.ty,
+            ret:   var,
+        });
+        let constr = EqConstraint::new(callee.ty, fn_ty, span);
         let (subs, set) = self.unify(constr, set.join(arg_set)).map_err(|err| {
             if err.constr().is_class() {
                 return IsaError::from(err);
@@ -250,7 +253,7 @@ impl Checker {
             callee.ty.substitute_many(err.subs());
             arg.ty.substitute_many(err.subs());
 
-            let (fst, labels) = if let Ty::Fn { ref param, .. } = callee.ty {
+            let (fst, labels) = if let TyKind::Fn { param, .. } = callee.ty.kind() {
                 let fst = DiagnosticLabel::new(
                     format!("expected `{param}` argument, got `{}`", arg.ty),
                     arg.span,
@@ -310,7 +313,7 @@ impl Checker {
                         .with_note("let bind should have same type as val declaration")
                 })?;
                 let mut pat = self.check_pat(p.pat)?;
-                let c = EqConstraint::new(decl, pat.ty.clone(), pat.span);
+                let c = EqConstraint::new(decl, pat.ty, pat.span);
                 let (subs, _) = self.unify(c, [])?;
                 pat.ty.substitute_many(&subs);
 
@@ -331,15 +334,15 @@ impl Checker {
                 p.pat.ty.substitute_many(subs);
             }
 
-            expr.ty = Ty::function(typed_params.iter().map(|p| p.pat.ty.clone()), expr.ty);
+            expr.ty = Ty::function(typed_params.iter().map(|p| p.pat.ty), expr.ty);
             (expr, set)
         };
 
         self.ctx.pop_scope();
 
-        let ty = expr.ty.clone();
+        let ty = expr.ty;
 
-        let constr = EqConstraint::new(val_decl.clone(), ty, expr.span);
+        let constr = EqConstraint::new(val_decl, ty, expr.span);
 
         let val_error = |ty: &Ty, span| {
             let fst = DiagnosticLabel::new(format!("expected `{val_decl}`"), bind.name.span);
@@ -364,7 +367,7 @@ impl Checker {
                 .any(|v| v.subs().as_var().is_some_and(|v| v == s.old()))
         }) {
             expr.ty.substitute_many(&subs);
-            let ty = self.ctx.generalize(expr.ty.clone());
+            let ty = self.ctx.generalize(expr.ty);
             return Err(val_error(&ty, expr.span));
         }
 
@@ -384,7 +387,7 @@ impl Checker {
             p.pat.ty.substitute_many(&subs);
         }
 
-        let ty = self.ctx.generalize(expr.ty.clone());
+        let ty = self.ctx.generalize(expr.ty);
 
         Ok((ty, expr, typed_params, val_set))
     }
@@ -425,7 +428,7 @@ impl Checker {
         } else {
             let pos = self.subs_count();
             let var_id = self.gen_id();
-            let var = Ty::Var(var_id);
+            let var = Ty::var(var_id);
             self.insert_let(bind.name, var, []);
 
             let (mut expr, set) = self.check_expr(bind.expr)?;
@@ -435,9 +438,9 @@ impl Checker {
                 p.pat.ty.substitute_many(subs);
             }
 
-            expr.ty = Ty::function(typed_params.iter().map(|p| p.pat.ty.clone()), expr.ty);
+            expr.ty = Ty::function(typed_params.iter().map(|p| p.pat.ty), expr.ty);
 
-            let subs = Subs::new(var_id, expr.ty.clone());
+            let subs = Subs::new(var_id, expr.ty);
 
             expr.substitute_eq(&subs);
             (expr, set)
@@ -445,7 +448,7 @@ impl Checker {
 
         self.ctx.pop_scope();
 
-        let ty = self.ctx.generalize(expr.ty.clone());
+        let ty = self.ctx.generalize(expr.ty);
 
         Ok((ty, expr, typed_params, set))
     }
@@ -479,7 +482,7 @@ impl Checker {
         self.insert_let(name, u1, set.clone());
         let (body, body_set) = self.check_expr(body)?;
         self.ctx.pop_scope();
-        let ty = body.ty.clone();
+        let ty = body.ty;
         let set = set.join(body_set);
 
         let bind = LetBind::new(false, name, params, expr);
@@ -495,21 +498,13 @@ impl Checker {
     fn check_constructor(
         &self,
         constructor: Constructor<()>,
-        quant: Rc<[TyId]>,
-        mut ret: Ty,
+        quant: TyQuant,
+        ret: Ty,
     ) -> IsaResult<Constructor<Ty>> {
-        for param in constructor.params.iter().rev() {
-            ret = Ty::Fn {
-                param: Rc::new(param.clone()),
-                ret:   Rc::new(ret),
-            };
-        }
-        self.check_valid_type(&ret, constructor.span)?;
+        let mut ret = Ty::function(constructor.params.iter().copied(), ret);
+        self.check_valid_type(ret, constructor.span)?;
         if !quant.is_empty() {
-            ret = Ty::Scheme {
-                quant,
-                ty: Rc::new(ret),
-            };
+            ret = Ty::intern(TyKind::Scheme { quant, ty: ret });
         }
         Ok(Constructor {
             name:   constructor.name,
@@ -522,25 +517,22 @@ impl Checker {
     fn check_type_definition(
         &mut self,
         name: Ident,
-        params: Box<[Ty]>,
+        params: TySlice,
         constructors: Box<[Constructor<()>]>,
         span: Span,
     ) -> IsaResult<Stmt<Ty>> {
-        let quant = params
-            .iter()
-            .map(|p| p.as_var().unwrap())
-            .collect::<Rc<_>>();
+        let quant = Ty::intern_quant(params.iter().map(|p| p.as_var().unwrap()).collect());
 
         let module = Ident::new(self.ctx.current_module().ident, name.span);
-        let ty = Ty::Named {
+        let ty = Ty::intern(TyKind::Named {
             name: Path::from_two(module, name),
-            args: params.clone().into(),
-        };
+            args: params,
+        });
 
         let constructors = constructors
             .into_iter()
             .map(|c| {
-                let ctor = self.check_constructor(c, quant.clone(), ty.clone())?;
+                let ctor = self.check_constructor(c, quant, ty)?;
                 self.ctx.insert_constructor_for_ty(name, &ctor)?;
                 Ok(ctor)
             })
@@ -562,14 +554,11 @@ impl Checker {
         params: &[Ty],
         set: &Set,
         op: Symbol,
-        ty: &Ty,
+        ty: Ty,
         ty_span: Span,
         span: Span,
     ) -> IsaResult<()> {
-        let quant = params
-            .iter()
-            .map(|p| p.as_var().unwrap())
-            .collect::<Rc<_>>();
+        let quant = Ty::intern_quant(params.iter().map(|p| p.as_var().unwrap()).collect());
 
         if IS_CLASS {
             self.check_valid_signature(ty)?;
@@ -578,12 +567,9 @@ impl Checker {
         }
         let arity = ty.function_arity();
         let ty = if quant.is_empty() {
-            ty.clone()
+            ty
         } else {
-            Ty::Scheme {
-                quant,
-                ty: Rc::new(ty.clone()),
-            }
+            Ty::intern(TyKind::Scheme { quant, ty })
         };
 
         let data = OperatorData::new(fixity, prec, ty, set.clone(), span);
@@ -617,30 +603,23 @@ impl Checker {
             &op.params,
             &op.set,
             op.op.ident,
-            &op.ty,
+            op.ty,
             op.ty_span,
             op.span,
         )
     }
 
     fn check_val<const IS_CLASS: bool>(&self, val: &mut Val) -> IsaResult<()> {
-        let quant = val
-            .params
-            .iter()
-            .map(|p| p.as_var().unwrap())
-            .collect::<Rc<_>>();
+        let quant = Ty::intern_quant(val.params.iter().map(|p| p.as_var().unwrap()).collect());
 
         if !quant.is_empty() {
-            val.ty = Ty::Scheme {
-                quant,
-                ty: Rc::new(val.ty.clone()),
-            };
+            val.ty = Ty::intern(TyKind::Scheme { quant, ty: val.ty });
         }
 
         if IS_CLASS {
-            self.check_valid_signature(&val.ty)
+            self.check_valid_signature(val.ty)
         } else {
-            self.check_valid_type(&val.ty, val.span)
+            self.check_valid_type(val.ty, val.span)
         }
     }
 
@@ -649,7 +628,7 @@ impl Checker {
 
         self.ctx.current_mut().unwrap().insert_val(
             val.name.ident,
-            VarData::new(val.ty.clone(), val.set.clone(), val.span),
+            VarData::new(val.ty, val.set.clone(), val.span),
         );
 
         let kind = StmtKind::Val(val);
@@ -664,10 +643,10 @@ impl Checker {
         span: Span,
     ) -> IsaResult<Pat<Ty>> {
         let ctor = match (self.ctx.get_constructor(&name), name.as_slice()) {
-            (Ok(ctor), _) => ctor.clone(),
+            (Ok(ctor), _) => *ctor,
             (Err(_), [name]) if args.is_empty() => {
                 let var = self.gen_type_var();
-                self.insert_let(*name, var.clone(), []);
+                self.insert_let(*name, var, []);
                 return Ok(Pat::new(PatKind::Ident(*name), span, var));
             }
             (Err(err), _) => {
@@ -682,15 +661,11 @@ impl Checker {
 
         for arg in args {
             let arg = self.check_pat(arg)?;
-            let Ty::Fn { param, ret } = &ty else {
+            let TyKind::Fn { param, ret } = ty.kind() else {
                 return Err(CheckError::new(CheckErrorKind::NotConstructor(ty), span).into());
             };
-            c.push_back(EqConstraint::new(
-                param.as_ref().clone(),
-                arg.ty.clone(),
-                arg.span,
-            ));
-            ty = ret.as_ref().clone();
+            c.push_back(EqConstraint::new(*param, arg.ty, arg.span));
+            ty = *ret;
             typed_args.push(arg);
         }
 
@@ -741,12 +716,12 @@ impl Checker {
         {
             let var = self.gen_id();
             let mut params = params.to_vec();
-            params.push(Ty::Var(var));
-            set.push(ClassConstraint::new(class, Ty::Var(var), *span));
-            let mut ty = ty.clone();
-            ty.substitute_self(&Ty::Var(var));
+            params.push(Ty::var(var));
+            set.push(ClassConstraint::new(class, Ty::var(var), *span));
+            let mut ty = *ty;
+            ty.substitute_self(Ty::var(var));
             self.check_operator::<true>(
-                *fixity, *prec, &params, set, op.ident, &ty, *ty_span, *span,
+                *fixity, *prec, &params, set, op.ident, ty, *ty_span, *span,
             )?;
             set.pop();
         }
@@ -757,7 +732,7 @@ impl Checker {
                 MemberData {
                     has_default: defaults.iter().any(|bind| bind.name == val.name),
                     set:         val.set.clone(),
-                    ty:          val.ty.clone(),
+                    ty:          val.ty,
                     span:        val.span,
                 },
             )
@@ -769,7 +744,7 @@ impl Checker {
                 MemberData {
                     has_default: defaults.iter().any(|bind| bind.name == op.op),
                     set:         op.set.clone(),
-                    ty:          op.ty.clone(),
+                    ty:          op.ty,
                     span:        op.span,
                 },
             )
@@ -804,8 +779,8 @@ impl Checker {
         let var = self.gen_id();
         let class = Path::from_two(self.ctx.current_module(), name);
         self.ctx
-            .assume_constraints(&Set::from(ClassConstraint::new(class, Ty::Var(var), span)));
-        let defaults = self.check_instance_impls(&class, defaults, &Ty::Var(var))?;
+            .assume_constraints(&Set::from(ClassConstraint::new(class, Ty::var(var), span)));
+        let defaults = self.check_instance_impls(&class, defaults, Ty::var(var))?;
 
         let kind = StmtKind::Class {
             set,
@@ -823,7 +798,7 @@ impl Checker {
         &mut self,
         class: &Path,
         impls: impl IntoIterator<Item = LetBind<()>>,
-        subs: &Ty,
+        subs: Ty,
     ) -> IsaResult<Vec<LetBind<Ty>>> {
         let impls = impls
             .into_iter()
@@ -860,7 +835,7 @@ impl Checker {
 
     fn check_instance(
         &mut self,
-        params: Box<[Ty]>,
+        params: TySlice,
         set: Set,
         class: Path,
         instance: Ty,
@@ -869,21 +844,18 @@ impl Checker {
     ) -> IsaResult<Stmt<Ty>> {
         let class_data = self.ctx.get_class(&class)?;
 
-        let quant = params
-            .iter()
-            .map(|p| p.as_var().unwrap())
-            .collect::<Rc<_>>();
+        let quant = Ty::intern_quant(params.iter().map(|p| p.as_var().unwrap()).collect());
 
         let scheme = if quant.is_empty() {
-            instance.clone()
+            instance
         } else {
-            Ty::Scheme {
+            Ty::intern(TyKind::Scheme {
                 quant,
-                ty: Rc::new(instance.clone()),
-            }
+                ty: instance,
+            })
         };
         for parent in class_data.parents() {
-            if self.ctx.implementation(&scheme, parent).is_err() {
+            if self.ctx.implementation(scheme, parent).is_err() {
                 let fst = DiagnosticLabel::new(
                     format!("type `{scheme}` doesn't implement `{parent}`"),
                     span,
@@ -918,7 +890,7 @@ impl Checker {
 
         self.ctx.set_constraints(&class, scheme, set.clone());
         self.ctx.assume_constraints(&set);
-        let impls = self.check_instance_impls(&class, impls, &instance)?;
+        let impls = self.check_instance_impls(&class, impls, instance)?;
 
         let kind = StmtKind::Instance {
             params,
@@ -939,7 +911,7 @@ impl Checker {
             }
             ListPat::Single(pat) => {
                 let pat = self.check_pat(*pat)?;
-                let ty = Ty::list(pat.ty.clone());
+                let ty = Ty::list(pat.ty);
                 let kind = PatKind::List(ListPat::Single(Box::new(pat)));
                 Ok(Pat::new(kind, span, ty))
             }
@@ -951,8 +923,8 @@ impl Checker {
                     let note = "rest pattern should be of form _, identifier or list pattern";
                     return Err(IsaError::new("pattern error", fst, Vec::new()).with_note(note));
                 }
-                let mut ty = Ty::list(pat.ty.clone());
-                let c = EqConstraint::new(ty.clone(), pat1.ty.clone(), span);
+                let mut ty = Ty::list(pat.ty);
+                let c = EqConstraint::new(ty, pat1.ty, span);
                 let (subs, _) = self.unify(c, [])?;
                 ty.substitute_many(&subs);
                 let kind = PatKind::List(ListPat::Cons(Box::new(pat), Box::new(pat1)));
@@ -975,7 +947,7 @@ impl Checker {
                 let mut var = self.gen_type_var();
                 for pat in spanneds {
                     let pat = self.check_pat(pat)?;
-                    c.push_back(EqConstraint::new(pat.ty.clone(), var.clone(), pat.span));
+                    c.push_back(EqConstraint::new(pat.ty, var, pat.span));
                     patterns.push(pat);
                 }
 
@@ -995,17 +967,13 @@ impl Checker {
                 ))
             }
             PatKind::List(list) => self.check_list_pat(list, span),
-            PatKind::Int(i) => Ok(Pat::new(PatKind::Int(i), span, Ty::Int)),
-            PatKind::Real(r) => Ok(Pat::new(PatKind::Real(r), span, Ty::Real)),
-            PatKind::Bool(b) => Ok(Pat::new(PatKind::Bool(b), span, Ty::Bool)),
-            PatKind::Char(c) => Ok(Pat::new(PatKind::Char(c), span, Ty::Char)),
+            PatKind::Int(i) => Ok(Pat::new(PatKind::Int(i), span, Ty::int())),
+            PatKind::Real(r) => Ok(Pat::new(PatKind::Real(r), span, Ty::real())),
+            PatKind::Bool(b) => Ok(Pat::new(PatKind::Bool(b), span, Ty::bool())),
+            PatKind::Char(c) => Ok(Pat::new(PatKind::Char(c), span, Ty::char())),
             PatKind::Tuple(pats) => {
                 if pats.is_empty() {
-                    return Ok(Pat::new(
-                        PatKind::Tuple(Box::new([])),
-                        span,
-                        self.ctx.unit(),
-                    ));
+                    return Ok(Pat::new(PatKind::Tuple(Box::new([])), span, Ty::unit()));
                 }
 
                 let mut types = Vec::new();
@@ -1013,12 +981,12 @@ impl Checker {
 
                 for pat in pats {
                     let pat = self.check_pat(pat)?;
-                    types.push(pat.ty.clone());
+                    types.push(pat.ty);
                     typed_pats.push(pat);
                 }
 
                 let kind = PatKind::Tuple(typed_pats.into_boxed_slice());
-                let ty = Ty::Tuple(types.into());
+                let ty = Ty::tuple(types);
 
                 Ok(Pat::new(kind, span, ty))
             }
@@ -1028,11 +996,11 @@ impl Checker {
                 unreachable!("Parser never returns Ident pattern")
             }
 
-            PatKind::IntRange(range) => Ok(Pat::new(PatKind::IntRange(range), span, Ty::Int)),
+            PatKind::IntRange(range) => Ok(Pat::new(PatKind::IntRange(range), span, Ty::int())),
 
-            PatKind::RealRange(range) => Ok(Pat::new(PatKind::RealRange(range), span, Ty::Real)),
+            PatKind::RealRange(range) => Ok(Pat::new(PatKind::RealRange(range), span, Ty::real())),
 
-            PatKind::CharRange(range) => Ok(Pat::new(PatKind::CharRange(range), span, Ty::Char)),
+            PatKind::CharRange(range) => Ok(Pat::new(PatKind::CharRange(range), span, Ty::char())),
         }
     }
 
@@ -1072,8 +1040,8 @@ impl Checker {
         for arm in arms {
             let (pat, aexpr, arm_set) = self.check_match_arm(arm.pat, arm.expr)?;
             set.extend(arm_set);
-            c.push_back(EqConstraint::new(var.clone(), aexpr.ty.clone(), aexpr.span));
-            c.push_back(EqConstraint::new(expr.ty.clone(), pat.ty.clone(), pat.span));
+            c.push_back(EqConstraint::new(var, aexpr.ty, aexpr.span));
+            c.push_back(EqConstraint::new(expr.ty, pat.ty, pat.span));
             typed_arms.push(MatchArm::new(pat, aexpr));
         }
 
@@ -1139,7 +1107,7 @@ impl Checker {
 
             [first, id] => {
                 if let Ok(ty) = ctx.get_constructor(&path) {
-                    let (ty, _) = ty.clone().instantiate(generator);
+                    let (ty, _) = (*ty).instantiate(generator);
                     return Ok((path, ty, Set::new()));
                 }
 
@@ -1163,7 +1131,7 @@ impl Checker {
 
             [fst, snd, trd] => {
                 if let Ok(ty) = ctx.get_constructor(&path) {
-                    let (ty, _) = ty.clone().instantiate(generator);
+                    let (ty, _) = (*ty).instantiate(generator);
                     return Ok((path, ty, Set::new()));
                 }
 
@@ -1190,7 +1158,7 @@ impl Checker {
         for c in set.iter_mut() {
             *c.span_mut() = span;
         }
-        let (ty, subs) = self.instantiate(data.ty().clone());
+        let (ty, subs) = self.instantiate(*data.ty());
         set.substitute_many(&subs);
 
         let kind = ExprKind::Operator(op);
@@ -1213,23 +1181,19 @@ impl Checker {
         for c in set.iter_mut() {
             *c.span_mut() = span;
         }
-        let (ty, subs) = self.instantiate(data.ty().clone());
+        let (ty, subs) = self.instantiate(*data.ty());
         set.substitute_many(&subs);
         set.extend(lhs_set);
         set.extend(rhs_set);
-        let Ty::Fn { param: lhs_ty, ret } = &ty else {
+        let TyKind::Fn { param: lhs_ty, ret } = ty.kind() else {
             return Err(CheckError::new(CheckErrorKind::NotConstructor(ty), span).into());
         };
-        let Ty::Fn { param: rhs_ty, ret } = ret.as_ref() else {
-            return Err(CheckError::new(
-                CheckErrorKind::NotConstructor(ret.as_ref().clone()),
-                span,
-            )
-            .into());
+        let TyKind::Fn { param: rhs_ty, ret } = ret.kind() else {
+            return Err(CheckError::new(CheckErrorKind::NotConstructor(*ret), span).into());
         };
-        let mut ret = Ty::from(ret);
-        let c1 = EqConstraint::new(lhs_ty.into(), lhs.ty.clone(), lhs.span);
-        let c2 = EqConstraint::new(rhs_ty.into(), rhs.ty.clone(), rhs.span);
+        let mut ret = *ret;
+        let c1 = EqConstraint::new(*lhs_ty, lhs.ty, lhs.span);
+        let c2 = EqConstraint::new(*rhs_ty, rhs.ty, rhs.span);
         let (subs, set) = self.unify([c1, c2], set).map_err(|err| {
             let label = DiagnosticLabel::new(format!("operator `{op}` has type `{ty}`"), op.span);
             IsaError::from(err).with_label(label)
@@ -1252,14 +1216,14 @@ impl Checker {
         for c in set.iter_mut() {
             *c.span_mut() = op.span;
         }
-        let (op_ty, subs) = self.instantiate(data.ty().clone());
+        let (op_ty, subs) = self.instantiate(*data.ty());
         set.substitute_many(&subs);
         set.extend(expr_set);
-        let Ty::Fn { param: ty, ret } = &op_ty else {
+        let TyKind::Fn { param: ty, ret } = op_ty.kind() else {
             return Err(CheckError::new(CheckErrorKind::NotConstructor(op_ty), span).into());
         };
-        let mut ret = Ty::from(ret);
-        let c = EqConstraint::new(ty.into(), expr.ty.clone(), expr.span);
+        let mut ret = *ret;
+        let c = EqConstraint::new(*ty, expr.ty, expr.span);
         let (subs, set) = self.unify(c, set)?;
         ret.substitute_many(&subs);
         let kind = ExprKind::Prefix {
@@ -1280,12 +1244,12 @@ impl Checker {
         for expr in exprs {
             let (expr, expr_set) = self.check_expr(expr)?;
             set.extend(expr_set);
-            constrs.push(EqConstraint::new(Ty::Var(id), expr.ty.clone(), expr.span));
+            constrs.push(EqConstraint::new(Ty::var(id), expr.ty, expr.span));
             typed_exprs.push(expr);
         }
 
         let (subs, set) = self.unify(constrs, set)?;
-        let mut ty = Ty::Var(id);
+        let mut ty = Ty::var(id);
         ty.substitute_many(&subs);
 
         let ty = Ty::list(ty);
@@ -1298,7 +1262,7 @@ impl Checker {
     fn check_tuple(&mut self, exprs: Box<[Expr<()>]>, span: Span) -> IsaResult<(Expr<Ty>, Set)> {
         if exprs.is_empty() {
             return Ok((
-                Expr::new(ExprKind::Tuple(Box::new([])), span, self.ctx.unit()),
+                Expr::new(ExprKind::Tuple(Box::new([])), span, Ty::unit()),
                 Set::new(),
             ));
         }
@@ -1310,12 +1274,12 @@ impl Checker {
         for expr in exprs {
             let (expr, expr_set) = self.check_expr(expr)?;
             set.extend(expr_set);
-            types.push(expr.ty.clone());
+            types.push(expr.ty);
             typed_exprs.push(expr);
         }
 
         let kind = ExprKind::Tuple(typed_exprs.into_boxed_slice());
-        let ty = Ty::Tuple(types.into());
+        let ty = Ty::tuple(types);
 
         Ok((Expr::new(kind, span, ty), set))
     }
@@ -1334,17 +1298,21 @@ impl Checker {
         Ok(())
     }
 
-    fn substitute_params(&mut self, params: &mut [Ty]) -> (Vec<(Ident, TyId)>, Vec<TyId>) {
-        params
+    fn substitute_params(&mut self, params: &mut TySlice) -> (Vec<(Ident, TyId)>, Vec<TyId>) {
+        let mut vec = params.to_vec();
+        let res = vec
             .iter_mut()
             .map(|param| {
                 let id = self.gen_id();
-                let mut new = Ty::Var(id);
+                let mut new = Ty::var(id);
                 std::mem::swap(param, &mut new);
                 let old = new.get_ident().unwrap();
                 ((old, id), id)
             })
-            .unzip()
+            .unzip();
+        *params = Ty::intern_slice(vec);
+
+        res
     }
 
     fn check_type_declaration(
@@ -1364,7 +1332,7 @@ impl Checker {
                     ctor.substitute_param(&subs);
                 }
 
-                self.ctx.insert_ty(*name, params.into())?;
+                self.ctx.insert_ty(*name, Ty::intern_quant(params))?;
 
                 (*name, stmt.span)
             }
@@ -1383,7 +1351,7 @@ impl Checker {
 
                 ty.substitute_param(&subs);
 
-                self.ctx.insert_ty(*name, params.into())?;
+                self.ctx.insert_ty(*name, Ty::intern_quant(params))?;
 
                 (*name, stmt.span)
             }
@@ -1451,9 +1419,9 @@ impl Checker {
                 let module = Ident::new(module.ident, name.span);
                 let path = Path::from_two(module, *name);
 
-                Some(self.check_valid_type(ty, expr.span).map(|()| {
+                Some(self.check_valid_type(*ty, expr.span).map(|()| {
                     let vars = params.iter().map(|param| param.as_var().unwrap()).collect();
-                    (path, AliasData::new(vars, ty.clone()))
+                    (path, AliasData::new(Ty::intern_quant(vars), *ty))
                 }))
             }
 
@@ -1492,17 +1460,17 @@ impl Checker {
         let new_var = generator.gen_id();
         constraints.extend(member_set);
 
-        constraints.substitute_self(&Ty::Var(new_var));
-        sig.substitute_self(&Ty::Var(new_var));
+        constraints.substitute_self(Ty::var(new_var));
+        sig.substitute_self(Ty::var(new_var));
         constraints.substitute_many(&sig_subs);
         sig.substitute_many(&sig_subs);
 
         constraints.extend(
             data.parents()
                 .iter()
-                .map(|class| ClassConstraint::new(*class, Ty::Var(new_var), span)),
+                .map(|class| ClassConstraint::new(*class, Ty::var(new_var), span)),
         );
-        constraints.push(ClassConstraint::new(class, Ty::Var(new_var), span));
+        constraints.push(ClassConstraint::new(class, Ty::var(new_var), span));
 
         Ok((sig, constraints))
     }
@@ -1526,18 +1494,15 @@ impl Checker {
                 ..
             } => {
                 let data = InstanceData::new(set.clone(), expr.span);
-                self.check_valid_type(instance, expr.span)?;
-                let quant = params
-                    .iter()
-                    .map(|p| p.as_var().unwrap())
-                    .collect::<Rc<_>>();
+                self.check_valid_type(*instance, expr.span)?;
+                let quant = Ty::intern_quant(params.iter().map(|p| p.as_var().unwrap()).collect());
                 let instance = if quant.is_empty() {
-                    instance.clone()
+                    *instance
                 } else {
-                    Ty::Scheme {
+                    Ty::intern(TyKind::Scheme {
                         quant,
-                        ty: Rc::new(instance.clone()),
-                    }
+                        ty: *instance,
+                    })
                 };
                 self.ctx.insert_instance(instance, class, data)?;
                 Ok(())
@@ -1697,7 +1662,7 @@ impl Checker {
     fn resolve_signature_names(
         &self,
         set: &mut Set,
-        subs: &mut impl Fn(&Ty) -> Option<Ty>,
+        subs: &mut impl Fn(&TyKind) -> Option<Ty>,
     ) -> IsaResult<()> {
         for (class, ty) in set.iter_mut().map(ClassConstraint::get_mut) {
             *class = self.ctx.resolve_class_name(class)?;
@@ -1709,7 +1674,7 @@ impl Checker {
     fn resolve_names(
         &self,
         stmt: &mut StmtKind<()>,
-        subs: &mut impl Fn(&Ty) -> Option<Ty>,
+        subs: &mut impl Fn(&TyKind) -> Option<Ty>,
     ) -> IsaResult<()> {
         match stmt {
             StmtKind::Semi(_) | StmtKind::Let(_) => (),
@@ -1775,13 +1740,10 @@ impl Checker {
 
         self.resolve_imports(&mut modules);
 
-        let mut subs = |ty: &Ty| match ty {
-            Ty::Named { name, args } => {
+        let mut subs = |ty: &TyKind| match ty {
+            TyKind::Named { name, args } => {
                 let name = self.ctx.resolve_type_name(name).ok()?;
-                Some(Ty::Named {
-                    name,
-                    args: args.clone(),
-                })
+                Some(Ty::intern(TyKind::Named { name, args: *args }))
             }
             _ => None,
         };
@@ -1804,8 +1766,8 @@ impl Checker {
             }
         }
 
-        let mut subs = |ty: &Ty| match ty {
-            Ty::Named { name, args } => aliases
+        let mut subs = |ty: &TyKind| match ty {
+            TyKind::Named { name, args } => aliases
                 .iter()
                 .find_map(|(syn, data)| (name == syn).then(|| data.subs(args))),
             _ => None,
@@ -1938,16 +1900,16 @@ impl Checker {
     fn check_expr(&mut self, expr: Expr<()>) -> IsaResult<(Expr<Ty>, Set)> {
         let span = expr.span;
         match expr.kind {
-            ExprKind::Int(i) => Ok((Expr::new(ExprKind::Int(i), span, Ty::Int), Set::new())),
+            ExprKind::Int(i) => Ok((Expr::new(ExprKind::Int(i), span, Ty::int()), Set::new())),
 
-            ExprKind::Real(r) => Ok((Expr::new(ExprKind::Real(r), span, Ty::Real), Set::new())),
+            ExprKind::Real(r) => Ok((Expr::new(ExprKind::Real(r), span, Ty::real()), Set::new())),
 
-            ExprKind::Bool(b) => Ok((Expr::new(ExprKind::Bool(b), span, Ty::Bool), Set::new())),
+            ExprKind::Bool(b) => Ok((Expr::new(ExprKind::Bool(b), span, Ty::bool()), Set::new())),
 
-            ExprKind::Char(c) => Ok((Expr::new(ExprKind::Char(c), span, Ty::Char), Set::new())),
+            ExprKind::Char(c) => Ok((Expr::new(ExprKind::Char(c), span, Ty::char()), Set::new())),
 
             ExprKind::String(s) => {
-                let ty = Ty::list(Ty::Char);
+                let ty = Ty::list(Ty::char());
                 Ok((Expr::new(ExprKind::String(s), span, ty), Set::new()))
             }
 

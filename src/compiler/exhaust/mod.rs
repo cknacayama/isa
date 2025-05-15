@@ -11,7 +11,7 @@ use super::ast::{
 };
 use super::ctx::Ctx as TypeCtx;
 use super::error::MatchNonExhaustive;
-use super::types::Ty;
+use super::types::{Ty, TyKind, TySlice};
 use crate::global::Symbol;
 
 #[derive(Debug)]
@@ -24,38 +24,40 @@ impl<'a> Ctx<'a> {
         Self { ctx }
     }
 
-    fn ctors_for_ty(&self, ty: &Ty) -> CtorSet {
-        match ty {
-            Ty::Tuple(_) => CtorSet::Single,
-            Ty::Int => CtorSet::Integers(IntRange::infinite()),
-            Ty::Bool => CtorSet::Bool,
-            Ty::Char => CtorSet::Integers(IntRange::character()),
-            Ty::Scheme { ty, .. } => self.ctors_for_ty(ty),
-            Ty::Named { name, .. } => {
+    fn ctors_for_ty(&self, ty: Ty) -> CtorSet {
+        match ty.kind() {
+            TyKind::Tuple(_) => CtorSet::Single,
+            TyKind::Int => CtorSet::Integers(IntRange::infinite()),
+            TyKind::Bool => CtorSet::Bool,
+            TyKind::Char => CtorSet::Integers(IntRange::character()),
+            TyKind::Scheme { ty, .. } => self.ctors_for_ty(*ty),
+            TyKind::Named { name, .. } => {
                 let variants = self.ctx.get_constructors_for_ty(name).len();
                 let variants = NonZeroUsize::new(variants).unwrap();
                 CtorSet::Type { variants }
             }
-            Ty::Real | Ty::Fn { .. } | Ty::Var(_) | Ty::Generic { .. } => CtorSet::Unlistable,
-            Ty::This(_) => unreachable!(),
+            TyKind::Real | TyKind::Fn { .. } | TyKind::Var(_) | TyKind::Generic { .. } => {
+                CtorSet::Unlistable
+            }
+            TyKind::This(_) => unreachable!(),
         }
     }
 
-    fn ctor_arity(&self, ty: &Ty, ctor: &Ctor) -> usize {
+    fn ctor_arity(&self, ty: Ty, ctor: &Ctor) -> usize {
         self.ctor_subtypes(ty, ctor).len()
     }
 
-    fn ctor_subtypes(&self, ty: &Ty, ctor: &Ctor) -> Box<[Ty]> {
+    fn ctor_subtypes(&self, ty: Ty, ctor: &Ctor) -> TySlice {
         match ctor {
             Ctor::Type(idx) => self.ctx.get_constructor_subtypes(ty, *idx),
             Ctor::Single => self.ctx.get_constructor_subtypes(ty, 0),
-            _ => Box::default(),
+            _ => Ty::empty_slice(),
         }
     }
 
     fn split_column_ctors(
         &self,
-        ty: &Ty,
+        ty: Ty,
         ctors: impl Iterator<Item = &'a Ctor> + Clone,
     ) -> (Vec<Ctor>, Vec<Ctor>) {
         if ctors.clone().any(|c| matches!(c, Ctor::Or)) {
@@ -150,10 +152,7 @@ impl Pattern {
                     .map(|pat| Self::from_ast_pat(pat, ctx))
                     .enumerate()
                     .collect();
-                let Ty::Named {
-                    name: ref ty_name, ..
-                } = pat.ty
-                else {
+                let TyKind::Named { name: ty_name, .. } = pat.ty.kind() else {
                     unreachable!()
                 };
                 let name = name.base_name();
@@ -260,7 +259,7 @@ impl TypeCtx {
             }
             StmtKind::Let(bind) => {
                 for p in &bind.params {
-                    let ty = p.pat.ty.clone();
+                    let ty = p.pat.ty;
                     let witnesses = check_match_pats(std::iter::once(&p.pat), ty, self);
                     if !witnesses.is_empty() {
                         errors.push(MatchNonExhaustive::new(witnesses, p.pat.span));
@@ -287,7 +286,7 @@ impl TypeCtx {
                 self.check_single_match_expr(expr, errors);
             }
             ExprKind::Fn { param, expr } => {
-                let ty = param.pat.ty.clone();
+                let ty = param.pat.ty;
                 let witnesses = check_match_pats(std::iter::once(&param.pat), ty, self);
                 if !witnesses.is_empty() {
                     errors.push(MatchNonExhaustive::new(witnesses, param.pat.span));
@@ -297,7 +296,7 @@ impl TypeCtx {
 
             ExprKind::Let { bind, body, .. } => {
                 for p in &bind.params {
-                    let ty = p.pat.ty.clone();
+                    let ty = p.pat.ty;
                     let witnesses = check_match_pats(std::iter::once(&p.pat), ty, self);
                     if !witnesses.is_empty() {
                         errors.push(MatchNonExhaustive::new(witnesses, p.pat.span));
@@ -309,7 +308,7 @@ impl TypeCtx {
             ExprKind::Match { expr, arms } => {
                 self.check_single_match_expr(expr, errors);
 
-                let ty = expr.ty.clone();
+                let ty = expr.ty;
                 let typed_pats = arms.iter().map(MatchArm::pat);
                 let witnesses = check_match_pats(typed_pats, ty, self);
                 if !witnesses.is_empty() {

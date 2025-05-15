@@ -1,6 +1,5 @@
 use std::fmt::Display;
 use std::ops::BitOr;
-use std::rc::Rc;
 use std::{fmt, vec};
 
 use rustc_hash::FxHashMap;
@@ -10,7 +9,7 @@ use super::ast::{
 };
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
-use super::types::{Ty, TyId};
+use super::types::{Ty, TyId, TyKind, TyQuant, TySlice};
 use crate::global::{Span, Symbol};
 use crate::separated_fmt;
 
@@ -128,7 +127,7 @@ pub trait Generator {
     fn gen_id(&mut self) -> TyId;
 
     fn gen_type_var(&mut self) -> Ty {
-        Ty::Var(self.gen_id())
+        Ty::intern(TyKind::Var(self.gen_id()))
     }
 }
 
@@ -156,12 +155,11 @@ impl Generator for IdGenerator {
 }
 
 impl Substitute for VarData {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        self.ty.substitute(subs);
-        self.constrs.substitute(subs);
+        self.ty.substitute(subs) | self.constrs.substitute(subs)
     }
 }
 
@@ -183,16 +181,26 @@ pub trait CtxFmt {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TyData {
-    params:       Rc<[TyId]>,
+    params:       TyQuant,
     constructors: Vec<Constructor<Ty>>,
     span:         Span,
 }
 
+impl Default for TyData {
+    fn default() -> Self {
+        Self {
+            params:       Ty::empty_quant(),
+            constructors: Default::default(),
+            span:         Default::default(),
+        }
+    }
+}
+
 impl TyData {
     #[must_use]
-    const fn new(params: Rc<[TyId]>, constructors: Vec<Constructor<Ty>>, span: Span) -> Self {
+    const fn new(params: TyQuant, constructors: Vec<Constructor<Ty>>, span: Span) -> Self {
         Self {
             params,
             constructors,
@@ -218,13 +226,13 @@ impl TyData {
 
 #[derive(Debug, Clone)]
 pub struct AliasData {
-    params: Rc<[TyId]>,
+    params: TyQuant,
     ty:     Ty,
 }
 
 impl AliasData {
     #[must_use]
-    pub const fn new(params: Rc<[TyId]>, ty: Ty) -> Self {
+    pub const fn new(params: TyQuant, ty: Ty) -> Self {
         Self { params, ty }
     }
 
@@ -237,13 +245,13 @@ impl AliasData {
     }
 
     pub fn subs(&self, args: &[Ty]) -> Ty {
-        let mut ty = self.ty().clone();
+        let mut ty = *self.ty();
         ty.substitute(&mut |ty| {
             self.params()
                 .iter()
                 .copied()
                 .position(|v| ty.as_var().is_some_and(|ty| ty == v))
-                .map(|pos| args[pos].clone())
+                .map(|pos| args[pos])
         });
         ty
     }
@@ -254,8 +262,8 @@ impl AliasData {
             changed = false;
             let cloned = aliases.to_vec();
             for (alias, data) in cloned {
-                let mut subs = |ty: &Ty| match ty {
-                    Ty::Named { name, args } if name == &alias => {
+                let mut subs = |ty: &TyKind| match ty {
+                    TyKind::Named { name, args } if name == &alias => {
                         changed = true;
                         Some(data.subs(args))
                     }
@@ -423,17 +431,12 @@ pub struct Ctx {
     env:            Vec<FxHashMap<Symbol, VarData>>,
     infix:          FxHashMap<Symbol, OperatorData>,
     prefix:         FxHashMap<Symbol, OperatorData>,
-    empty_args:     Rc<[Ty]>,
     current_module: Ident,
 }
 
 impl Ctx {
     pub const fn current_module(&self) -> Ident {
         self.current_module
-    }
-
-    pub fn unit(&self) -> Ty {
-        Ty::Tuple(self.empty_args.clone())
     }
 
     pub const fn set_current_module(&mut self, module: Ident) {
@@ -559,22 +562,22 @@ impl Ctx {
             return ty;
         }
 
-        match ty {
-            Ty::Scheme { quant, ty } => {
-                quantifiers.extend_from_slice(&quant);
-                Ty::Scheme {
-                    quant: quantifiers.into(),
-                    ty,
-                }
+        match ty.kind() {
+            TyKind::Scheme { quant, ty } => {
+                quantifiers.extend_from_slice(quant);
+                Ty::intern(TyKind::Scheme {
+                    quant: Ty::intern_quant(quantifiers),
+                    ty:    *ty,
+                })
             }
-            _ => Ty::Scheme {
-                quant: quantifiers.into(),
-                ty:    Rc::new(ty),
-            },
+            _ => Ty::intern(TyKind::Scheme {
+                quant: Ty::intern_quant(quantifiers),
+                ty,
+            }),
         }
     }
 
-    pub fn insert_ty(&mut self, name: Ident, params: Rc<[TyId]>) -> CheckResult<()> {
+    pub fn insert_ty(&mut self, name: Ident, params: TyQuant) -> CheckResult<()> {
         let module = self.current_mut()?;
 
         module
@@ -610,7 +613,7 @@ impl Ctx {
                 ctor.span,
             ))
         } else {
-            data.constructors.push(ctor.clone());
+            data.constructors.push(*ctor);
             Ok(())
         }
     }
@@ -868,7 +871,7 @@ impl Ctx {
             let constructors: Vec<_> = ty_data
                 .constructors
                 .iter()
-                .map(|c| (c.name, c.ty.clone(), c.span))
+                .map(|c| (c.name, c.ty, c.span))
                 .collect();
 
             let cur = self.current_mut()?;
@@ -907,7 +910,7 @@ impl Ctx {
             [module, ty, ctor] => {
                 let data = self.get_data_from_module(module, ty, ModuleData::get_ty)?;
                 let data = data.find_constructor(ctor)?;
-                let data = VarData::new(data.ty.clone(), ClassConstraintSet::new(), path.span());
+                let data = VarData::new(data.ty, ClassConstraintSet::new(), path.span());
                 let new = self
                     .current_mut()?
                     .insert_constructor(ctor.ident, data)
@@ -953,10 +956,10 @@ impl Ctx {
         class: &Path,
         data: InstanceData,
     ) -> CheckResult<()> {
-        let constrs = if let Ty::Scheme { ty, .. } = &instance {
-            self.instantiate_class(class, ty, data.span)?
+        let constrs = if let TyKind::Scheme { ty, .. } = instance.kind() {
+            self.instantiate_class(class, *ty, data.span)?
         } else {
-            self.instantiate_class(class, &instance, data.span)?
+            self.instantiate_class(class, instance, data.span)?
         };
 
         if let [(span, constrs)] = constrs.as_slice()
@@ -998,21 +1001,21 @@ impl Ctx {
             };
             self.assume_constraint_tree(c.ty(), &constrs);
             let _ = self.assume_instance(
-                c.ty().clone(),
+                c.ty(),
                 c.class(),
                 InstanceData::new(ClassConstraintSet::new(), c.span()),
             );
         }
     }
 
-    fn assume_constraint_tree(&mut self, ty: &Ty, parents: &[Path]) {
+    fn assume_constraint_tree(&mut self, ty: Ty, parents: &[Path]) {
         for c in parents {
             let Ok(constrs) = self.get_class(c).map(|data| data.parents.clone()) else {
                 continue;
             };
             self.assume_constraint_tree(ty, &constrs);
             let _ = self.assume_instance(
-                ty.clone(),
+                ty,
                 c,
                 InstanceData::new(ClassConstraintSet::new(), Span::default()),
             );
@@ -1020,13 +1023,13 @@ impl Ctx {
     }
 
     #[must_use]
-    pub fn get_constructor_subtypes(&self, ty: &Ty, idx: usize) -> Box<[Ty]> {
-        if let Ty::Tuple(types) = ty {
-            return types.to_vec().into_boxed_slice();
+    pub fn get_constructor_subtypes(&self, ty: Ty, idx: usize) -> TySlice {
+        if let TyKind::Tuple(types) = ty.kind() {
+            return *types;
         }
 
-        let Ty::Named { name, args } = ty else {
-            return Box::default();
+        let TyKind::Named { name, args } = ty.kind() else {
+            return Ty::empty_slice();
         };
 
         let mut data = self.get_ty_data(name).cloned().unwrap_or_default();
@@ -1035,15 +1038,12 @@ impl Ctx {
             .params
             .iter()
             .copied()
-            .zip(args.iter().cloned())
+            .zip(args.iter().copied())
             .map(|(ty, arg)| Subs::new(ty, arg))
             .collect::<Vec<_>>();
 
         let mut ctor = data.constructors.swap_remove(idx);
-
-        for param in &mut ctor.params {
-            param.substitute_many(&subs);
-        }
+        ctor.params.substitute_many(&subs);
 
         ctor.params
     }
@@ -1051,34 +1051,30 @@ impl Ctx {
     pub fn write_variant_name(
         &self,
         f: &mut impl std::fmt::Write,
-        ty: &Ty,
+        ty: Ty,
         idx: usize,
     ) -> std::fmt::Result {
-        let Ty::Named { name, .. } = ty else {
+        let TyKind::Named { name, .. } = ty.kind() else {
             return Ok(());
         };
         let ctor = self.get_constructors_for_ty(name)[idx].name;
         write!(f, "{ctor}")
     }
 
-    pub fn implementation(&self, ty: &Ty, class: &Path) -> CheckResult<&InstanceData> {
+    pub fn implementation(&self, ty: Ty, class: &Path) -> CheckResult<&InstanceData> {
         let class_data = self.get_class(class)?;
 
         let instance = if ty.is_scheme() {
             class_data
                 .instances
                 .iter()
-                .find_map(|(inst, data)| ty.equivalent(inst).then_some(data))
+                .find_map(|(&inst, data)| ty.equivalent(inst).then_some(data))
         } else {
-            class_data.instances.get(ty)
+            class_data.instances.get(&ty)
         };
 
-        instance.ok_or_else(|| {
-            CheckError::new(
-                CheckErrorKind::NotInstance(ty.clone(), *class),
-                class.span(),
-            )
-        })
+        instance
+            .ok_or_else(|| CheckError::new(CheckErrorKind::NotInstance(ty, *class), class.span()))
     }
 
     fn implementation_mut(&mut self, mut ty: Ty, class: &Path) -> CheckResult<&mut InstanceData> {
@@ -1087,9 +1083,9 @@ impl Ctx {
             let instance = class_data
                 .instances
                 .keys()
-                .find(|instance| ty.equivalent(instance));
+                .find(|&&instance| ty.equivalent(instance));
             if let Some(instance) = instance {
-                ty = instance.clone();
+                ty = *instance;
             }
         }
 
@@ -1104,12 +1100,12 @@ impl Ctx {
     pub fn instantiate_class(
         &self,
         class: &Path,
-        ty: &Ty,
+        ty: Ty,
         span: Span,
     ) -> CheckResult<Vec<(Span, ClassConstraintSet)>> {
         let data = self.get_class(class)?;
 
-        if let Some(data) = data.instances.get(ty) {
+        if let Some(data) = data.instances.get(&ty) {
             return Ok(vec![(data.span, ClassConstraintSet::new())]);
         }
 
@@ -1127,10 +1123,10 @@ impl Ctx {
                 for (c, arg) in set
                     .zip(std::iter::repeat(args.iter()))
                     .flat_map(|(c, zip)| {
-                        zip.filter_map(move |(a1, a2)| (c.ty() == a1).then_some((c, a2)))
+                        zip.filter_map(move |(a1, a2)| (c.ty() == *a1).then_some((c, a2)))
                     })
                 {
-                    for (_, c) in self.instantiate_class(c.class(), arg, span)? {
+                    for (_, c) in self.instantiate_class(c.class(), *arg, span)? {
                         new.extend(c);
                     }
                 }
@@ -1142,7 +1138,7 @@ impl Ctx {
         if sets.is_empty() {
             Ok(vec![(
                 span,
-                ClassConstraintSet::from(ClassConstraint::new(*class, ty.clone(), span)),
+                ClassConstraintSet::from(ClassConstraint::new(*class, ty, span)),
             )])
         } else {
             Ok(sets)
@@ -1155,28 +1151,32 @@ impl Ctx {
 }
 
 impl Substitute for Ctx {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
+        let mut res = false;
         // We can skip the first scope
         // because you do not access type
         // variables from these binds
         // due to instantiation
         for env in &mut self.env[1..] {
-            for t in env.values_mut() {
-                t.substitute(subs);
-            }
+            res |= env
+                .values_mut()
+                .map(|t| t.substitute(subs))
+                .reduce(BitOr::bitor)
+                .unwrap_or(false);
         }
+        res
     }
 }
 
 impl Substitute for AliasData {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        self.ty.substitute(subs);
+        self.ty.substitute(subs)
     }
 }
 
@@ -1203,16 +1203,16 @@ where
 
 impl Ty {
     fn fmt_var<T: Iterator<Item = char>>(
-        &self,
+        self,
         f: &mut std::fmt::Formatter<'_>,
         chars: &mut TyVarFormatter<T>,
     ) -> std::fmt::Result {
-        match self {
-            Self::Int => write!(f, "int"),
-            Self::Bool => write!(f, "bool"),
-            Self::Char => write!(f, "char"),
-            Self::Real => write!(f, "real"),
-            Self::Fn { param, ret } => {
+        match self.kind() {
+            TyKind::Int => write!(f, "int"),
+            TyKind::Bool => write!(f, "bool"),
+            TyKind::Char => write!(f, "char"),
+            TyKind::Real => write!(f, "real"),
+            TyKind::Fn { param, ret } => {
                 if param.is_simple_fmt() {
                     param.fmt_var(f, chars)?;
                 } else {
@@ -1223,11 +1223,11 @@ impl Ty {
                 write!(f, " -> ")?;
                 ret.fmt_var(f, chars)
             }
-            Self::Var(var) => {
+            TyKind::Var(var) => {
                 let c = chars.get(*var);
                 write!(f, "'{c}")
             }
-            Self::Scheme { quant, ty } => {
+            TyKind::Scheme { quant, ty } => {
                 for n in quant.iter() {
                     let c = chars.get(*n);
                     write!(f, "'{c} ")?;
@@ -1235,7 +1235,7 @@ impl Ty {
                 write!(f, ". ")?;
                 ty.fmt_var(f, chars)
             }
-            Self::Named { name, args } => {
+            TyKind::Named { name, args } => {
                 write!(f, "{}", name.base_name())?;
                 for arg in args.iter() {
                     if arg.is_simple_fmt() {
@@ -1249,8 +1249,8 @@ impl Ty {
                 }
                 Ok(())
             }
-            Self::This(args) => {
-                write!(f, "Self")?;
+            TyKind::This(args) => {
+                write!(f, "TyKind")?;
                 for arg in args.iter() {
                     if arg.is_simple_fmt() {
                         write!(f, " ")?;
@@ -1263,7 +1263,7 @@ impl Ty {
                 }
                 Ok(())
             }
-            Self::Generic { var, args } => {
+            TyKind::Generic { var, args } => {
                 let var = chars.get(*var);
                 write!(f, "'{var}")?;
                 for arg in args.iter() {
@@ -1278,7 +1278,7 @@ impl Ty {
                 }
                 Ok(())
             }
-            Self::Tuple(types) => {
+            TyKind::Tuple(types) => {
                 write!(f, "(")?;
                 separated_fmt(f, types.iter(), ", ", |ty, f| ty.fmt_var(f, chars))?;
                 write!(f, ")")?;
@@ -1357,7 +1357,7 @@ impl Display for ModuleData {
             writeln!(f, " =")?;
             for c in ty.constructors() {
                 write!(f, "    | {}", c.name)?;
-                for p in &c.params {
+                for p in c.params.iter() {
                     write!(f, " ")?;
                     p.fmt_var(f, &mut chars)?;
                 }

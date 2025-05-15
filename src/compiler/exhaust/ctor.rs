@@ -71,7 +71,7 @@ impl Ctor {
     pub(super) fn fmt_fields<'a, T>(
         &self,
         f: &mut impl fmt::Write,
-        ty: &Ty,
+        ty: Ty,
         fields: impl ExactSizeIterator<Item = &'a T>,
         ctx: &TypeCtx,
     ) -> fmt::Result

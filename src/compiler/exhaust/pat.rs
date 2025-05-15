@@ -14,7 +14,7 @@ impl CtxFmt for WitnessPat {
     type Ctx = TypeCtx;
 
     fn ctx_fmt(&self, f: &mut impl std::fmt::Write, ctx: &Self::Ctx) -> std::fmt::Result {
-        self.ctor.fmt_fields(f, &self.ty, self.iter_fields(), ctx)
+        self.ctor.fmt_fields(f, self.ty, self.iter_fields(), ctx)
     }
 
     fn is_simple_fmt(&self) -> bool {
@@ -48,8 +48,9 @@ impl WitnessPat {
         }
 
         let fields = cx
-            .ctor_subtypes(&ty, &ctor)
-            .into_iter()
+            .ctor_subtypes(ty, &ctor)
+            .iter()
+            .copied()
             .map(Self::wildcard)
             .collect();
 
@@ -76,7 +77,7 @@ impl WitnessVector {
 
     fn apply_constructor(&mut self, ctor: Ctor, ty: Ty, ctx: &Ctx) {
         let len = self.0.len();
-        let arity = ctx.ctor_arity(&ty, &ctor);
+        let arity = ctx.ctor_arity(ty, &ctor);
         let fields = self.0.drain((len - arity)..).rev().collect();
         self.0.push(WitnessPat::new(ctor, fields, ty));
     }
@@ -111,7 +112,7 @@ impl WitnessMatrix {
         }
     }
 
-    fn apply_constructor(&mut self, ty: &Ty, missing_ctors: &[Ctor], ctor: &Ctor, ctx: &Ctx) {
+    fn apply_constructor(&mut self, ty: Ty, missing_ctors: &[Ctor], ctor: &Ctor, ctx: &Ctx) {
         if self.is_empty() || matches!(ctor, Ctor::Or) {
             return;
         }
@@ -120,7 +121,7 @@ impl WitnessMatrix {
             let mut ret = Self::empty();
 
             for ctor in missing_ctors {
-                let pat = WitnessPat::wild_from_ctor(*ctor, ty.clone(), ctx);
+                let pat = WitnessPat::wild_from_ctor(*ctor, ty, ctx);
 
                 let mut wit_matrix = self.clone();
 
@@ -132,7 +133,7 @@ impl WitnessMatrix {
             *self = ret;
         } else {
             for mut witness in std::mem::take(&mut self.0) {
-                witness.apply_constructor(*ctor, ty.clone(), ctx);
+                witness.apply_constructor(*ctor, ty, ctx);
                 self.0.push(witness);
             }
         }
@@ -314,12 +315,12 @@ impl<'a> PatMatrix<'a> {
             }
             matrix
         } else {
-            let subtypes = ctx.ctor_subtypes(&self.types[0], ctor);
+            let subtypes = ctx.ctor_subtypes(self.types[0], ctor);
             let arity = subtypes.len();
             let types = subtypes
                 .iter()
-                .cloned()
-                .chain(self.types[1..].iter().cloned())
+                .copied()
+                .chain(self.types[1..].iter().copied())
                 .collect();
             let mut matrix = Self {
                 rows: Vec::new(),
@@ -369,7 +370,7 @@ impl<'a> PatMatrix<'a> {
     }
 
     pub(super) fn compute_exhaustiveness(&mut self, ctx: &Ctx) -> WitnessMatrix {
-        let Some(ty) = self.head_type().cloned() else {
+        let Some(ty) = self.head_type().copied() else {
             let mut useful = true; // Whether the next row is useful.
 
             for row in self.rows_mut() {
@@ -385,14 +386,14 @@ impl<'a> PatMatrix<'a> {
         };
 
         let ctors = self.heads().map(PatOrWild::ctor);
-        let (split_ctors, missing_ctors) = ctx.split_column_ctors(&ty, ctors);
+        let (split_ctors, missing_ctors) = ctx.split_column_ctors(ty, ctors);
 
         let mut ret = WitnessMatrix::empty();
         for ctor in split_ctors {
             let ctor_is_relevant = matches!(ctor, Ctor::Missing) || missing_ctors.is_empty();
             let mut spec_matrix = self.specialize(&ctor, ctx, ctor_is_relevant);
             let mut witnesses = spec_matrix.compute_exhaustiveness(ctx);
-            witnesses.apply_constructor(&ty, &missing_ctors, &ctor, ctx);
+            witnesses.apply_constructor(ty, &missing_ctors, &ctor, ctx);
             ret.extend(witnesses);
             self.unspecialize(&spec_matrix);
         }

@@ -1,9 +1,10 @@
-use std::rc::Rc;
+use std::ops::BitOr;
 
 use super::ast::{Ident, Path, mod_path};
 use super::ctx::Generator;
 use super::infer::{Subs, Substitute};
 use crate::global::Span;
+pub use crate::global::{Ty, TyQuant, TySlice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TyId(u32);
@@ -15,114 +16,105 @@ impl TyId {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Ty {
+pub enum TyKind {
     Int,
     Bool,
     Char,
     Real,
     Var(TyId),
-    Tuple(Rc<[Ty]>),
-    Fn { param: Rc<Ty>, ret: Rc<Ty> },
-    Scheme { quant: Rc<[TyId]>, ty: Rc<Ty> },
-    Named { name: Path, args: Rc<[Ty]> },
-    Generic { var: TyId, args: Rc<[Ty]> },
-    This(Rc<[Ty]>),
+    Tuple(TySlice),
+    Fn { param: Ty, ret: Ty },
+    Scheme { quant: TyQuant, ty: Ty },
+    Named { name: Path, args: TySlice },
+    Generic { var: TyId, args: TySlice },
+    This(TySlice),
 }
 
-impl From<Rc<Self>> for Ty {
-    fn from(value: Rc<Self>) -> Self {
-        value.as_ref().clone()
-    }
-}
-
-impl From<&Rc<Self>> for Ty {
-    fn from(value: &Rc<Self>) -> Self {
-        value.as_ref().clone()
+impl TyKind {
+    pub const fn as_var(&self) -> Option<TyId> {
+        if let Self::Var(v) = self {
+            Some(*v)
+        } else {
+            None
+        }
     }
 }
 
 impl Ty {
     #[must_use]
-    pub fn occurs(&self, var: TyId) -> bool {
-        match self {
-            Self::Fn { param, ret } => param.occurs(var) || ret.occurs(var),
-            Self::Var(n) => *n == var,
-            Self::Scheme { ty, .. } => ty.occurs(var),
-            Self::This(args) | Self::Tuple(args) | Self::Named { args, .. } => {
+    pub fn occurs(self, var: TyId) -> bool {
+        match self.kind() {
+            TyKind::Fn { param, ret } => param.occurs(var) || ret.occurs(var),
+            TyKind::Var(n) => *n == var,
+            TyKind::Scheme { ty, .. } => ty.occurs(var),
+            TyKind::This(args) | TyKind::Tuple(args) | TyKind::Named { args, .. } => {
                 args.iter().any(|t| t.occurs(var))
             }
-            Self::Generic { var: n, args } => *n == var || args.iter().any(|t| t.occurs(var)),
+            TyKind::Generic { var: n, args } => *n == var || args.iter().any(|t| t.occurs(var)),
 
-            Self::Int | Self::Char | Self::Bool | Self::Real => false,
+            TyKind::Int | TyKind::Char | TyKind::Bool | TyKind::Real => false,
         }
     }
 
-    pub fn contains_name(&self, path: &Path) -> Option<Span> {
-        match self {
-            Self::Fn { param, ret } => param
+    pub fn contains_name(self, path: &Path) -> Option<Span> {
+        match self.kind() {
+            TyKind::Fn { param, ret } => param
                 .contains_name(path)
                 .or_else(|| ret.contains_name(path)),
-            Self::Scheme { ty, .. } => ty.contains_name(path),
-            Self::This(args) | Self::Tuple(args) | Self::Generic { args, .. } => {
+            TyKind::Scheme { ty, .. } => ty.contains_name(path),
+            TyKind::This(args) | TyKind::Tuple(args) | TyKind::Generic { args, .. } => {
                 args.iter().find_map(|t| t.contains_name(path))
             }
-            Self::Named { name, args } => {
+            TyKind::Named { name, args } => {
                 if name == path {
                     return Some(name.span());
                 }
                 args.iter().find_map(|t| t.contains_name(path))
             }
 
-            Self::Int | Self::Char | Self::Bool | Self::Real | Self::Var(_) => None,
+            TyKind::Int | TyKind::Char | TyKind::Bool | TyKind::Real | TyKind::Var(_) => None,
         }
     }
 
     pub fn instantiate(self, generator: &mut impl Generator) -> (Self, Vec<Subs>) {
-        let Self::Scheme { quant, ty } = self else {
+        let TyKind::Scheme { quant, ty } = self.kind() else {
             return (self, Vec::new());
         };
+        let mut ty = *ty;
 
         let subs: Vec<_> = quant
             .iter()
             .map(|q| Subs::new(*q, generator.gen_type_var()))
             .collect();
-        let mut ty = ty.as_ref().clone();
 
         ty.substitute_many(&subs);
 
         (ty, subs)
     }
 
-    pub fn list(ty: Self) -> Self {
-        Self::Named {
-            name: mod_path!(list::List),
-            args: Rc::new([ty]),
-        }
-    }
-
-    pub fn zip_args(&self, rhs: &Self) -> Option<Vec<(Self, Self)>> {
-        match (self, rhs) {
-            (Self::Named { name: n1, args: a1 }, Self::Named { name: n2, args: a2 })
+    pub fn zip_args(self, rhs: Self) -> Option<Vec<(Self, Self)>> {
+        match (self.kind(), rhs.kind()) {
+            (TyKind::Named { name: n1, args: a1 }, TyKind::Named { name: n2, args: a2 })
                 if n1 == n2 && a1.len() == a2.len() =>
             {
-                Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
+                Some(a1.iter().copied().zip(a2.iter().copied()).collect())
             }
-            (Self::Generic { args: a1, .. }, Self::Generic { args: a2, .. })
-            | (Self::Tuple(a1), Self::Tuple(a2))
+            (TyKind::Generic { args: a1, .. }, TyKind::Generic { args: a2, .. })
+            | (TyKind::Tuple(a1), TyKind::Tuple(a2))
                 if a1.len() == a2.len() =>
             {
-                Some(a1.iter().cloned().zip(a2.iter().cloned()).collect())
+                Some(a1.iter().copied().zip(a2.iter().copied()).collect())
             }
-            (Self::Fn { param: p1, ret: r1 }, Self::Fn { param: p2, ret: r2 }) => {
-                Some(vec![(p1.into(), p2.into()), (r1.into(), r2.into())])
+            (TyKind::Fn { param: p1, ret: r1 }, TyKind::Fn { param: p2, ret: r2 }) => {
+                Some(vec![(*p1, *p2), (*r1, *r2)])
             }
-            (Self::Scheme { quant: q1, ty: t1 }, Self::Scheme { quant: q2, ty: t2 })
+            (TyKind::Scheme { quant: q1, ty: t1 }, TyKind::Scheme { quant: q2, ty: t2 })
                 if q1.len() == q2.len() =>
             {
-                t1.zip_args(t2)
+                t1.zip_args(*t2)
             }
 
-            (Self::Var(_), Self::Var(_)) => Some(Vec::new()),
+            (TyKind::Var(_), TyKind::Var(_)) => Some(Vec::new()),
 
             (lhs, rhs) if lhs == rhs => Some(Vec::new()),
 
@@ -130,28 +122,28 @@ impl Ty {
         }
     }
 
-    pub fn equivalent(&self, rhs: &Self) -> bool {
-        match (self, rhs) {
-            (Self::Named { name: n1, args: a1 }, Self::Named { name: n2, args: a2 }) => {
+    pub fn equivalent(self, rhs: Self) -> bool {
+        match (self.kind(), rhs.kind()) {
+            (TyKind::Named { name: n1, args: a1 }, TyKind::Named { name: n2, args: a2 }) => {
                 n1 == n2
                     && a1.len() == a2.len()
-                    && a1.iter().zip(a2.iter()).all(|(t1, t2)| t1.equivalent(t2))
+                    && a1.iter().zip(a2.iter()).all(|(t1, &t2)| t1.equivalent(t2))
             }
 
-            (Self::Generic { args: a1, .. }, Self::Generic { args: a2, .. })
-            | (Self::Tuple(a1), Self::Tuple(a2)) => {
-                a1.len() == a2.len() && a1.iter().zip(a2.iter()).all(|(t1, t2)| t1.equivalent(t2))
+            (TyKind::Generic { args: a1, .. }, TyKind::Generic { args: a2, .. })
+            | (TyKind::Tuple(a1), TyKind::Tuple(a2)) => {
+                a1.len() == a2.len() && a1.iter().zip(a2.iter()).all(|(t1, &t2)| t1.equivalent(t2))
             }
 
-            (Self::Fn { param: p1, ret: r1 }, Self::Fn { param: p2, ret: r2 }) => {
-                p1.equivalent(p2) && r1.equivalent(r2)
+            (TyKind::Fn { param: p1, ret: r1 }, TyKind::Fn { param: p2, ret: r2 }) => {
+                p1.equivalent(*p2) && r1.equivalent(*r2)
             }
 
-            (Self::Scheme { quant: q1, ty: t1 }, Self::Scheme { quant: q2, ty: t2 }) => {
-                q1.len() == q2.len() && t1.equivalent(t2)
+            (TyKind::Scheme { quant: q1, ty: t1 }, TyKind::Scheme { quant: q2, ty: t2 }) => {
+                q1.len() == q2.len() && t1.equivalent(*t2)
             }
 
-            (Self::Var(_), Self::Var(_)) => true,
+            (TyKind::Var(_), TyKind::Var(_)) => true,
 
             (lhs, rhs) => lhs == rhs,
         }
@@ -162,37 +154,60 @@ impl Ty {
         I: IntoIterator<Item = Self>,
         I::IntoIter: DoubleEndedIterator,
     {
-        params.into_iter().rev().fold(ret, |ret, param| Self::Fn {
-            param: Rc::new(param),
-            ret:   Rc::new(ret),
+        params
+            .into_iter()
+            .rev()
+            .fold(ret, |ret, param| Self::intern(TyKind::Fn { param, ret }))
+    }
+
+    pub fn unit() -> Self {
+        Self::intern(TyKind::Tuple(Self::empty_slice()))
+    }
+
+    pub fn list(ty: Self) -> Self {
+        Self::intern(TyKind::Named {
+            name: mod_path!(list::List),
+            args: Self::intern_slice(vec![ty]),
         })
     }
 
-    pub fn function_arity(&self) -> usize {
-        match self {
-            Self::Fn { ret, .. } => 1 + ret.function_arity(),
-            Self::Scheme { ty, .. } => ty.function_arity(),
+    pub fn tuple(args: Vec<Self>) -> Self {
+        let args = Self::intern_slice(args);
+        Self::intern(TyKind::Tuple(args))
+    }
+
+    pub fn var(id: TyId) -> Self {
+        Self::intern(TyKind::Var(id))
+    }
+
+    pub fn function_arity(self) -> usize {
+        match self.kind() {
+            TyKind::Fn { ret, .. } => 1 + ret.function_arity(),
+            TyKind::Scheme { ty, .. } => ty.function_arity(),
             _ => 0,
         }
     }
 
     #[must_use]
-    pub const fn is_fn(&self) -> bool {
-        matches!(self, Self::Fn { .. })
+    pub const fn is_fn(self) -> bool {
+        matches!(self.kind(), TyKind::Fn { .. })
     }
 
     #[must_use]
-    pub const fn is_char(&self) -> bool {
-        matches!(self, Self::Char)
+    pub const fn is_char(self) -> bool {
+        matches!(self.kind(), TyKind::Char)
     }
 
-    pub fn is_simple_fmt(&self) -> bool {
-        match self {
-            Self::Int | Self::Bool | Self::Char | Self::Real | Self::Var(_) | Self::Tuple(_) => {
-                true
-            }
+    pub fn is_simple_fmt(self) -> bool {
+        match self.kind() {
+            TyKind::Int
+            | TyKind::Bool
+            | TyKind::Char
+            | TyKind::Real
+            | TyKind::Var(_)
+            | TyKind::Tuple(_) => true,
 
-            Self::This(args) | Self::Generic { args, .. } | Self::Named { args, .. } => {
+            TyKind::This(args) | TyKind::Generic { args, .. } | TyKind::Named { args, .. } => {
                 args.is_empty()
             }
 
@@ -200,59 +215,59 @@ impl Ty {
         }
     }
 
-    pub const fn get_ident(&self) -> Option<Ident> {
-        if let Self::Named { name, .. } = self {
+    pub const fn get_ident(self) -> Option<Ident> {
+        if let TyKind::Named { name, .. } = self.kind() {
             name.as_ident()
         } else {
             None
         }
     }
 
-    pub fn get_scheme_ty(&self) -> Option<&Self> {
-        if let Self::Scheme { ty, .. } = self {
-            Some(ty)
+    pub const fn get_scheme_ty(self) -> Option<Self> {
+        if let TyKind::Scheme { ty, .. } = self.kind() {
+            Some(*ty)
         } else {
             None
         }
     }
 
     #[must_use]
-    pub const fn as_var(&self) -> Option<TyId> {
-        if let Self::Var(v) = self {
+    pub const fn as_var(self) -> Option<TyId> {
+        if let TyKind::Var(v) = self.kind() {
             Some(*v)
         } else {
             None
         }
     }
 
-    fn free_type_variables_inner(&self, free: &mut Vec<TyId>) {
-        match self {
-            Self::Int | Self::Bool | Self::Char | Self::Real => (),
-            Self::Var(id) if free.contains(id) => (),
+    fn free_type_variables_inner(self, free: &mut Vec<TyId>) {
+        match self.kind() {
+            TyKind::Int | TyKind::Bool | TyKind::Char | TyKind::Real => (),
+            TyKind::Var(id) if free.contains(id) => (),
 
-            Self::Var(id) => {
+            TyKind::Var(id) => {
                 free.push(*id);
             }
 
-            Self::Fn { param, ret } => {
+            TyKind::Fn { param, ret } => {
                 param.free_type_variables_inner(free);
                 ret.free_type_variables_inner(free);
             }
 
-            Self::Scheme { quant, ty } => {
+            TyKind::Scheme { quant, ty } => {
                 ty.free_type_variables_inner(free);
                 while let Some(pos) = free.iter().position(|f| quant.contains(f)) {
                     free.swap_remove(pos);
                 }
             }
 
-            Self::This(args) | Self::Named { args, .. } | Self::Tuple(args) => {
+            TyKind::This(args) | TyKind::Named { args, .. } | TyKind::Tuple(args) => {
                 for arg in args.iter() {
                     arg.free_type_variables_inner(free);
                 }
             }
 
-            Self::Generic { var, args } => {
+            TyKind::Generic { var, args } => {
                 for arg in args.iter() {
                     arg.free_type_variables_inner(free);
                 }
@@ -264,163 +279,113 @@ impl Ty {
     }
 
     #[must_use]
-    pub fn free_type_variables(&self) -> Vec<TyId> {
+    pub fn free_type_variables(self) -> Vec<TyId> {
         let mut free = Vec::new();
         self.free_type_variables_inner(&mut free);
         free
     }
 
-    pub fn param_iter(&self) -> impl Iterator<Item = Self> {
-        ParamIter(self.clone())
+    pub fn param_iter(self) -> impl Iterator<Item = Self> {
+        ParamIter(self)
     }
 
     #[must_use]
-    pub const fn is_scheme(&self) -> bool {
-        matches!(self, Self::Scheme { .. })
+    pub const fn is_scheme(self) -> bool {
+        matches!(self.kind(), TyKind::Scheme { .. })
     }
 
     #[must_use]
-    pub const fn is_var(&self) -> bool {
-        matches!(self, Self::Var(..))
+    pub const fn is_var(self) -> bool {
+        matches!(self.kind(), TyKind::Var(..))
     }
 }
 
 impl Substitute for Ty {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Self) -> Option<Self>,
+        S: FnMut(&TyKind) -> Option<Self>,
     {
-        match self {
-            Self::Fn { param, ret } => {
-                param.substitute(subs);
-                ret.substitute(subs);
+        let ty = match self.kind() {
+            TyKind::Fn { param, ret } => {
+                let mut param = *param;
+                let mut ret = *ret;
+                param
+                    .substitute(subs)
+                    .bitor(ret.substitute(subs))
+                    .then_some(TyKind::Fn { param, ret })
             }
-            Self::Scheme { ty, .. } => {
-                ty.substitute(subs);
+            TyKind::Scheme { quant, ty } => {
+                let mut ty = *ty;
+                ty.substitute(subs).then(|| TyKind::Scheme {
+                    quant: quant.clone(),
+                    ty,
+                })
             }
-            Self::This(args)
-            | Self::Generic { args, .. }
-            | Self::Named { args, .. }
-            | Self::Tuple(args) => {
-                let mut new = args.to_vec();
-                for arg in &mut new {
-                    arg.substitute(subs);
+            TyKind::Named { name, args } => {
+                let mut args = args.to_vec();
+                if args.substitute(subs) {
+                    let args = Self::intern_slice(args);
+                    Some(TyKind::Named { name: *name, args })
+                } else {
+                    None
                 }
-                if args.as_ref() != new.as_slice() {
-                    *args = new.into();
+            }
+            TyKind::Generic { var, args } => {
+                let mut args = args.to_vec();
+                if args.substitute(subs) {
+                    let args = Self::intern_slice(args);
+                    Some(TyKind::Generic { var: *var, args })
+                } else {
+                    None
                 }
             }
+            TyKind::Tuple(args) => {
+                let mut args = args.to_vec();
+                if args.substitute(subs) {
+                    let args = Self::intern_slice(args);
+                    Some(TyKind::Tuple(args))
+                } else {
+                    None
+                }
+            }
+            TyKind::This(args) => {
+                let mut args = args.to_vec();
+                if args.substitute(subs) {
+                    let args = Self::intern_slice(args);
+                    Some(TyKind::This(args))
+                } else {
+                    None
+                }
+            }
+            TyKind::Int | TyKind::Bool | TyKind::Char | TyKind::Real | TyKind::Var(_) => None,
+        };
 
-            Self::Int | Self::Bool | Self::Char | Self::Real | Self::Var(_) => (),
-        }
-
-        if let Some(ty) = subs(self) {
-            *self = ty;
+        if let Some(ty) = ty {
+            *self = match subs(&ty) {
+                Some(x) => x,
+                None => Self::intern(ty),
+            };
+            true
+        } else if let Some(new) = subs(self.kind()) {
+            *self = new;
+            true
+        } else {
+            false
         }
     }
 }
 
-impl Substitute for Rc<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S)
+impl Substitute for TySlice {
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        let mut ty = match self.as_ref() {
-            Ty::Fn { param, ret } => {
-                let mut new_param = param.as_ref().clone();
-                let mut new_ret = ret.as_ref().clone();
-                new_param.substitute(subs);
-                new_ret.substitute(subs);
-
-                let param = if param.as_ref() == &new_param {
-                    param.clone()
-                } else {
-                    Self::new(new_param)
-                };
-                let ret = if ret.as_ref() == &new_ret {
-                    ret.clone()
-                } else {
-                    Self::new(new_ret)
-                };
-
-                Ty::Fn { param, ret }
-            }
-            Ty::Scheme { quant, ty } => {
-                let mut new_ty = ty.as_ref().clone();
-                new_ty.substitute(subs);
-
-                let ty = if ty.as_ref() == &new_ty {
-                    ty.clone()
-                } else {
-                    Self::new(new_ty)
-                };
-
-                Ty::Scheme {
-                    quant: quant.clone(),
-                    ty,
-                }
-            }
-            Ty::Named { name, args } => {
-                let mut new_args = args.to_vec();
-                for arg in &mut new_args {
-                    arg.substitute(subs);
-                }
-                let args = if args.as_ref() == new_args {
-                    args.clone()
-                } else {
-                    Rc::from(new_args)
-                };
-                Ty::Named { name: *name, args }
-            }
-            Ty::Generic { var, args } => {
-                let mut new_args = args.to_vec();
-                for arg in &mut new_args {
-                    arg.substitute(subs);
-                }
-                let args = if args.as_ref() == new_args {
-                    args.clone()
-                } else {
-                    Rc::from(new_args)
-                };
-                Ty::Generic { var: *var, args }
-            }
-            Ty::Tuple(args) => {
-                let mut new_args = args.to_vec();
-                for arg in &mut new_args {
-                    arg.substitute(subs);
-                }
-                let args = if args.as_ref() == new_args {
-                    args.clone()
-                } else {
-                    Rc::from(new_args)
-                };
-                Ty::Tuple(args)
-            }
-            Ty::This(args) => {
-                let mut new_args = args.to_vec();
-                for arg in &mut new_args {
-                    arg.substitute(subs);
-                }
-                let args = if args.as_ref() == new_args {
-                    args.clone()
-                } else {
-                    Rc::from(new_args)
-                };
-                Ty::This(args)
-            }
-            Ty::Int | Ty::Bool | Ty::Char | Ty::Real | Ty::Var(_) => {
-                if let Some(new) = subs(self) {
-                    *self = Self::new(new);
-                }
-                return;
-            }
-        };
-
-        if let Some(new) = subs(&ty) {
-            ty = new;
-        }
-        if self.as_ref() != &ty {
-            *self = Self::new(ty);
+        let mut slice = self.to_vec();
+        if slice.substitute(subs) {
+            *self = Ty::intern_slice(slice);
+            true
+        } else {
+            false
         }
     }
 }
@@ -432,14 +397,13 @@ impl Iterator for ParamIter {
     type Item = Ty;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match &self.0 {
-            Ty::Fn { param, ret } => {
-                let param = Ty::from(param);
-                self.0 = Ty::from(ret);
-                Some(param)
+        match self.0.kind() {
+            TyKind::Fn { param, ret } => {
+                self.0 = *ret;
+                Some(*param)
             }
-            Ty::Scheme { ty, .. } => {
-                self.0 = Ty::from(ty);
+            TyKind::Scheme { ty, .. } => {
+                self.0 = *ty;
                 self.next()
             }
             _ => None,

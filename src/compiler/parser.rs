@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use super::ast::{
     Constructor, Expr, ExprKind, Fixity, Ident, Import, ImportClause, ImportWildcard, LetBind,
     ListPat, MatchArm, Module, Operator, Param, Pat, PatKind, Path, RangePat, Stmt, StmtKind, Val,
@@ -7,7 +5,7 @@ use super::ast::{
 use super::error::{ParseError, ParseErrorKind};
 use super::infer::{ClassConstraint, ClassConstraintSet};
 use super::token::{Token, TokenKind};
-use super::types::Ty;
+use super::types::{Ty, TyKind, TySlice};
 use crate::global::{Span, Symbol};
 use crate::span::Spand;
 
@@ -17,17 +15,12 @@ pub type ParseResult<T> = Result<T, ParseError>;
 pub struct Parser {
     tokens: Vec<Token>,
     cur:    usize,
-    empty:  Rc<[Ty]>,
 }
 
 impl Parser {
     #[must_use]
-    pub fn new(tokens: Vec<Token>) -> Self {
-        Self {
-            tokens,
-            cur: 0,
-            empty: Rc::new([]),
-        }
+    pub const fn new(tokens: Vec<Token>) -> Self {
+        Self { tokens, cur: 0 }
     }
 
     fn last_span(&self) -> Span {
@@ -493,44 +486,44 @@ impl Parser {
         let mut params = Vec::new();
         while !self.check(TokenKind::Eq) {
             let ident = self.expect_id()?;
-            params.push(Ty::Named {
+            params.push(Ty::intern(TyKind::Named {
                 name: Path::from_one(ident),
-                args: self.empty.clone(),
-            });
+                args: Ty::empty_slice(),
+            }));
         }
         self.expect(TokenKind::Eq)?;
-        let params = params.into_boxed_slice();
         let Spand {
             data: ty,
             span: ty_span,
         } = self.parse_type()?;
         let span = span.join(ty_span);
+        let params = Ty::intern_slice(params);
 
         Ok(Stmt::new(StmtKind::Alias { name, params, ty }, span))
     }
 
-    fn parse_constraint_set(&mut self) -> ParseResult<(ClassConstraintSet, Box<[Ty]>)> {
+    fn parse_constraint_set(&mut self) -> ParseResult<(ClassConstraintSet, TySlice)> {
         let mut constrs = ClassConstraintSet::new();
         if !self.check(TokenKind::LBrace) {
-            return Ok((constrs, Box::new([])));
+            return Ok((constrs, Ty::empty_slice()));
         }
 
         let (params, _) = self.parse_delimited(Delim::Brace, |parser| {
             let name = parser.expect_id()?;
-            let ty = Ty::Named {
+            let ty = Ty::intern(TyKind::Named {
                 name: Path::from_one(name),
-                args: parser.empty.clone(),
-            };
+                args: Ty::empty_slice(),
+            });
             if parser.next_if_match(TokenKind::Colon).is_some() {
                 let classes = parser.parse_class_constraint()?;
                 for (class, span) in classes {
-                    constrs.push(ClassConstraint::new(class, ty.clone(), span));
+                    constrs.push(ClassConstraint::new(class, ty, span));
                 }
             }
             Ok(ty)
         })?;
 
-        Ok((constrs, params.into_boxed_slice()))
+        Ok((constrs, Ty::intern_slice(params)))
     }
 
     fn parse_class_constraint(&mut self) -> ParseResult<Vec<(Path, Span)>> {
@@ -739,25 +732,28 @@ impl Parser {
                     let ty = types.pop().unwrap();
                     Ok(Spand::new(ty, span))
                 } else {
-                    Ok(Spand::new(Ty::Tuple(types.into()), span))
+                    Ok(Spand::new(Ty::tuple(types), span))
                 }
             }
-            TokenKind::KwInt => Ok(Spand::new(Ty::Int, span)),
-            TokenKind::KwBool => Ok(Spand::new(Ty::Bool, span)),
-            TokenKind::KwReal => Ok(Spand::new(Ty::Real, span)),
-            TokenKind::KwChar => Ok(Spand::new(Ty::Char, span)),
+            TokenKind::KwInt => Ok(Spand::new(Ty::int(), span)),
+            TokenKind::KwBool => Ok(Spand::new(Ty::bool(), span)),
+            TokenKind::KwReal => Ok(Spand::new(Ty::real(), span)),
+            TokenKind::KwChar => Ok(Spand::new(Ty::char(), span)),
             TokenKind::Ident(ident) => {
                 let (path, span) = self.parse_path_from(Ident { ident, span })?;
 
                 Ok(Spand::new(
-                    Ty::Named {
+                    Ty::intern(TyKind::Named {
                         name: path,
-                        args: self.empty.clone(),
-                    },
+                        args: Ty::empty_slice(),
+                    }),
                     span,
                 ))
             }
-            TokenKind::KwSelf => Ok(Spand::new(Ty::This(self.empty.clone()), span)),
+            TokenKind::KwSelf => Ok(Spand::new(
+                Ty::intern(TyKind::This(Ty::empty_slice())),
+                span,
+            )),
             _ => Err(ParseError::new(ParseErrorKind::ExpectedType(data), span)),
         }
     }
@@ -765,8 +761,8 @@ impl Parser {
     fn parse_polymorphic_type(&mut self) -> ParseResult<Spand<Ty>> {
         let simple = self.parse_simple_type()?;
 
-        match simple.data {
-            Ty::Named { name, args } if args.is_empty() => {
+        match simple.data.kind() {
+            TyKind::Named { name, args } if args.is_empty() => {
                 let mut span = simple.span;
                 let mut params = Vec::new();
                 while self.peek_and(|tk| tk.can_start_type()) {
@@ -774,10 +770,13 @@ impl Parser {
                     span = span.join(ty.span);
                     params.push(ty.data);
                 }
-                let args = params.into();
-                Ok(Spand::new(Ty::Named { name, args }, span))
+                let args = Ty::intern_slice(params);
+                Ok(Spand::new(
+                    Ty::intern(TyKind::Named { name: *name, args }),
+                    span,
+                ))
             }
-            Ty::This(args) if args.is_empty() => {
+            TyKind::This(args) if args.is_empty() => {
                 let mut span = simple.span;
                 let mut params = Vec::new();
                 while self.peek_and(|tk| tk.can_start_type()) {
@@ -785,8 +784,8 @@ impl Parser {
                     span = span.join(ty.span);
                     params.push(ty.data);
                 }
-                let args = params.into();
-                Ok(Spand::new(Ty::This(args), span))
+                let args = Ty::intern_slice(params);
+                Ok(Spand::new(Ty::intern(TyKind::This(args)), span))
             }
             _ => Ok(simple),
         }
@@ -800,10 +799,10 @@ impl Parser {
             let span = simple.span.join(ret.span);
 
             Ok(Spand::new(
-                Ty::Fn {
-                    param: Rc::new(simple.data),
-                    ret:   Rc::new(ret.data),
-                },
+                Ty::intern(TyKind::Fn {
+                    param: simple.data,
+                    ret:   ret.data,
+                }),
                 span,
             ))
         } else {
@@ -823,9 +822,11 @@ impl Parser {
             params.push(ty.data);
         }
 
+        let params = Ty::intern_slice(params);
+
         Ok(Constructor {
             name,
-            params: params.into_boxed_slice(),
+            params,
             span,
             ty: (),
         })
@@ -836,11 +837,12 @@ impl Parser {
         let name = self.expect_id()?;
 
         let params = std::iter::from_fn(|| {
-            let args = self.empty.clone();
             self.next_if_map(|tk| {
-                tk.data.as_ident().map(|ident| Ty::Named {
-                    name: Path::from_one(Ident::new(ident, tk.span)),
-                    args,
+                tk.data.as_ident().map(|ident| {
+                    Ty::intern(TyKind::Named {
+                        name: Path::from_one(Ident::new(ident, tk.span)),
+                        args: Ty::empty_slice(),
+                    })
                 })
             })
         })
@@ -862,7 +864,7 @@ impl Parser {
         Ok(Stmt::new(
             StmtKind::Type {
                 name,
-                params: params.into_boxed_slice(),
+                params: Ty::intern_slice(params),
                 constructors: constructors.into_boxed_slice(),
             },
             span,

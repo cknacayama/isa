@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 
 use super::infer::{ClassConstraintSet, Substitute};
 use super::token::TokenKind;
-use super::types::Ty;
+use super::types::{Ty, TyKind, TySlice};
 use crate::global::{Span, Symbol};
 use crate::separated_fmt;
 
@@ -302,10 +302,10 @@ impl TokenKind {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Constructor<T> {
     pub name:   Ident,
-    pub params: Box<[Ty]>,
+    pub params: TySlice,
     pub span:   Span,
     pub ty:     T,
 }
@@ -521,7 +521,7 @@ impl<T> LetBind<T> {
 
 #[derive(Debug, Clone)]
 pub struct Val {
-    pub params: Box<[Ty]>,
+    pub params: TySlice,
     pub set:    ClassConstraintSet,
     pub name:   Ident,
     pub ty:     Ty,
@@ -532,7 +532,7 @@ pub struct Val {
 pub struct Operator {
     pub fixity:  Fixity,
     pub prec:    u8,
-    pub params:  Box<[Ty]>,
+    pub params:  TySlice,
     pub set:     ClassConstraintSet,
     pub op:      Ident,
     pub ty:      Ty,
@@ -560,7 +560,7 @@ pub enum StmtKind<T> {
     },
 
     Instance {
-        params:   Box<[Ty]>,
+        params:   TySlice,
         set:      ClassConstraintSet,
         class:    Path,
         instance: Ty,
@@ -569,13 +569,13 @@ pub enum StmtKind<T> {
 
     Type {
         name:         Ident,
-        params:       Box<[Ty]>,
+        params:       TySlice,
         constructors: Box<[Constructor<T>]>,
     },
 
     Alias {
         name:   Ident,
-        params: Box<[Ty]>,
+        params: TySlice,
         ty:     Ty,
     },
 }
@@ -666,160 +666,102 @@ impl<T> Expr<T> {
 }
 
 impl Substitute for Param<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        self.pat.substitute(subs);
+        self.pat.substitute(subs)
     }
 }
 
 impl Substitute for Constructor<()> {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        for param in &mut self.params {
-            param.substitute(subs);
-        }
+        self.params.substitute(subs)
     }
 }
 
 impl Substitute for Constructor<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        self.ty.substitute(subs);
-        for param in &mut self.params {
-            param.substitute(subs);
-        }
+        self.ty.substitute(subs) | self.params.substitute(subs)
     }
 }
 
 impl Substitute for Val {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        self.set.substitute(subs);
-        self.ty.substitute(subs);
-        for p in &mut self.params {
-            p.substitute(subs);
-        }
+        self.set.substitute(subs) | self.ty.substitute(subs) | self.params.substitute(subs)
     }
 }
 
 impl Substitute for Operator {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        self.set.substitute(subs);
-        self.ty.substitute(subs);
-        for p in &mut self.params {
-            p.substitute(subs);
-        }
+        self.set.substitute(subs) | self.ty.substitute(subs) | self.params.substitute(subs)
     }
 }
 
 impl Substitute for Stmt<()> {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
         match &mut self.kind {
-            StmtKind::Type { constructors, .. } => {
-                for c in constructors {
-                    for t in &mut c.params {
-                        t.substitute(subs);
-                    }
-                }
-            }
-            StmtKind::Alias { ty, .. } => {
-                ty.substitute(subs);
-            }
-            StmtKind::Val(val) => {
-                val.substitute(subs);
-            }
+            StmtKind::Type { constructors, .. } => constructors.substitute(subs),
+            StmtKind::Alias { ty, .. } => ty.substitute(subs),
+            StmtKind::Val(val) => val.substitute(subs),
             StmtKind::Class {
                 signatures,
                 ops,
                 set,
                 ..
-            } => {
-                for sig in signatures {
-                    sig.substitute(subs);
-                }
-                for op in ops {
-                    op.substitute(subs);
-                }
-                set.substitute(subs);
-            }
+            } => signatures.substitute(subs) | ops.substitute(subs) | set.substitute(subs),
             StmtKind::Instance { instance, set, .. } => {
-                instance.substitute(subs);
-                set.substitute(subs);
+                instance.substitute(subs) | set.substitute(subs)
             }
             StmtKind::Operator(Operator { ty, set, .. }) => {
-                set.substitute(subs);
-                ty.substitute(subs);
+                set.substitute(subs) | ty.substitute(subs)
             }
-            StmtKind::Let(_) | StmtKind::Semi(_) => (),
+            StmtKind::Let(_) | StmtKind::Semi(_) => false,
         }
     }
 }
 
 impl Substitute for LetBind<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        self.expr.substitute(subs);
-        for p in &mut self.params {
-            p.substitute(subs);
-        }
+        self.expr.substitute(subs) | self.params.substitute(subs)
     }
 }
 
 impl Substitute for StmtKind<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
         match self {
-            Self::Let(bind) => {
-                bind.substitute(subs);
-            }
-            Self::Semi(semi) => {
-                semi.substitute(subs);
-            }
-            Self::Type { constructors, .. } => {
-                for c in constructors {
-                    for t in &mut c.params {
-                        t.substitute(subs);
-                    }
-                }
-            }
-            Self::Alias { ty, .. } => {
-                ty.substitute(subs);
-            }
-            Self::Val(val) => {
-                val.substitute(subs);
-            }
+            Self::Let(bind) => bind.substitute(subs),
+            Self::Semi(semi) => semi.substitute(subs),
+            Self::Type { constructors, .. } => constructors.substitute(subs),
+            Self::Alias { ty, .. } => ty.substitute(subs),
+            Self::Val(val) => val.substitute(subs),
             Self::Class {
                 set,
                 signatures,
                 defaults,
                 ..
-            } => {
-                set.substitute(subs);
-                for sig in signatures {
-                    sig.substitute(subs);
-                }
-                for bind in defaults {
-                    bind.substitute(subs);
-                }
-            }
+            } => set.substitute(subs) | signatures.substitute(subs) | defaults.substitute(subs),
             Self::Instance {
                 params,
                 set,
@@ -827,84 +769,55 @@ impl Substitute for StmtKind<Ty> {
                 impls,
                 ..
             } => {
-                set.substitute(subs);
-                instance.substitute(subs);
-                for i in impls {
-                    i.substitute(subs);
-                }
-                for p in params {
-                    p.substitute(subs);
-                }
+                set.substitute(subs)
+                    | instance.substitute(subs)
+                    | params.substitute(subs)
+                    | impls.substitute(subs)
             }
             Self::Operator(Operator {
                 params, set, ty, ..
-            }) => {
-                set.substitute(subs);
-                for p in params {
-                    p.substitute(subs);
-                }
-                ty.substitute(subs);
-            }
+            }) => set.substitute(subs) | params.substitute(subs) | ty.substitute(subs),
         }
     }
 }
 
 impl Substitute for Stmt<Ty> {
     #[inline]
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        self.kind.substitute(subs);
+        self.kind.substitute(subs)
+    }
+}
+
+impl Substitute for MatchArm<Ty> {
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
+    where
+        S: FnMut(&TyKind) -> Option<Ty>,
+    {
+        self.pat.substitute(subs) | self.expr.substitute(subs)
     }
 }
 
 impl Substitute for Expr<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        match &mut self.kind {
-            ExprKind::Let { bind, body } => {
-                bind.substitute(subs);
-                body.substitute(subs);
-            }
-            ExprKind::Fn { param, expr } => {
-                param.substitute(subs);
-                expr.substitute(subs);
-            }
+        let kind = match &mut self.kind {
+            ExprKind::Let { bind, body } => bind.substitute(subs) | body.substitute(subs),
+            ExprKind::Fn { param, expr } => param.substitute(subs) | expr.substitute(subs),
             ExprKind::If {
                 cond,
                 then,
                 otherwise,
-            } => {
-                cond.substitute(subs);
-                then.substitute(subs);
-                otherwise.substitute(subs);
-            }
-            ExprKind::Call { callee, arg } => {
-                callee.substitute(subs);
-                arg.substitute(subs);
-            }
-            ExprKind::Match { expr, arms } => {
-                expr.substitute(subs);
-                for arm in arms {
-                    arm.pat.substitute(subs);
-                    arm.expr.substitute(subs);
-                }
-            }
-            ExprKind::List(exprs) | ExprKind::Tuple(exprs) => {
-                for expr in exprs {
-                    expr.substitute(subs);
-                }
-            }
-            ExprKind::Infix { lhs, rhs, .. } => {
-                lhs.substitute(subs);
-                rhs.substitute(subs);
-            }
-            ExprKind::Prefix { expr, .. } | ExprKind::Paren(expr) => {
-                expr.substitute(subs);
-            }
+            } => cond.substitute(subs) | then.substitute(subs) | otherwise.substitute(subs),
+            ExprKind::Call { callee, arg } => callee.substitute(subs) | arg.substitute(subs),
+            ExprKind::Match { expr, arms } => expr.substitute(subs) | arms.substitute(subs),
+            ExprKind::List(exprs) | ExprKind::Tuple(exprs) => exprs.substitute(subs),
+            ExprKind::Infix { lhs, rhs, .. } => lhs.substitute(subs) | rhs.substitute(subs),
+            ExprKind::Prefix { expr, .. } | ExprKind::Paren(expr) => expr.substitute(subs),
 
             ExprKind::Operator(_)
             | ExprKind::Int(_)
@@ -912,10 +825,10 @@ impl Substitute for Expr<Ty> {
             | ExprKind::String(_)
             | ExprKind::Bool(_)
             | ExprKind::Char(_)
-            | ExprKind::Path(_) => (),
-        }
+            | ExprKind::Path(_) => false,
+        };
 
-        self.ty.substitute(subs);
+        kind | self.ty.substitute(subs)
     }
 }
 
@@ -923,49 +836,38 @@ impl<T> Substitute for Module<T>
 where
     Stmt<T>: Substitute,
 {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        for e in &mut self.stmts {
-            e.substitute(subs);
-        }
+        self.stmts.substitute(subs)
     }
 }
 
 impl Substitute for ListPat<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
         match self {
-            Self::Nil => (),
-            Self::Single(pat) => {
-                pat.substitute(subs);
-            }
-            Self::Cons(pat, pat1) => {
-                pat.substitute(subs);
-                pat1.substitute(subs);
-            }
+            Self::Nil => false,
+            Self::Single(pat) => pat.substitute(subs),
+            Self::Cons(pat, pat1) => pat.substitute(subs) | pat1.substitute(subs),
         }
     }
 }
 
 impl Substitute for Pat<Ty> {
-    fn substitute<S>(&mut self, subs: &mut S)
+    fn substitute<S>(&mut self, subs: &mut S) -> bool
     where
-        S: FnMut(&Ty) -> Option<Ty>,
+        S: FnMut(&TyKind) -> Option<Ty>,
     {
-        match &mut self.kind {
+        let kind = match &mut self.kind {
             PatKind::Tuple(args) | PatKind::Or(args) | PatKind::Constructor { args, .. } => {
-                for p in args {
-                    p.substitute(subs);
-                }
+                args.substitute(subs)
             }
 
-            PatKind::List(list) => {
-                list.substitute(subs);
-            }
+            PatKind::List(list) => list.substitute(subs),
 
             PatKind::Wild
             | PatKind::Int(_)
@@ -975,9 +877,10 @@ impl Substitute for Pat<Ty> {
             | PatKind::Char(_)
             | PatKind::IntRange(_)
             | PatKind::CharRange(_)
-            | PatKind::RealRange(_) => (),
-        }
-        self.ty.substitute(subs);
+            | PatKind::RealRange(_) => false,
+        };
+
+        kind | self.ty.substitute(subs)
     }
 }
 
