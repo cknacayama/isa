@@ -1433,6 +1433,24 @@ mod tests {
     }
 
     #[test]
+    fn lists() {
+        assert_expr!("[]");
+        assert_expr!("[1,2,3]");
+        assert_expr!("[a,b,c,d]");
+        assert_expr!("[['a'],['b'],['c'],['d']]");
+        assert_expr!("[['a'],['b'],['c'],['d'],]");
+    }
+
+    #[test]
+    fn tuples() {
+        assert_expr!("()");
+        assert_expr!("(1,2,3)");
+        assert_expr!("(a,b,c,d)");
+        assert_expr!("(('a'),('b'),('c'),('d'))");
+        assert_expr!("(('a'),('b'),('c'),('d'),)");
+    }
+
+    #[test]
     fn lets() {
         assert_expr!("let a = 10 in 10");
         assert_expr!("let a c = 10 in let b = a in b");
@@ -1445,6 +1463,15 @@ mod tests {
         assert_expr!(r#"-"string""#);
         assert_expr!(r#"-'c'"#);
         assert_expr!(r#"- - - - - - - + - + 1"#);
+    }
+
+    #[test]
+    fn infix() {
+        assert_expr!("1 + 1");
+        assert_expr!("a + 1 + 1");
+        assert_expr!(r#""string" + (1 * 1)"#);
+        assert_expr!("a + ((c ^^ []) >>= 'd')");
+        assert_expr!("1 * 2 * 3 + ((() & (1) ^^ []) >>= 'd')");
     }
 
     #[test]

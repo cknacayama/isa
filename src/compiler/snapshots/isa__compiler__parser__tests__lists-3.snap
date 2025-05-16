@@ -1,0 +1,74 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"[a,b,c,d]\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: List(
+            [
+                Expr {
+                    kind: Path(
+                        Path {
+                            segments: [
+                                Ident {
+                                    ident: "a",
+                                    span: SpanData { file_id: 0, start: 1, end: 2 },
+                                },
+                            ],
+                            ..
+                        },
+                    ),
+                    span: SpanData { file_id: 0, start: 1, end: 2 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Path(
+                        Path {
+                            segments: [
+                                Ident {
+                                    ident: "b",
+                                    span: SpanData { file_id: 0, start: 3, end: 4 },
+                                },
+                            ],
+                            ..
+                        },
+                    ),
+                    span: SpanData { file_id: 0, start: 3, end: 4 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Path(
+                        Path {
+                            segments: [
+                                Ident {
+                                    ident: "c",
+                                    span: SpanData { file_id: 0, start: 5, end: 6 },
+                                },
+                            ],
+                            ..
+                        },
+                    ),
+                    span: SpanData { file_id: 0, start: 5, end: 6 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Path(
+                        Path {
+                            segments: [
+                                Ident {
+                                    ident: "d",
+                                    span: SpanData { file_id: 0, start: 7, end: 8 },
+                                },
+                            ],
+                            ..
+                        },
+                    ),
+                    span: SpanData { file_id: 0, start: 7, end: 8 },
+                    ty: (),
+                },
+            ],
+        ),
+        span: SpanData { file_id: 0, start: 0, end: 9 },
+        ty: (),
+    },
+)

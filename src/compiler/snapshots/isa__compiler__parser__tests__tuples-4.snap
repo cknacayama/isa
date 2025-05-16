@@ -1,0 +1,66 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"(('a'),('b'),('c'),('d'))\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Tuple(
+            [
+                Expr {
+                    kind: Paren(
+                        Expr {
+                            kind: Char(
+                                97,
+                            ),
+                            span: SpanData { file_id: 0, start: 2, end: 5 },
+                            ty: (),
+                        },
+                    ),
+                    span: SpanData { file_id: 0, start: 1, end: 6 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Paren(
+                        Expr {
+                            kind: Char(
+                                98,
+                            ),
+                            span: SpanData { file_id: 0, start: 8, end: 11 },
+                            ty: (),
+                        },
+                    ),
+                    span: SpanData { file_id: 0, start: 7, end: 12 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Paren(
+                        Expr {
+                            kind: Char(
+                                99,
+                            ),
+                            span: SpanData { file_id: 0, start: 14, end: 17 },
+                            ty: (),
+                        },
+                    ),
+                    span: SpanData { file_id: 0, start: 13, end: 18 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Paren(
+                        Expr {
+                            kind: Char(
+                                100,
+                            ),
+                            span: SpanData { file_id: 0, start: 20, end: 23 },
+                            ty: (),
+                        },
+                    ),
+                    span: SpanData { file_id: 0, start: 19, end: 24 },
+                    ty: (),
+                },
+            ],
+        ),
+        span: SpanData { file_id: 0, start: 0, end: 25 },
+        ty: (),
+    },
+)

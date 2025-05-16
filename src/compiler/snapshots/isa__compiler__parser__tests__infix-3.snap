@@ -1,0 +1,53 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(r#\"\"string\" + (1 * 1)\"#).parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Infix {
+            op: Ident {
+                ident: "+",
+                span: SpanData { file_id: 0, start: 9, end: 10 },
+            },
+            lhs: Expr {
+                kind: String(
+                    "string",
+                ),
+                span: SpanData { file_id: 0, start: 0, end: 8 },
+                ty: (),
+            },
+            rhs: Expr {
+                kind: Paren(
+                    Expr {
+                        kind: Infix {
+                            op: Ident {
+                                ident: "*",
+                                span: SpanData { file_id: 0, start: 14, end: 15 },
+                            },
+                            lhs: Expr {
+                                kind: Int(
+                                    1,
+                                ),
+                                span: SpanData { file_id: 0, start: 12, end: 13 },
+                                ty: (),
+                            },
+                            rhs: Expr {
+                                kind: Int(
+                                    1,
+                                ),
+                                span: SpanData { file_id: 0, start: 16, end: 17 },
+                                ty: (),
+                            },
+                        },
+                        span: SpanData { file_id: 0, start: 12, end: 17 },
+                        ty: (),
+                    },
+                ),
+                span: SpanData { file_id: 0, start: 11, end: 18 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, start: 0, end: 18 },
+        ty: (),
+    },
+)

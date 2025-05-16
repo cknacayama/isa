@@ -2,7 +2,7 @@ use std::str::Chars;
 
 use super::error::{LexError, LexErrorKind};
 use super::token::{Token, TokenKind};
-use crate::global::Span;
+use crate::global::{Span, Symbol};
 use crate::span::SpanData;
 
 const EOF: char = '\0';
@@ -178,7 +178,7 @@ impl<'a> Lexer<'a> {
             return Err(self.make_err(LexErrorKind::UnterminatedString));
         }
 
-        let kind = TokenKind::String(crate::global::intern_owned_symbol(s));
+        let kind = TokenKind::String(Symbol::intern_owned(s));
 
         Ok(self.make_token(kind))
     }
@@ -439,6 +439,48 @@ mod tests {
     }
 
     #[test]
+    fn lists() {
+        assert_all!("[]");
+        assert_all!("[1,2,3]");
+        assert_all!("[a,b,c,d]");
+        assert_all!("[['a'],['b'],['c'],['d']]");
+        assert_all!("[['a'],['b'],['c'],['d'],]");
+    }
+
+    #[test]
+    fn tuples() {
+        assert_all!("()");
+        assert_all!("(1,2,3)");
+        assert_all!("(a,b,c,d)");
+        assert_all!("(('a'),('b'),('c'),('d'))");
+        assert_all!("(('a'),('b'),('c'),('d'),)");
+    }
+
+    #[test]
+    fn lets() {
+        assert_all!("let a = 10 in 10");
+        assert_all!("let a c = 10 in let b = a in b");
+    }
+
+    #[test]
+    fn prefix() {
+        assert_all!("-1");
+        assert_all!("-a");
+        assert_all!(r#"-"string""#);
+        assert_all!(r#"-'c'"#);
+        assert_all!(r#"- - - - - - - + - + 1"#);
+    }
+
+    #[test]
+    fn infix() {
+        assert_all!("1 + 1");
+        assert_all!("a + 1 + 1");
+        assert_all!(r#""string" + (1 * 1)"#);
+        assert_all!("a + ((c ^^ []) >>= 'd')");
+        assert_all!("1 * 2 * 3 + ((() & (1) ^^ []) >>= 'd')");
+    }
+
+    #[test]
     fn program() {
         assert_all!(
             r#"
@@ -451,93 +493,6 @@ let b = a + b * c;
 (&&) && (&&);
 match c with _ -> 10;
 match c with ..10 -> 6.2, 10.. -> 3.14;
-"#
-        )
-    }
-
-    #[test]
-    fn list_stdlib() {
-        assert_all!(
-            r#"
-module @list with {
-    ops::_,
-    monad::_,
-    option::_,
-    prelude::panic
-}
-
-type List a = Nil | Cons a (List a);
-
-val {a} at: List a -> int -> Option a;
-let at list idx = match (list, idx) with
-    ([], _) | (_, ..0) -> None,
-    ([a]_, 0) -> Some a,
-    ([_]list, idx) -> at list $ idx - 1,
-;
-
-val {a} lenght: List a -> int;
-let lenght a = match a with
-    [] -> 0,
-    [_]rest -> 1 + lenght rest
-;
-
-val {a} head: List a -> Option a;
-let head a = match a with
-    [] -> None,
-    [a]_ -> Some a,
-;
-
-val {a} last: List a -> Option a;
-let last a = match a with
-    [] -> None,
-    [a] -> Some a,
-    [_]rest -> last rest,
-;
-
-val {a} tail: List a -> List a;
-let tail a = match a with
-    [] -> [],
-    [_]rest -> rest,
-;
-
-instance List: Functor =
-    let fmap f a = match a with
-        [] -> [],
-        [a]rest -> f a & (f <$> rest),
-;
-
-instance List: Applicative =
-    let pure a = [a],
-    let (<*>) f a = match (f,a) with
-        ([f]restf, [a]resta) -> f a & (restf <*> resta),
-        _ -> [],
-;
-
-instance List: Monad =
-    let (>>=) a f = match a with
-        [] -> [],
-        [a]rest -> f a ++ (rest >>= f),
-;
-
-instance {a: Eq} List a: Eq =
-    let (==) a b = match (a,b) with
-        ([], []) -> true,
-        ([a]resta, [b]restb) -> a == b && resta == restb,
-        _ -> false,
-;
-
-infixr 5 {a} (++): List a -> List a -> List a;
-let (++) a b = match (a,b) with
-    (a, []) -> a,
-    (a, [b]restb) -> a ++ b & restb,
-;
-
-infixr 5 {a} (&): a -> List a -> List a;
-let (&) = List::Cons;
-
-// partial function (panics on out of bounds index)
-infixl 9 {a} (!!): List a -> int -> a;
-let (!!) list idx = unwrap $ at list idx;
 "#
         )
     }

@@ -113,6 +113,7 @@ impl Span {
         self.0 as usize
     }
 
+    #[must_use]
     pub const fn zero() -> Self {
         Self(0)
     }
@@ -125,12 +126,17 @@ impl Default for Symbol {
 }
 
 impl Symbol {
+    #[must_use]
     pub const fn zero() -> Self {
         Self(0)
     }
 
     pub fn intern(symbol: &str) -> Self {
         Env::get(|mut e| e.symbols.intern(symbol))
+    }
+
+    pub fn intern_owned(symbol: String) -> Self {
+        Env::get(|mut e| e.symbols.intern_owned(symbol))
     }
 }
 
@@ -165,6 +171,7 @@ impl Span {
         Self::intern(new_data)
     }
 
+    #[must_use]
     pub fn file_id(self) -> usize {
         let data = Env::get(|e| e.spans.get(self).unwrap());
         data.file_id()
@@ -202,6 +209,7 @@ impl Env {
 }
 
 impl Ty {
+    #[must_use]
     pub const fn new_unchecked(kind: &'static TyKind) -> Self {
         Self(kind)
     }
@@ -223,34 +231,35 @@ impl Ty {
         Env::get(|mut e| e.ctx.intern_quant(ty))
     }
 
+    #[must_use]
     pub const fn int() -> Self {
         INT
     }
 
+    #[must_use]
     pub const fn bool() -> Self {
         BOOL
     }
 
+    #[must_use]
     pub const fn char() -> Self {
         CHAR
     }
 
+    #[must_use]
     pub const fn real() -> Self {
         REAL
     }
 
+    #[must_use]
     pub const fn empty_slice() -> TySlice {
         EMPTY_SLICE
     }
 
+    #[must_use]
     pub const fn empty_quant() -> TyQuant {
         EMPTY_QUANT
     }
-}
-
-#[must_use]
-pub fn intern_owned_symbol(symbol: String) -> Symbol {
-    Env::get(|mut e| e.symbols.intern_owned(symbol))
 }
 
 struct SymbolInterner {

@@ -1,0 +1,58 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, r#\"\"string\" + (1 * 1)\"#).collect :: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: String(
+                "string",
+            ),
+            span: SpanData { file_id: 0, start: 0, end: 8 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "+",
+            ),
+            span: SpanData { file_id: 0, start: 9, end: 10 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, start: 11, end: 12 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                1,
+            ),
+            span: SpanData { file_id: 0, start: 12, end: 13 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "*",
+            ),
+            span: SpanData { file_id: 0, start: 14, end: 15 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                1,
+            ),
+            span: SpanData { file_id: 0, start: 16, end: 17 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, start: 17, end: 18 },
+        },
+    ),
+]
