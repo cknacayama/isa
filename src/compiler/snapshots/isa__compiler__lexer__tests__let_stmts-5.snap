@@ -1,0 +1,58 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \"let mengo _ _c _ = true;\").collect :: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, start: 0, end: 3 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "mengo",
+            ),
+            span: SpanData { file_id: 0, start: 4, end: 9 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 10, end: 11 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "_c",
+            ),
+            span: SpanData { file_id: 0, start: 12, end: 14 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, start: 15, end: 16 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, start: 17, end: 18 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwTrue,
+            span: SpanData { file_id: 0, start: 19, end: 23 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, start: 23, end: 24 },
+        },
+    ),
+]

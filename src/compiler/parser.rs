@@ -1357,9 +1357,12 @@ mod tests {
     use super::*;
     use crate::compiler::lexer::{LexResult, Lexer};
 
-    macro_rules! assert_expr {
+    macro_rules! assert_all {
         ($input:literal) => {
             insta::assert_debug_snapshot!(create_parser($input).parse_expr())
+        };
+        (stmt $input:literal) => {
+            insta::assert_debug_snapshot!(create_parser($input).parse_stmt())
         };
     }
 
@@ -1371,112 +1374,159 @@ mod tests {
 
     #[test]
     fn numbers() {
-        assert_expr!("0000");
-        assert_expr!("0120");
-        assert_expr!("12");
-        assert_expr!("4.0");
-        assert_expr!("5.0");
-        assert_expr!("1.2");
-        assert_expr!("111.2");
+        assert_all!("0000");
+        assert_all!("0120");
+        assert_all!("12");
+        assert_all!("4.0");
+        assert_all!("5.0");
+        assert_all!("1.2");
+        assert_all!("111.2");
     }
 
     #[test]
     fn idents() {
-        assert_expr!("_i");
-        assert_expr!("letf");
-        assert_expr!("vals");
-        assert_expr!("ifs");
-        assert_expr!("thenz");
-        assert_expr!("true10");
-        assert_expr!("false18");
-        assert_expr!("aint");
-        assert_expr!("lbool");
-        assert_expr!("_char");
-        assert_expr!("real_");
-        assert_expr!("Type");
-        assert_expr!("aliass");
-        assert_expr!("classes");
-        assert_expr!("_8instance");
-        assert_expr!("_01infix");
-        assert_expr!("_01infixl");
-        assert_expr!("_01infixr");
-        assert_expr!("mengoprefix");
-        assert_expr!("amatch");
-        assert_expr!("belse");
-        assert_expr!("cin");
-        assert_expr!("dwith");
-        assert_expr!("emodule");
-        assert_expr!("self");
+        assert_all!("_i");
+        assert_all!("letf");
+        assert_all!("vals");
+        assert_all!("ifs");
+        assert_all!("thenz");
+        assert_all!("true10");
+        assert_all!("false18");
+        assert_all!("aint");
+        assert_all!("lbool");
+        assert_all!("_char");
+        assert_all!("real_");
+        assert_all!("Type");
+        assert_all!("aliass");
+        assert_all!("classes");
+        assert_all!("_8instance");
+        assert_all!("_01infix");
+        assert_all!("_01infixl");
+        assert_all!("_01infixr");
+        assert_all!("mengoprefix");
+        assert_all!("amatch");
+        assert_all!("belse");
+        assert_all!("cin");
+        assert_all!("dwith");
+        assert_all!("emodule");
+        assert_all!("self");
     }
 
     #[test]
     fn chars() {
-        assert_expr!(r"'a'");
-        assert_expr!(r"'\n'");
-        assert_expr!(r"'\t'");
-        assert_expr!(r"'\r'");
-        assert_expr!(r"'\\'");
-        assert_expr!(r"'\''");
-        assert_expr!(r#"'\"'"#);
-        assert_expr!(r"'\0'");
-        assert_expr!(r"'1'");
+        assert_all!(r"'a'");
+        assert_all!(r"'\n'");
+        assert_all!(r"'\t'");
+        assert_all!(r"'\r'");
+        assert_all!(r"'\\'");
+        assert_all!(r"'\''");
+        assert_all!(r#"'\"'"#);
+        assert_all!(r"'\0'");
+        assert_all!(r"'1'");
     }
 
     #[test]
     fn strings() {
-        assert_expr!(r#""foo""#);
-        assert_expr!(r#""foo\n""#);
-        assert_expr!(r#""bar\r""#);
-        assert_expr!(r#""ba5\t""#);
-        assert_expr!(r#""ba3\"""#);
-        assert_expr!(r#""ba2\0a""#);
+        assert_all!(r#""foo""#);
+        assert_all!(r#""foo\n""#);
+        assert_all!(r#""bar\r""#);
+        assert_all!(r#""ba5\t""#);
+        assert_all!(r#""ba3\"""#);
+        assert_all!(r#""ba2\0a""#);
     }
 
     #[test]
     fn lists() {
-        assert_expr!("[]");
-        assert_expr!("[1,2,3]");
-        assert_expr!("[a,b,c,d]");
-        assert_expr!("[['a'],['b'],['c'],['d']]");
-        assert_expr!("[['a'],['b'],['c'],['d'],]");
+        assert_all!("[]");
+        assert_all!("[1,2,3]");
+        assert_all!("[a,b,c,d]");
+        assert_all!("[['a'],['b'],['c'],['d']]");
+        assert_all!("[['a'],['b'],['c'],['d'],]");
     }
 
     #[test]
     fn tuples() {
-        assert_expr!("()");
-        assert_expr!("(1,2,3)");
-        assert_expr!("(a,b,c,d)");
-        assert_expr!("(('a'),('b'),('c'),('d'))");
-        assert_expr!("(('a'),('b'),('c'),('d'),)");
+        assert_all!("()");
+        assert_all!("(1,2,3)");
+        assert_all!("(a,b,c,d)");
+        assert_all!("(('a'),('b'),('c'),('d'))");
+        assert_all!("(('a'),('b'),('c'),('d'),)");
     }
 
     #[test]
     fn lets() {
-        assert_expr!("let a = 10 in 10");
-        assert_expr!("let a c = 10 in let b = a in b");
+        assert_all!("let a = 10 in 10");
+        assert_all!("let a c = 10 in let b = a in b");
+    }
+
+    #[test]
+    fn paths() {
+        assert_all!("a::b");
+        assert_all!("a::b::c");
+        assert_all!("a::b::c a");
+        assert_all!("a::b::c a::T");
+        assert_all!("a::b::c C::a::T b");
     }
 
     #[test]
     fn prefix() {
-        assert_expr!("-1");
-        assert_expr!("-a");
-        assert_expr!(r#"-"string""#);
-        assert_expr!(r#"-'c'"#);
-        assert_expr!(r#"- - - - - - - + - + 1"#);
+        assert_all!("-1");
+        assert_all!("(!false)");
+        assert_all!("-a");
+        assert_all!(r#"-"string""#);
+        assert_all!(r#"-'c'"#);
+        assert_all!(r#"- - - - - - - + - + 1"#);
     }
 
     #[test]
     fn infix() {
-        assert_expr!("1 + 1");
-        assert_expr!("a + 1 + 1");
-        assert_expr!(r#""string" + (1 * 1)"#);
-        assert_expr!("a + ((c ^^ []) >>= 'd')");
-        assert_expr!("1 * 2 * 3 + ((() & (1) ^^ []) >>= 'd')");
+        assert_all!("1 + 1");
+        assert_all!("a + 1 + 1");
+        assert_all!(r#""string" + (1 * 1)"#);
+        assert_all!("a + ((c ^^ []) >>= 'd')");
+        assert_all!("1 * 2 * 3 + ((() & (1) ^^ []) >>= 'd')");
+    }
+
+    #[test]
+    fn lambdas() {
+        assert_all!(r"\x -> x");
+        assert_all!(r"\(a,b) -> a + b");
+        assert_all!(r"\_ -> 10 + (\x -> x) 10");
+    }
+
+    #[test]
+    fn calls() {
+        assert_all!("Some x");
+        assert_all!(r"map (\x -> x + 1) [1,2,3]");
+        assert_all!(r"(>>=) (None) \x -> return x");
+    }
+
+    #[test]
+    fn matches() {
+        assert_all!("match 10 with 0.. -> 10, ..0 -> -10");
+        assert_all!("match (1,2) with (0.., ..0) -> 10, (..0, 0..) -> -10");
+        assert_all!("match [10] with [] -> match [] with _ -> 10,, [a]b -> a+b");
+    }
+
+    #[test]
+    fn ifs() {
+        assert_all!("if true then true else false");
+        assert_all!("if false then if true then false else true else false");
+        assert_all!("if !false then !true else if false then true else false");
+    }
+
+    #[test]
+    fn let_stmts() {
+        assert_all!(stmt "let a = 10;");
+        assert_all!(stmt "let fib n = match n with ..2 -> n, _ -> fib (n - 1) + fib (n - 2);");
+        assert_all!(stmt "let foo (a,b,c) = a + b - c;");
+        assert_all!(stmt "let bar _ _ _ = true;");
+        assert_all!(stmt "let mengo _ _c _ = true;");
     }
 
     #[test]
     fn spaced_tokens() {
-        assert_expr!(
+        assert_all!(
             "\n\n12 +\n\n// mengo mengo mengo mengo 123 && a aa^`\t\t\t\t\n//foo bar baz\n\n   13"
         );
     }

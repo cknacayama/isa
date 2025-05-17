@@ -1,0 +1,50 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \"a::b::c a\").collect :: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 0, end: 1 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: ColonColon,
+            span: SpanData { file_id: 0, start: 1, end: 3 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, start: 3, end: 4 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: ColonColon,
+            span: SpanData { file_id: 0, start: 4, end: 6 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "c",
+            ),
+            span: SpanData { file_id: 0, start: 6, end: 7 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, start: 8, end: 9 },
+        },
+    ),
+]

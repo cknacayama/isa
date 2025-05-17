@@ -1,0 +1,96 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \"match 10 with 0.. -> 10, ..0 -> -10\").collect :: < Vec < _ >>\n()"
+---
+[
+    Ok(
+        Spand {
+            data: KwMatch,
+            span: SpanData { file_id: 0, start: 0, end: 5 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                10,
+            ),
+            span: SpanData { file_id: 0, start: 6, end: 8 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwWith,
+            span: SpanData { file_id: 0, start: 9, end: 13 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                0,
+            ),
+            span: SpanData { file_id: 0, start: 14, end: 15 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: DotDot,
+            span: SpanData { file_id: 0, start: 15, end: 17 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 18, end: 20 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                10,
+            ),
+            span: SpanData { file_id: 0, start: 21, end: 23 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, start: 23, end: 24 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: DotDot,
+            span: SpanData { file_id: 0, start: 25, end: 27 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                0,
+            ),
+            span: SpanData { file_id: 0, start: 27, end: 28 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, start: 29, end: 31 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "-",
+            ),
+            span: SpanData { file_id: 0, start: 32, end: 33 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                10,
+            ),
+            span: SpanData { file_id: 0, start: 33, end: 35 },
+        },
+    ),
+]

@@ -1,0 +1,73 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"if !false then !true else if false then true else false\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: If {
+            cond: Expr {
+                kind: Prefix {
+                    op: Ident {
+                        ident: "!",
+                        span: SpanData { file_id: 0, start: 3, end: 4 },
+                    },
+                    expr: Expr {
+                        kind: Bool(
+                            false,
+                        ),
+                        span: SpanData { file_id: 0, start: 4, end: 9 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, start: 3, end: 9 },
+                ty: (),
+            },
+            then: Expr {
+                kind: Prefix {
+                    op: Ident {
+                        ident: "!",
+                        span: SpanData { file_id: 0, start: 15, end: 16 },
+                    },
+                    expr: Expr {
+                        kind: Bool(
+                            true,
+                        ),
+                        span: SpanData { file_id: 0, start: 16, end: 20 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, start: 15, end: 20 },
+                ty: (),
+            },
+            otherwise: Expr {
+                kind: If {
+                    cond: Expr {
+                        kind: Bool(
+                            false,
+                        ),
+                        span: SpanData { file_id: 0, start: 29, end: 34 },
+                        ty: (),
+                    },
+                    then: Expr {
+                        kind: Bool(
+                            true,
+                        ),
+                        span: SpanData { file_id: 0, start: 40, end: 44 },
+                        ty: (),
+                    },
+                    otherwise: Expr {
+                        kind: Bool(
+                            false,
+                        ),
+                        span: SpanData { file_id: 0, start: 50, end: 55 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, start: 26, end: 55 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, start: 0, end: 55 },
+        ty: (),
+    },
+)

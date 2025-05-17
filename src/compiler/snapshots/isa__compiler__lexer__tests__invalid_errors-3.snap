@@ -1,0 +1,30 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, r\"λ ba λ\").collect :: < Vec < _ >> ()"
+---
+[
+    Err(
+        Spand {
+            data: InvalidChar(
+                'λ',
+            ),
+            span: SpanData { file_id: 0, start: 0, end: 2 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "ba",
+            ),
+            span: SpanData { file_id: 0, start: 3, end: 5 },
+        },
+    ),
+    Err(
+        Spand {
+            data: InvalidChar(
+                'λ',
+            ),
+            span: SpanData { file_id: 0, start: 6, end: 8 },
+        },
+    ),
+]

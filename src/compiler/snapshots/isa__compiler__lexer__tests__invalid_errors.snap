@@ -1,6 +1,6 @@
 ---
 source: src/compiler/lexer.rs
-expression: "Lexer :: new(0, r\"'λ'\").next()"
+expression: "Lexer :: new(0, r\"λ\").next()"
 ---
 Some(
     Err(
@@ -8,7 +8,7 @@ Some(
             data: InvalidChar(
                 'λ',
             ),
-            span: SpanData { file_id: 0, start: 0, end: 3 },
+            span: SpanData { file_id: 0, start: 0, end: 2 },
         },
     ),
 )

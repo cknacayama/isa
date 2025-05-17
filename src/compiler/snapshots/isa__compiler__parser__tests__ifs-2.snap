@@ -1,0 +1,53 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"if false then if true then false else true else false\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: If {
+            cond: Expr {
+                kind: Bool(
+                    false,
+                ),
+                span: SpanData { file_id: 0, start: 3, end: 8 },
+                ty: (),
+            },
+            then: Expr {
+                kind: If {
+                    cond: Expr {
+                        kind: Bool(
+                            true,
+                        ),
+                        span: SpanData { file_id: 0, start: 17, end: 21 },
+                        ty: (),
+                    },
+                    then: Expr {
+                        kind: Bool(
+                            false,
+                        ),
+                        span: SpanData { file_id: 0, start: 27, end: 32 },
+                        ty: (),
+                    },
+                    otherwise: Expr {
+                        kind: Bool(
+                            true,
+                        ),
+                        span: SpanData { file_id: 0, start: 38, end: 42 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, start: 14, end: 42 },
+                ty: (),
+            },
+            otherwise: Expr {
+                kind: Bool(
+                    false,
+                ),
+                span: SpanData { file_id: 0, start: 48, end: 53 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, start: 0, end: 53 },
+        ty: (),
+    },
+)

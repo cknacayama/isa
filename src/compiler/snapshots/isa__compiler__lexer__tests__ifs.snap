@@ -1,0 +1,42 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer :: new(0, \"if true then true else false\").collect :: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: KwIf,
+            span: SpanData { file_id: 0, start: 0, end: 2 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwTrue,
+            span: SpanData { file_id: 0, start: 3, end: 7 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwThen,
+            span: SpanData { file_id: 0, start: 8, end: 12 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwTrue,
+            span: SpanData { file_id: 0, start: 13, end: 17 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwElse,
+            span: SpanData { file_id: 0, start: 18, end: 22 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwFalse,
+            span: SpanData { file_id: 0, start: 23, end: 28 },
+        },
+    ),
+]

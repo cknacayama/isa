@@ -1,0 +1,72 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer ::\nnew(0, \"if false then if true then false else true else false\").collect :: <\nVec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: KwIf,
+            span: SpanData { file_id: 0, start: 0, end: 2 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwFalse,
+            span: SpanData { file_id: 0, start: 3, end: 8 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwThen,
+            span: SpanData { file_id: 0, start: 9, end: 13 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwIf,
+            span: SpanData { file_id: 0, start: 14, end: 16 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwTrue,
+            span: SpanData { file_id: 0, start: 17, end: 21 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwThen,
+            span: SpanData { file_id: 0, start: 22, end: 26 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwFalse,
+            span: SpanData { file_id: 0, start: 27, end: 32 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwElse,
+            span: SpanData { file_id: 0, start: 33, end: 37 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwTrue,
+            span: SpanData { file_id: 0, start: 38, end: 42 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwElse,
+            span: SpanData { file_id: 0, start: 43, end: 47 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwFalse,
+            span: SpanData { file_id: 0, start: 48, end: 53 },
+        },
+    ),
+]

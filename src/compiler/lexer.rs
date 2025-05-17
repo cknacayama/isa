@@ -45,14 +45,14 @@ impl<'a> Lexer<'a> {
     }
 
     fn bump(&mut self) -> Option<char> {
-        self.cur += 1;
-        self.chars.next()
+        self.chars.next().inspect(|c| self.cur += c.len_utf8())
     }
 
     fn bump_twice(&mut self) -> Option<(char, char)> {
-        self.cur += 2;
         let c1 = self.chars.next()?;
+        self.cur += c1.len_utf8();
         let c2 = self.chars.next()?;
+        self.cur += c2.len_utf8();
         Some((c1, c2))
     }
 
@@ -419,6 +419,13 @@ mod tests {
     }
 
     #[test]
+    fn invalid_errors() {
+        assert_tk!(r"λ");
+        assert_all!(r"λ λ λ");
+        assert_all!(r"λ ba λ");
+    }
+
+    #[test]
     fn char_errors() {
         assert_tk!("''");
         assert_tk!(r"'\z'");
@@ -463,8 +470,18 @@ mod tests {
     }
 
     #[test]
+    fn paths() {
+        assert_all!("a::b");
+        assert_all!("a::b::c");
+        assert_all!("a::b::c a");
+        assert_all!("a::b::c a::T");
+        assert_all!("a::b::c C::a::T b");
+    }
+
+    #[test]
     fn prefix() {
         assert_all!("-1");
+        assert_all!("(!false)");
         assert_all!("-a");
         assert_all!(r#"-"string""#);
         assert_all!(r#"-'c'"#);
@@ -478,6 +495,43 @@ mod tests {
         assert_all!(r#""string" + (1 * 1)"#);
         assert_all!("a + ((c ^^ []) >>= 'd')");
         assert_all!("1 * 2 * 3 + ((() & (1) ^^ []) >>= 'd')");
+    }
+
+    #[test]
+    fn lambdas() {
+        assert_all!(r"\x -> x");
+        assert_all!(r"\(a,b) -> a + b");
+        assert_all!(r"\_ -> 10 + (\x -> x) 10");
+    }
+
+    #[test]
+    fn calls() {
+        assert_all!("Some x");
+        assert_all!(r"map (\x -> x + 1) [1,2,3]");
+        assert_all!(r"(>>=) (None) \x -> return x");
+    }
+
+    #[test]
+    fn matches() {
+        assert_all!("match 10 with 0.. -> 10, ..0 -> -10");
+        assert_all!("match (1,2) with (0.., ..0) -> 10, (..0, 0..) -> -10");
+        assert_all!("match [10] with [] -> match [] with _ -> 10,, [a]b -> a+b");
+    }
+
+    #[test]
+    fn ifs() {
+        assert_all!("if true then true else false");
+        assert_all!("if false then if true then false else true else false");
+        assert_all!("if !false then !true else if false then true else false");
+    }
+
+    #[test]
+    fn let_stmts() {
+        assert_all!("let a = 10;");
+        assert_all!("let fib n = match n with ..2 -> n, _ -> fib (n - 1) + fib (n - 2)");
+        assert_all!("let foo (a,b,c) = a + b - c;");
+        assert_all!("let bar _ _ _ = true;");
+        assert_all!("let mengo _ _c _ = true;");
     }
 
     #[test]

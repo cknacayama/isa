@@ -1,0 +1,67 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"match 10 with 0.. -> 10, ..0 -> -10\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Match {
+            expr: Expr {
+                kind: Int(
+                    10,
+                ),
+                span: SpanData { file_id: 0, start: 6, end: 8 },
+                ty: (),
+            },
+            arms: [
+                MatchArm {
+                    pat: Pat {
+                        kind: IntRange(
+                            From(
+                                0,
+                            ),
+                        ),
+                        span: SpanData { file_id: 0, start: 14, end: 17 },
+                        ty: (),
+                    },
+                    expr: Expr {
+                        kind: Int(
+                            10,
+                        ),
+                        span: SpanData { file_id: 0, start: 21, end: 23 },
+                        ty: (),
+                    },
+                },
+                MatchArm {
+                    pat: Pat {
+                        kind: IntRange(
+                            To(
+                                0,
+                            ),
+                        ),
+                        span: SpanData { file_id: 0, start: 25, end: 28 },
+                        ty: (),
+                    },
+                    expr: Expr {
+                        kind: Prefix {
+                            op: Ident {
+                                ident: "-",
+                                span: SpanData { file_id: 0, start: 32, end: 33 },
+                            },
+                            expr: Expr {
+                                kind: Int(
+                                    10,
+                                ),
+                                span: SpanData { file_id: 0, start: 33, end: 35 },
+                                ty: (),
+                            },
+                        },
+                        span: SpanData { file_id: 0, start: 32, end: 35 },
+                        ty: (),
+                    },
+                },
+            ],
+        },
+        span: SpanData { file_id: 0, start: 0, end: 35 },
+        ty: (),
+    },
+)

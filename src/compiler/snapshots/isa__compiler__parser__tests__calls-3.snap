@@ -1,0 +1,109 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(r\"(>>=) (None) \\x -> return x\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Call {
+            callee: Expr {
+                kind: Call {
+                    callee: Expr {
+                        kind: Operator(
+                            Ident {
+                                ident: ">>=",
+                                span: SpanData { file_id: 0, start: 1, end: 4 },
+                            },
+                        ),
+                        span: SpanData { file_id: 0, start: 0, end: 5 },
+                        ty: (),
+                    },
+                    arg: Expr {
+                        kind: Paren(
+                            Expr {
+                                kind: Path(
+                                    Path {
+                                        segments: [
+                                            Ident {
+                                                ident: "None",
+                                                span: SpanData { file_id: 0, start: 7, end: 11 },
+                                            },
+                                        ],
+                                        ..
+                                    },
+                                ),
+                                span: SpanData { file_id: 0, start: 7, end: 11 },
+                                ty: (),
+                            },
+                        ),
+                        span: SpanData { file_id: 0, start: 6, end: 12 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, start: 0, end: 12 },
+                ty: (),
+            },
+            arg: Expr {
+                kind: Fn {
+                    param: Param {
+                        pat: Pat {
+                            kind: Constructor {
+                                name: Path {
+                                    segments: [
+                                        Ident {
+                                            ident: "x",
+                                            span: SpanData { file_id: 0, start: 14, end: 15 },
+                                        },
+                                    ],
+                                    ..
+                                },
+                                args: [],
+                            },
+                            span: SpanData { file_id: 0, start: 14, end: 15 },
+                            ty: (),
+                        },
+                    },
+                    expr: Expr {
+                        kind: Call {
+                            callee: Expr {
+                                kind: Path(
+                                    Path {
+                                        segments: [
+                                            Ident {
+                                                ident: "return",
+                                                span: SpanData { file_id: 0, start: 19, end: 25 },
+                                            },
+                                        ],
+                                        ..
+                                    },
+                                ),
+                                span: SpanData { file_id: 0, start: 19, end: 25 },
+                                ty: (),
+                            },
+                            arg: Expr {
+                                kind: Path(
+                                    Path {
+                                        segments: [
+                                            Ident {
+                                                ident: "x",
+                                                span: SpanData { file_id: 0, start: 26, end: 27 },
+                                            },
+                                        ],
+                                        ..
+                                    },
+                                ),
+                                span: SpanData { file_id: 0, start: 26, end: 27 },
+                                ty: (),
+                            },
+                        },
+                        span: SpanData { file_id: 0, start: 19, end: 27 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, start: 13, end: 27 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, start: 0, end: 27 },
+        ty: (),
+    },
+)

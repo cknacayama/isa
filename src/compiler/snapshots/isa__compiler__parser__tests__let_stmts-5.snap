@@ -1,0 +1,59 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"let mengo _ _c _ = true;\").parse_stmt()"
+---
+Ok(
+    Stmt {
+        kind: Let(
+            LetBind {
+                operator: false,
+                name: Ident {
+                    ident: "mengo",
+                    span: SpanData { file_id: 0, start: 4, end: 9 },
+                },
+                params: [
+                    Param {
+                        pat: Pat {
+                            kind: Wild,
+                            span: SpanData { file_id: 0, start: 10, end: 11 },
+                            ty: (),
+                        },
+                    },
+                    Param {
+                        pat: Pat {
+                            kind: Constructor {
+                                name: Path {
+                                    segments: [
+                                        Ident {
+                                            ident: "_c",
+                                            span: SpanData { file_id: 0, start: 12, end: 14 },
+                                        },
+                                    ],
+                                    ..
+                                },
+                                args: [],
+                            },
+                            span: SpanData { file_id: 0, start: 12, end: 14 },
+                            ty: (),
+                        },
+                    },
+                    Param {
+                        pat: Pat {
+                            kind: Wild,
+                            span: SpanData { file_id: 0, start: 15, end: 16 },
+                            ty: (),
+                        },
+                    },
+                ],
+                expr: Expr {
+                    kind: Bool(
+                        true,
+                    ),
+                    span: SpanData { file_id: 0, start: 19, end: 23 },
+                    ty: (),
+                },
+            },
+        ),
+        span: SpanData { file_id: 0, start: 0, end: 23 },
+    },
+)

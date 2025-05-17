@@ -1,0 +1,88 @@
+---
+source: src/compiler/lexer.rs
+expression: "Lexer ::\nnew(0, \"if !false then !true else if false then true else false\").collect :: <\nVec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: KwIf,
+            span: SpanData { file_id: 0, start: 0, end: 2 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "!",
+            ),
+            span: SpanData { file_id: 0, start: 3, end: 4 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwFalse,
+            span: SpanData { file_id: 0, start: 4, end: 9 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwThen,
+            span: SpanData { file_id: 0, start: 10, end: 14 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "!",
+            ),
+            span: SpanData { file_id: 0, start: 15, end: 16 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwTrue,
+            span: SpanData { file_id: 0, start: 16, end: 20 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwElse,
+            span: SpanData { file_id: 0, start: 21, end: 25 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwIf,
+            span: SpanData { file_id: 0, start: 26, end: 28 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwFalse,
+            span: SpanData { file_id: 0, start: 29, end: 34 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwThen,
+            span: SpanData { file_id: 0, start: 35, end: 39 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwTrue,
+            span: SpanData { file_id: 0, start: 40, end: 44 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwElse,
+            span: SpanData { file_id: 0, start: 45, end: 49 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: KwFalse,
+            span: SpanData { file_id: 0, start: 50, end: 55 },
+        },
+    ),
+]

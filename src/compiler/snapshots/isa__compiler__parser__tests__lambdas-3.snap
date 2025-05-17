@@ -1,0 +1,94 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(r\"\\_ -> 10 + (\\x -> x) 10\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Fn {
+            param: Param {
+                pat: Pat {
+                    kind: Wild,
+                    span: SpanData { file_id: 0, start: 1, end: 2 },
+                    ty: (),
+                },
+            },
+            expr: Expr {
+                kind: Infix {
+                    op: Ident {
+                        ident: "+",
+                        span: SpanData { file_id: 0, start: 9, end: 10 },
+                    },
+                    lhs: Expr {
+                        kind: Int(
+                            10,
+                        ),
+                        span: SpanData { file_id: 0, start: 6, end: 8 },
+                        ty: (),
+                    },
+                    rhs: Expr {
+                        kind: Call {
+                            callee: Expr {
+                                kind: Paren(
+                                    Expr {
+                                        kind: Fn {
+                                            param: Param {
+                                                pat: Pat {
+                                                    kind: Constructor {
+                                                        name: Path {
+                                                            segments: [
+                                                                Ident {
+                                                                    ident: "x",
+                                                                    span: SpanData { file_id: 0, start: 13, end: 14 },
+                                                                },
+                                                            ],
+                                                            ..
+                                                        },
+                                                        args: [],
+                                                    },
+                                                    span: SpanData { file_id: 0, start: 13, end: 14 },
+                                                    ty: (),
+                                                },
+                                            },
+                                            expr: Expr {
+                                                kind: Path(
+                                                    Path {
+                                                        segments: [
+                                                            Ident {
+                                                                ident: "x",
+                                                                span: SpanData { file_id: 0, start: 18, end: 19 },
+                                                            },
+                                                        ],
+                                                        ..
+                                                    },
+                                                ),
+                                                span: SpanData { file_id: 0, start: 18, end: 19 },
+                                                ty: (),
+                                            },
+                                        },
+                                        span: SpanData { file_id: 0, start: 12, end: 19 },
+                                        ty: (),
+                                    },
+                                ),
+                                span: SpanData { file_id: 0, start: 11, end: 20 },
+                                ty: (),
+                            },
+                            arg: Expr {
+                                kind: Int(
+                                    10,
+                                ),
+                                span: SpanData { file_id: 0, start: 21, end: 23 },
+                                ty: (),
+                            },
+                        },
+                        span: SpanData { file_id: 0, start: 11, end: 23 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, start: 6, end: 23 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, start: 0, end: 23 },
+        ty: (),
+    },
+)

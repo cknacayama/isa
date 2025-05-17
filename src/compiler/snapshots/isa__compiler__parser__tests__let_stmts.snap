@@ -1,0 +1,26 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"let a = 10;\").parse_stmt()"
+---
+Ok(
+    Stmt {
+        kind: Let(
+            LetBind {
+                operator: false,
+                name: Ident {
+                    ident: "a",
+                    span: SpanData { file_id: 0, start: 4, end: 5 },
+                },
+                params: [],
+                expr: Expr {
+                    kind: Int(
+                        10,
+                    ),
+                    span: SpanData { file_id: 0, start: 8, end: 10 },
+                    ty: (),
+                },
+            },
+        ),
+        span: SpanData { file_id: 0, start: 0, end: 10 },
+    },
+)

@@ -1,0 +1,45 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(r\"\\x -> x\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Fn {
+            param: Param {
+                pat: Pat {
+                    kind: Constructor {
+                        name: Path {
+                            segments: [
+                                Ident {
+                                    ident: "x",
+                                    span: SpanData { file_id: 0, start: 1, end: 2 },
+                                },
+                            ],
+                            ..
+                        },
+                        args: [],
+                    },
+                    span: SpanData { file_id: 0, start: 1, end: 2 },
+                    ty: (),
+                },
+            },
+            expr: Expr {
+                kind: Path(
+                    Path {
+                        segments: [
+                            Ident {
+                                ident: "x",
+                                span: SpanData { file_id: 0, start: 6, end: 7 },
+                            },
+                        ],
+                        ..
+                    },
+                ),
+                span: SpanData { file_id: 0, start: 6, end: 7 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, start: 0, end: 7 },
+        ty: (),
+    },
+)

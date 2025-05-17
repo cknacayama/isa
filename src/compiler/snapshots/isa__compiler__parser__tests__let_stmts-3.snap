@@ -1,0 +1,143 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"let foo (a,b,c) = a + b - c;\").parse_stmt()"
+---
+Ok(
+    Stmt {
+        kind: Let(
+            LetBind {
+                operator: false,
+                name: Ident {
+                    ident: "foo",
+                    span: SpanData { file_id: 0, start: 4, end: 7 },
+                },
+                params: [
+                    Param {
+                        pat: Pat {
+                            kind: Tuple(
+                                [
+                                    Pat {
+                                        kind: Constructor {
+                                            name: Path {
+                                                segments: [
+                                                    Ident {
+                                                        ident: "a",
+                                                        span: SpanData { file_id: 0, start: 9, end: 10 },
+                                                    },
+                                                ],
+                                                ..
+                                            },
+                                            args: [],
+                                        },
+                                        span: SpanData { file_id: 0, start: 9, end: 10 },
+                                        ty: (),
+                                    },
+                                    Pat {
+                                        kind: Constructor {
+                                            name: Path {
+                                                segments: [
+                                                    Ident {
+                                                        ident: "b",
+                                                        span: SpanData { file_id: 0, start: 11, end: 12 },
+                                                    },
+                                                ],
+                                                ..
+                                            },
+                                            args: [],
+                                        },
+                                        span: SpanData { file_id: 0, start: 11, end: 12 },
+                                        ty: (),
+                                    },
+                                    Pat {
+                                        kind: Constructor {
+                                            name: Path {
+                                                segments: [
+                                                    Ident {
+                                                        ident: "c",
+                                                        span: SpanData { file_id: 0, start: 13, end: 14 },
+                                                    },
+                                                ],
+                                                ..
+                                            },
+                                            args: [],
+                                        },
+                                        span: SpanData { file_id: 0, start: 13, end: 14 },
+                                        ty: (),
+                                    },
+                                ],
+                            ),
+                            span: SpanData { file_id: 0, start: 8, end: 15 },
+                            ty: (),
+                        },
+                    },
+                ],
+                expr: Expr {
+                    kind: Infix {
+                        op: Ident {
+                            ident: "-",
+                            span: SpanData { file_id: 0, start: 24, end: 25 },
+                        },
+                        lhs: Expr {
+                            kind: Infix {
+                                op: Ident {
+                                    ident: "+",
+                                    span: SpanData { file_id: 0, start: 20, end: 21 },
+                                },
+                                lhs: Expr {
+                                    kind: Path(
+                                        Path {
+                                            segments: [
+                                                Ident {
+                                                    ident: "a",
+                                                    span: SpanData { file_id: 0, start: 18, end: 19 },
+                                                },
+                                            ],
+                                            ..
+                                        },
+                                    ),
+                                    span: SpanData { file_id: 0, start: 18, end: 19 },
+                                    ty: (),
+                                },
+                                rhs: Expr {
+                                    kind: Path(
+                                        Path {
+                                            segments: [
+                                                Ident {
+                                                    ident: "b",
+                                                    span: SpanData { file_id: 0, start: 22, end: 23 },
+                                                },
+                                            ],
+                                            ..
+                                        },
+                                    ),
+                                    span: SpanData { file_id: 0, start: 22, end: 23 },
+                                    ty: (),
+                                },
+                            },
+                            span: SpanData { file_id: 0, start: 18, end: 23 },
+                            ty: (),
+                        },
+                        rhs: Expr {
+                            kind: Path(
+                                Path {
+                                    segments: [
+                                        Ident {
+                                            ident: "c",
+                                            span: SpanData { file_id: 0, start: 26, end: 27 },
+                                        },
+                                    ],
+                                    ..
+                                },
+                            ),
+                            span: SpanData { file_id: 0, start: 26, end: 27 },
+                            ty: (),
+                        },
+                    },
+                    span: SpanData { file_id: 0, start: 18, end: 27 },
+                    ty: (),
+                },
+            },
+        ),
+        span: SpanData { file_id: 0, start: 0, end: 27 },
+    },
+)

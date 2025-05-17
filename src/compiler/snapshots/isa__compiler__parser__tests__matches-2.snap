@@ -1,0 +1,116 @@
+---
+source: src/compiler/parser.rs
+expression: "create_parser(\"match (1,2) with (0.., ..0) -> 10, (..0, 0..) -> -10\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Match {
+            expr: Expr {
+                kind: Tuple(
+                    [
+                        Expr {
+                            kind: Int(
+                                1,
+                            ),
+                            span: SpanData { file_id: 0, start: 7, end: 8 },
+                            ty: (),
+                        },
+                        Expr {
+                            kind: Int(
+                                2,
+                            ),
+                            span: SpanData { file_id: 0, start: 9, end: 10 },
+                            ty: (),
+                        },
+                    ],
+                ),
+                span: SpanData { file_id: 0, start: 6, end: 11 },
+                ty: (),
+            },
+            arms: [
+                MatchArm {
+                    pat: Pat {
+                        kind: Tuple(
+                            [
+                                Pat {
+                                    kind: IntRange(
+                                        From(
+                                            0,
+                                        ),
+                                    ),
+                                    span: SpanData { file_id: 0, start: 18, end: 21 },
+                                    ty: (),
+                                },
+                                Pat {
+                                    kind: IntRange(
+                                        To(
+                                            0,
+                                        ),
+                                    ),
+                                    span: SpanData { file_id: 0, start: 23, end: 26 },
+                                    ty: (),
+                                },
+                            ],
+                        ),
+                        span: SpanData { file_id: 0, start: 17, end: 27 },
+                        ty: (),
+                    },
+                    expr: Expr {
+                        kind: Int(
+                            10,
+                        ),
+                        span: SpanData { file_id: 0, start: 31, end: 33 },
+                        ty: (),
+                    },
+                },
+                MatchArm {
+                    pat: Pat {
+                        kind: Tuple(
+                            [
+                                Pat {
+                                    kind: IntRange(
+                                        To(
+                                            0,
+                                        ),
+                                    ),
+                                    span: SpanData { file_id: 0, start: 36, end: 39 },
+                                    ty: (),
+                                },
+                                Pat {
+                                    kind: IntRange(
+                                        From(
+                                            0,
+                                        ),
+                                    ),
+                                    span: SpanData { file_id: 0, start: 41, end: 44 },
+                                    ty: (),
+                                },
+                            ],
+                        ),
+                        span: SpanData { file_id: 0, start: 35, end: 45 },
+                        ty: (),
+                    },
+                    expr: Expr {
+                        kind: Prefix {
+                            op: Ident {
+                                ident: "-",
+                                span: SpanData { file_id: 0, start: 49, end: 50 },
+                            },
+                            expr: Expr {
+                                kind: Int(
+                                    10,
+                                ),
+                                span: SpanData { file_id: 0, start: 50, end: 52 },
+                                ty: (),
+                            },
+                        },
+                        span: SpanData { file_id: 0, start: 49, end: 52 },
+                        ty: (),
+                    },
+                },
+            ],
+        },
+        span: SpanData { file_id: 0, start: 0, end: 52 },
+        ty: (),
+    },
+)
