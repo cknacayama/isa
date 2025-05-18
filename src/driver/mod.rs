@@ -1,6 +1,7 @@
 mod cli;
 
 use std::fmt::{Debug, Display, Write};
+use std::io::Read;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -43,17 +44,33 @@ impl Driver {
         Self::from_config(&<Cli as clap::Parser>::parse())
     }
 
+    fn read_stdin() -> String {
+        let mut input = String::new();
+        std::io::stdin()
+            .read_to_string(&mut input)
+            .expect("Should read input from stdin");
+        input
+    }
+
     #[must_use]
     fn from_config(cfg: &Cli) -> Self {
+        let command = cfg.command.unwrap_or_default();
+
         let mut db = FilesDatabase::default();
 
+        if cfg.stdin {
+            db.add("<stdin>", Self::read_stdin());
+        }
+        if command >= Command::Infer {
+            db.add_prelude();
+        }
+
         db.add_files(cfg.files.iter());
-        db.add_prelude();
 
         Self {
             db,
+            command,
             quiet: cfg.quiet,
-            command: cfg.command.unwrap_or_default(),
             max_errors: cfg.max_errors,
         }
     }
@@ -297,9 +314,9 @@ struct FilesDatabase {
 }
 
 impl FilesDatabase {
-    fn add(&mut self, name: String, source: String) -> usize {
+    fn add<Name: ToString>(&mut self, name: Name, source: String) -> usize {
         let cur = self.files.len();
-        self.files.push(SimpleFile::new(name, source));
+        self.files.push(SimpleFile::new(name.to_string(), source));
         cur
     }
 
@@ -318,10 +335,7 @@ impl FilesDatabase {
         {
             let input = fs::read_to_string(file.path()).unwrap();
             let name = file.file_name();
-            self.add(
-                name.into_string().expect("Should be valid unicode string"),
-                input,
-            );
+            self.add(name.display(), input);
         }
     }
 
@@ -335,7 +349,8 @@ impl FilesDatabase {
         for file in files {
             let path = file.as_ref();
             let input = fs::read_to_string(path).expect("Should be valid file path");
-            self.add(path.display().to_string(), input);
+            let name = path.file_name().unwrap().to_str().unwrap();
+            self.add(name, input);
         }
     }
 

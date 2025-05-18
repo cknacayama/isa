@@ -124,7 +124,7 @@ impl<'a> Lexer<'a> {
             '\\' => {
                 let c = self
                     .bump()
-                    .ok_or_else(|| self.make_err(LexErrorKind::UnterminatedString))?;
+                    .ok_or_else(|| self.make_err(LexErrorKind::UnterminatedChar))?;
                 Self::escape(c).ok_or_else(|| {
                     self.eat_while(|c| c != '"');
                     self.make_err(LexErrorKind::UnrecognizedEscape(c))
@@ -431,6 +431,8 @@ mod tests {
         assert_tk!(r"'\z'");
         assert_tk!(r"'λ'");
         assert_tk!(r"'aa'");
+        assert_tk!(r"'\");
+        assert_tk!(r"'");
     }
 
     #[test]

@@ -12,12 +12,16 @@ pub struct Cli {
     #[arg(short, long, default_value_t = false)]
     pub quiet: bool,
 
+    /// Read input from stdin
+    #[arg(long, default_value_t = false)]
+    pub stdin: bool,
+
     /// Maximum amount of errors to report
     #[arg(long, value_name = "max-errors", default_value_t = 4)]
     pub max_errors: usize,
 }
 
-#[derive(clap::Subcommand, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(clap::Subcommand, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum Command {
     /// Only lex files
     Lex,
