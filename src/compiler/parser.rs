@@ -1,11 +1,10 @@
 use super::ast::{
-    Constructor, Expr, ExprKind, Fixity, Ident, Import, ImportClause, ImportWildcard, LetBind,
-    ListPat, MatchArm, Module, Operator, Param, Pat, PatKind, Path, RangePat, Stmt, StmtKind, Val,
+    Expr, ExprKind, Fixity, HiConstraint, HiCtor, HiTy, HiTyKind, Ident, Import, ImportClause,
+    ImportWildcard, LetBind, ListPat, MatchArm, Module, Operator, Param, Pat, PatKind, Path,
+    RangePat, Stmt, StmtKind, Val,
 };
 use super::error::{ParseError, ParseErrorKind};
-use super::infer::{ClassConstraint, ClassConstraintSet};
 use super::token::{Token, TokenKind};
-use super::types::{Ty, TyKind, TySlice};
 use crate::global::{Span, Symbol};
 use crate::span::Spand;
 
@@ -332,11 +331,8 @@ impl Parser {
         let op = self.expect_op()?;
         self.expect(TokenKind::RParen)?;
         self.expect(TokenKind::Colon)?;
-        let Spand {
-            data: ty,
-            span: ty_span,
-        } = self.parse_type()?;
-        let span = span.join(ty_span);
+        let ty = self.parse_type()?;
+        let span = span.join(ty.span);
 
         Ok(Operator {
             fixity,
@@ -345,7 +341,6 @@ impl Parser {
             set,
             op,
             ty,
-            ty_span,
             span,
         })
     }
@@ -436,7 +431,7 @@ impl Parser {
     fn parse_instance(&mut self) -> ParseResult<Stmt<()>> {
         let span = self.expect(TokenKind::KwInstance)?;
         let (set, params) = self.parse_constraint_set()?;
-        let Spand { data: instance, .. } = self.parse_type()?;
+        let instance = self.parse_type()?;
         self.expect(TokenKind::Colon)?;
         let (class, name_span) = self.parse_path()?;
         let mut span = span.join(name_span);
@@ -486,44 +481,38 @@ impl Parser {
         let mut params = Vec::new();
         while !self.check(TokenKind::Eq) {
             let ident = self.expect_id()?;
-            params.push(Ty::intern(TyKind::Named {
-                name: Path::from_one(ident),
-                args: Ty::empty_slice(),
-            }));
+            params.push(HiTy::new(
+                HiTyKind::Named(Path::from_one(ident)),
+                ident.span,
+            ));
         }
         self.expect(TokenKind::Eq)?;
-        let Spand {
-            data: ty,
-            span: ty_span,
-        } = self.parse_type()?;
-        let span = span.join(ty_span);
-        let params = Ty::intern_slice(params);
+        let ty = self.parse_type()?;
+        let span = span.join(ty.span);
+        let params = params.into_boxed_slice();
 
         Ok(Stmt::new(StmtKind::Alias { name, params, ty }, span))
     }
 
-    fn parse_constraint_set(&mut self) -> ParseResult<(ClassConstraintSet, TySlice)> {
-        let mut constrs = ClassConstraintSet::new();
+    fn parse_constraint_set(&mut self) -> ParseResult<(Box<[HiConstraint]>, Box<[HiTy]>)> {
         if !self.check(TokenKind::LBrace) {
-            return Ok((constrs, Ty::empty_slice()));
+            return Ok(Default::default());
         }
 
+        let mut constrs = Vec::new();
         let (params, _) = self.parse_delimited(Delim::Brace, |parser| {
             let name = parser.expect_id()?;
-            let ty = Ty::intern(TyKind::Named {
-                name: Path::from_one(name),
-                args: Ty::empty_slice(),
-            });
+            let ty = HiTy::new(HiTyKind::Named(Path::from_one(name)), name.span);
             if parser.next_if_match(TokenKind::Colon).is_some() {
                 let classes = parser.parse_class_constraint()?;
                 for (class, span) in classes {
-                    constrs.push(ClassConstraint::new(class, ty, span));
+                    constrs.push(HiConstraint::new(class, ty.clone(), span));
                 }
             }
             Ok(ty)
         })?;
 
-        Ok((constrs, Ty::intern_slice(params)))
+        Ok((constrs.into_boxed_slice(), params.into_boxed_slice()))
     }
 
     fn parse_class_constraint(&mut self) -> ParseResult<Vec<(Path, Span)>> {
@@ -540,11 +529,8 @@ impl Parser {
         let (set, params) = self.parse_constraint_set()?;
         let name = self.expect_id()?;
         self.expect(TokenKind::Colon)?;
-        let Spand {
-            data: ty,
-            span: ty_span,
-        } = self.parse_type()?;
-        let span = span.join(ty_span);
+        let ty = self.parse_type()?;
+        let span = span.join(ty.span);
 
         Ok(Val {
             params,
@@ -718,91 +704,89 @@ impl Parser {
         Ok((path, span))
     }
 
-    fn parse_simple_type(&mut self) -> ParseResult<Spand<Ty>> {
+    fn parse_simple_type(&mut self) -> ParseResult<HiTy> {
         let Spand { data, span } = self.next_or_eof()?;
 
         match data {
             TokenKind::LParen => {
                 let (mut types, span) =
-                    self.parse_delimited_from(span, Delim::Paren, |parser| {
-                        parser.parse_type().map(|ty| ty.data)
-                    })?;
+                    self.parse_delimited_from(span, Delim::Paren, Self::parse_type)?;
 
                 if types.len() == 1 {
                     let ty = types.pop().unwrap();
-                    Ok(Spand::new(ty, span))
+                    Ok(ty)
                 } else {
-                    Ok(Spand::new(Ty::tuple(types), span))
+                    Ok(HiTy::new(HiTyKind::Tuple(types.into_boxed_slice()), span))
                 }
             }
-            TokenKind::KwInt => Ok(Spand::new(Ty::int(), span)),
-            TokenKind::KwBool => Ok(Spand::new(Ty::bool(), span)),
-            TokenKind::KwReal => Ok(Spand::new(Ty::real(), span)),
-            TokenKind::KwChar => Ok(Spand::new(Ty::char(), span)),
+            TokenKind::KwInt => Ok(HiTy::new(HiTyKind::Int, span)),
+            TokenKind::KwBool => Ok(HiTy::new(HiTyKind::Bool, span)),
+            TokenKind::KwReal => Ok(HiTy::new(HiTyKind::Real, span)),
+            TokenKind::KwChar => Ok(HiTy::new(HiTyKind::Char, span)),
             TokenKind::Ident(ident) => {
                 let (path, span) = self.parse_path_from(Ident { ident, span })?;
 
-                Ok(Spand::new(
-                    Ty::intern(TyKind::Named {
-                        name: path,
-                        args: Ty::empty_slice(),
-                    }),
-                    span,
-                ))
+                Ok(HiTy::new(HiTyKind::Named(path), span))
             }
-            TokenKind::KwSelf => Ok(Spand::new(
-                Ty::intern(TyKind::This(Ty::empty_slice())),
-                span,
-            )),
+            TokenKind::KwSelf => Ok(HiTy::new(HiTyKind::This, span)),
             _ => Err(ParseError::new(ParseErrorKind::ExpectedType(data), span)),
         }
     }
 
-    fn parse_polymorphic_type(&mut self) -> ParseResult<Spand<Ty>> {
+    fn parse_polymorphic_type(&mut self) -> ParseResult<HiTy> {
         let simple = self.parse_simple_type()?;
 
-        match simple.data.kind() {
-            TyKind::Named { name, args } if args.is_empty() => {
+        match simple.kind() {
+            HiTyKind::Named(_) if self.peek_and(|tk| tk.can_start_type()) => {
                 let mut span = simple.span;
                 let mut params = Vec::new();
                 while self.peek_and(|tk| tk.can_start_type()) {
                     let ty = self.parse_simple_type()?;
                     span = span.join(ty.span);
-                    params.push(ty.data);
+                    params.push(ty);
                 }
-                let args = Ty::intern_slice(params);
-                Ok(Spand::new(
-                    Ty::intern(TyKind::Named { name: *name, args }),
+                let args = params.into_boxed_slice();
+                Ok(HiTy::new(
+                    HiTyKind::Parametric {
+                        ty: Box::new(simple),
+                        args,
+                    },
                     span,
                 ))
             }
-            TyKind::This(args) if args.is_empty() => {
+            HiTyKind::This if self.peek_and(|tk| tk.can_start_type()) => {
                 let mut span = simple.span;
                 let mut params = Vec::new();
                 while self.peek_and(|tk| tk.can_start_type()) {
                     let ty = self.parse_simple_type()?;
                     span = span.join(ty.span);
-                    params.push(ty.data);
+                    params.push(ty);
                 }
-                let args = Ty::intern_slice(params);
-                Ok(Spand::new(Ty::intern(TyKind::This(args)), span))
+                let args = params.into_boxed_slice();
+                Ok(HiTy::new(
+                    HiTyKind::Parametric {
+                        ty: Box::new(simple),
+                        args,
+                    },
+                    span,
+                ))
             }
             _ => Ok(simple),
         }
     }
 
-    fn parse_type(&mut self) -> ParseResult<Spand<Ty>> {
+    fn parse_type(&mut self) -> ParseResult<HiTy> {
         let simple = self.parse_polymorphic_type()?;
 
         if self.next_if_match(TokenKind::Arrow).is_some() {
             let ret = self.parse_type()?;
             let span = simple.span.join(ret.span);
 
-            Ok(Spand::new(
-                Ty::intern(TyKind::Fn {
-                    param: simple.data,
-                    ret:   ret.data,
-                }),
+            Ok(HiTy::new(
+                HiTyKind::Fn {
+                    param: Box::new(simple),
+                    ret:   Box::new(ret),
+                },
                 span,
             ))
         } else {
@@ -810,7 +794,7 @@ impl Parser {
         }
     }
 
-    fn parse_constructor(&mut self) -> ParseResult<Constructor<()>> {
+    fn parse_constructor(&mut self) -> ParseResult<HiCtor<()>> {
         let name = self.expect_id()?;
         let mut span = name.span;
 
@@ -819,12 +803,12 @@ impl Parser {
         while self.peek_and(|tk| tk.can_start_type()) {
             let ty = self.parse_simple_type()?;
             span = span.join(ty.span);
-            params.push(ty.data);
+            params.push(ty);
         }
 
-        let params = Ty::intern_slice(params);
+        let params = params.into_boxed_slice();
 
-        Ok(Constructor {
+        Ok(HiCtor {
             name,
             params,
             span,
@@ -839,10 +823,10 @@ impl Parser {
         let params = std::iter::from_fn(|| {
             self.next_if_map(|tk| {
                 tk.data.as_ident().map(|ident| {
-                    Ty::intern(TyKind::Named {
-                        name: Path::from_one(Ident::new(ident, tk.span)),
-                        args: Ty::empty_slice(),
-                    })
+                    HiTy::new(
+                        HiTyKind::Named(Path::from_one(Ident::new(ident, tk.span))),
+                        tk.span,
+                    )
                 })
             })
         })
@@ -861,11 +845,14 @@ impl Parser {
             }
         }
 
+        let params = params.into_boxed_slice();
+        let constructors = constructors.into_boxed_slice();
+
         Ok(Stmt::new(
             StmtKind::Type {
                 name,
-                params: Ty::intern_slice(params),
-                constructors: constructors.into_boxed_slice(),
+                params,
+                constructors,
             },
             span,
         ))

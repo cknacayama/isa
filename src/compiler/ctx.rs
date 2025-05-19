@@ -4,14 +4,20 @@ use std::{fmt, vec};
 
 use rustc_hash::FxHashMap;
 
-use super::ast::{
-    Constructor, Fixity, Ident, Import, ImportClause, ImportWildcard, Path, mod_path,
-};
+use super::ast::{Fixity, Ident, Import, ImportClause, ImportWildcard, Path, mod_path};
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
 use super::types::{Ty, TyId, TyKind, TyQuant, TySlice};
 use crate::comma_fmt;
 use crate::global::{Span, Symbol};
+
+#[derive(Debug, Clone, Copy)]
+pub struct Constructor {
+    pub name:   Ident,
+    pub params: TySlice,
+    pub span:   Span,
+    pub ty:     Ty,
+}
 
 #[derive(Debug, Clone)]
 pub struct VarData {
@@ -127,7 +133,7 @@ pub trait Generator {
     fn gen_id(&mut self) -> TyId;
 
     fn gen_type_var(&mut self) -> Ty {
-        Ty::intern(TyKind::Var(self.gen_id()))
+        Ty::force_insert(TyKind::Var(self.gen_id()))
     }
 }
 
@@ -184,13 +190,13 @@ pub trait CtxFmt {
 #[derive(Debug, Default, Clone)]
 pub struct TyData {
     params:       TyQuant,
-    constructors: Vec<Constructor<Ty>>,
+    constructors: Vec<Constructor>,
     span:         Span,
 }
 
 impl TyData {
     #[must_use]
-    const fn new(params: TyQuant, constructors: Vec<Constructor<Ty>>, span: Span) -> Self {
+    const fn new(params: TyQuant, constructors: Vec<Constructor>, span: Span) -> Self {
         Self {
             params,
             constructors,
@@ -198,11 +204,11 @@ impl TyData {
         }
     }
 
-    fn constructors(&self) -> &[Constructor<Ty>] {
+    fn constructors(&self) -> &[Constructor] {
         &self.constructors
     }
 
-    pub fn find_constructor(&self, ctor: Ident) -> CheckResult<&Constructor<Ty>> {
+    pub fn find_constructor(&self, ctor: Ident) -> CheckResult<&Constructor> {
         self.constructors
             .iter()
             .find(|c| c.name == ctor)
@@ -211,56 +217,6 @@ impl TyData {
 
     fn params(&self) -> &[TyId] {
         &self.params
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct AliasData {
-    params: TyQuant,
-    ty:     Ty,
-}
-
-impl AliasData {
-    #[must_use]
-    pub const fn new(params: TyQuant, ty: Ty) -> Self {
-        Self { params, ty }
-    }
-
-    pub fn params(&self) -> &[TyId] {
-        &self.params
-    }
-
-    pub const fn ty(&self) -> &Ty {
-        &self.ty
-    }
-
-    pub fn subs(&self, args: &[Ty]) -> Ty {
-        let mut ty = *self.ty();
-        ty.substitute(&|ty| {
-            self.params()
-                .iter()
-                .copied()
-                .position(|v| ty.as_var().is_some_and(|ty| ty == v))
-                .map(|pos| args[pos])
-        });
-        ty
-    }
-
-    pub fn resolve(aliases: &mut [(Path, Self)]) {
-        let mut changed = true;
-        while changed {
-            changed = false;
-            let cloned = aliases.to_vec();
-            for (alias, data) in cloned {
-                let subs = |ty: &TyKind| match ty {
-                    TyKind::Named { name, args } if name == &alias => Some(data.subs(args)),
-                    _ => None,
-                };
-                for (_, alias) in aliases.iter_mut().filter(|(name, _)| name != &alias) {
-                    changed |= alias.substitute(&subs);
-                }
-            }
-        }
     }
 }
 
@@ -370,19 +326,21 @@ impl<T> ImportData<T> {
 
 #[derive(Debug, Clone)]
 pub struct OperatorData {
-    pub fixity: Fixity,
-    pub prec:   u8,
-    pub ty:     Ty,
-    pub set:    ClassConstraintSet,
-    pub span:   Span,
+    pub class_member: bool,
+    pub fixity:       Fixity,
+    pub prec:         u8,
+    pub ty:           Ty,
+    pub set:          ClassConstraintSet,
+    pub span:         Span,
 }
 
 impl OperatorData {
-    pub fn new<T>(fixity: Fixity, prec: u8, ty: Ty, set: T, span: Span) -> Self
+    pub fn new<T>(class_member: bool, fixity: Fixity, prec: u8, ty: Ty, set: T, span: Span) -> Self
     where
         ClassConstraintSet: From<T>,
     {
         Self {
+            class_member,
             fixity,
             prec,
             ty,
@@ -409,6 +367,10 @@ impl OperatorData {
 
     pub const fn prec(&self) -> u8 {
         self.prec
+    }
+
+    pub const fn class_member(&self) -> bool {
+        self.class_member
     }
 }
 
@@ -588,7 +550,7 @@ impl Ctx {
     pub fn insert_constructor_for_ty(
         &mut self,
         name: Ident,
-        ctor: &Constructor<Ty>,
+        ctor: &Constructor,
     ) -> CheckResult<()> {
         let module = self.current_mut()?;
 
@@ -687,7 +649,7 @@ impl Ctx {
     }
 
     #[must_use]
-    pub fn get_constructors_for_ty(&self, name: &Path) -> &[Constructor<Ty>] {
+    pub fn get_constructors_for_ty(&self, name: &Path) -> &[Constructor] {
         self.get_ty_data(name)
             .map_or(&[], |data| data.constructors.as_slice())
     }
@@ -1155,15 +1117,6 @@ impl Substitute for Ctx {
                 .unwrap_or(false);
         }
         res
-    }
-}
-
-impl Substitute for AliasData {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        self.ty.substitute(subs)
     }
 }
 

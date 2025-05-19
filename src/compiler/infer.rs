@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::ops::{BitOr, Deref, DerefMut};
 use std::rc::Rc;
 
-use super::ast::{Ident, Path};
+use super::ast::Path;
 use super::ctx::Ctx;
 use super::error::Uninferable;
 use super::types::{Ty, TyId, TyKind};
@@ -106,26 +106,6 @@ pub trait Substitute {
                 _ => None,
             },
 
-            _ => None,
-        })
-    }
-
-    fn substitute_param(&mut self, subs: &[(Ident, TyId)]) -> bool {
-        if subs.is_empty() {
-            return false;
-        }
-        self.substitute(&|ty| match ty {
-            TyKind::Named { name, args } if args.is_empty() => subs
-                .iter()
-                .find_map(|(s, v)| name.is_ident(*s).then_some(Ty::intern(TyKind::Var(*v)))),
-            TyKind::Named { name, args } => subs.iter().find_map(|(s, v)| {
-                name.is_ident(*s).then(|| {
-                    Ty::intern(TyKind::Generic {
-                        var:  *v,
-                        args: *args,
-                    })
-                })
-            }),
             _ => None,
         })
     }
@@ -289,10 +269,6 @@ impl ClassConstraint {
         &self.class
     }
 
-    pub const fn get_mut(&mut self) -> (&mut Path, &mut Ty) {
-        (&mut self.class, &mut self.ty)
-    }
-
     pub const fn ty(&self) -> Ty {
         self.ty
     }
@@ -338,6 +314,14 @@ impl Constraint {
 #[derive(Debug, Clone)]
 pub struct ClassConstraintSet {
     constrs: Vec<ClassConstraint>,
+}
+
+impl FromIterator<ClassConstraint> for ClassConstraintSet {
+    fn from_iter<T: IntoIterator<Item = ClassConstraint>>(iter: T) -> Self {
+        Self {
+            constrs: Vec::from_iter(iter),
+        }
+    }
 }
 
 impl IntoIterator for ClassConstraintSet {

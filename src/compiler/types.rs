@@ -1,9 +1,8 @@
 use std::ops::BitOr;
 
-use super::ast::{Ident, Path, mod_path};
+use super::ast::{Path, mod_path};
 use super::ctx::Generator;
 use super::infer::{Subs, Substitute};
-use crate::global::Span;
 pub use crate::global::{Ty, TyQuant, TySlice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -53,26 +52,6 @@ impl Ty {
             TyKind::Generic { var: n, args } => *n == var || args.iter().any(|t| t.occurs(var)),
 
             TyKind::Int | TyKind::Char | TyKind::Bool | TyKind::Real => false,
-        }
-    }
-
-    pub fn contains_name(self, path: &Path) -> Option<Span> {
-        match self.kind() {
-            TyKind::Fn { param, ret } => param
-                .contains_name(path)
-                .or_else(|| ret.contains_name(path)),
-            TyKind::Scheme { ty, .. } => ty.contains_name(path),
-            TyKind::This(args) | TyKind::Tuple(args) | TyKind::Generic { args, .. } => {
-                args.iter().find_map(|t| t.contains_name(path))
-            }
-            TyKind::Named { name, args } => {
-                if name == path {
-                    return Some(name.span());
-                }
-                args.iter().find_map(|t| t.contains_name(path))
-            }
-
-            TyKind::Int | TyKind::Char | TyKind::Bool | TyKind::Real | TyKind::Var(_) => None,
         }
     }
 
@@ -176,10 +155,6 @@ impl Ty {
         Self::intern(TyKind::Tuple(args))
     }
 
-    pub fn var(id: TyId) -> Self {
-        Self::intern(TyKind::Var(id))
-    }
-
     pub fn function_arity(self) -> usize {
         match self.kind() {
             TyKind::Fn { ret, .. } => 1 + ret.function_arity(),
@@ -212,14 +187,6 @@ impl Ty {
             }
 
             _ => false,
-        }
-    }
-
-    pub const fn get_ident(self) -> Option<Ident> {
-        if let TyKind::Named { name, .. } = self.kind() {
-            name.as_ident()
-        } else {
-            None
         }
     }
 

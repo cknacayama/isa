@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Range};
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -14,14 +14,30 @@ pub struct Symbol(u32);
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Span(u32);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Ty(&'static TyKind);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct TySlice(&'static [Ty]);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct TyQuant(&'static [TyId]);
+
+impl Debug for Ty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(self.0, f)
+    }
+}
+impl Debug for TySlice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(self.0, f)
+    }
+}
+impl Debug for TyQuant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Debug::fmt(self.0, f)
+    }
+}
 
 impl Deref for TySlice {
     type Target = [Ty];
@@ -223,6 +239,10 @@ impl Ty {
         Env::get(|mut e| e.ctx.intern(ty))
     }
 
+    pub fn force_insert(ty: TyKind) -> Self {
+        Env::get(|mut e| e.ctx.force_insert(ty))
+    }
+
     pub fn intern_slice(ty: Vec<Self>) -> TySlice {
         Env::get(|mut e| e.ctx.intern_slice(ty))
     }
@@ -367,6 +387,12 @@ impl GlobalCtx {
             TyKind::Real => Some(REAL),
             _ => None,
         }
+    }
+
+    fn force_insert(&mut self, ty: TyKind) -> Ty {
+        let ty = Box::leak(Box::new(ty));
+        self.types.insert(ty);
+        Ty(ty)
     }
 
     fn intern(&mut self, ty: TyKind) -> Ty {

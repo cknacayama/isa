@@ -1,9 +1,9 @@
 use std::fmt::{Debug, Display};
 use std::num::NonZeroU8;
 
-use super::infer::{ClassConstraintSet, Substitute};
+use super::infer::Substitute;
 use super::token::TokenKind;
-use super::types::{Ty, TyKind, TySlice};
+use super::types::{Ty, TyId, TyKind};
 use crate::global::{Span, Symbol};
 use crate::separated_fmt;
 
@@ -133,10 +133,6 @@ impl Path {
 
     pub const fn base_name(&self) -> Ident {
         self.segments[(self.len.get() as usize) - 1]
-    }
-
-    pub fn is_ident(&self, name: Ident) -> bool {
-        self.len.get() == 1 && self.segments[0] == name
     }
 
     pub const fn as_ident(&self) -> Option<Ident> {
@@ -303,15 +299,102 @@ impl TokenKind {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Constructor<T> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HiTyKind {
+    Int,
+    Bool,
+    Char,
+    Real,
+    This,
+    Var(TyId),
+    Named(Path),
+    Tuple(Box<[HiTy]>),
+    Fn { param: Box<HiTy>, ret: Box<HiTy> },
+    Parametric { ty: Box<HiTy>, args: Box<[HiTy]> },
+}
+
+impl HiTyKind {
+    #[must_use]
+    pub const fn is_this(&self) -> bool {
+        matches!(self, Self::This)
+    }
+
+    pub fn get_ident(&self) -> Option<Ident> {
+        self.as_named().and_then(Path::as_ident)
+    }
+
+    pub const fn as_named(&self) -> Option<&Path> {
+        if let Self::Named(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    pub const fn as_var(&self) -> Option<TyId> {
+        if let Self::Var(v) = self {
+            Some(*v)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct HiTy {
+    pub kind: HiTyKind,
+    pub span: Span,
+}
+
+impl PartialEq for HiTy {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind() == other.kind()
+    }
+}
+
+impl Eq for HiTy {
+}
+
+impl HiTy {
+    pub const fn new(kind: HiTyKind, span: Span) -> Self {
+        Self { kind, span }
+    }
+
+    pub const fn kind(&self) -> &HiTyKind {
+        &self.kind
+    }
+
+    pub fn contains_name(&self, name: &Path) -> Option<Span> {
+        match self.kind() {
+            HiTyKind::Named(path) if name == path => Some(self.span),
+            HiTyKind::Tuple(items) => items.iter().find_map(|ty| ty.contains_name(name)),
+            HiTyKind::Fn { param, ret } => param
+                .contains_name(name)
+                .or_else(|| ret.contains_name(name)),
+            HiTyKind::Parametric { ty, args } => ty
+                .contains_name(name)
+                .or_else(|| args.iter().find_map(|ty| ty.contains_name(name))),
+
+            HiTyKind::Named(_)
+            | HiTyKind::Int
+            | HiTyKind::Bool
+            | HiTyKind::Char
+            | HiTyKind::Real
+            | HiTyKind::This
+            | HiTyKind::Var(_) => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct HiCtor<T> {
     pub name:   Ident,
-    pub params: TySlice,
+    pub params: Box<[HiTy]>,
     pub span:   Span,
     pub ty:     T,
 }
 
-impl<T> Display for Constructor<T> {
+impl<T> Display for HiCtor<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)?;
         self.params.iter().try_for_each(|p| write!(f, " {p}"))
@@ -521,24 +604,36 @@ impl<T> LetBind<T> {
 }
 
 #[derive(Debug, Clone)]
+pub struct HiConstraint {
+    pub class: Path,
+    pub ty:    HiTy,
+    pub span:  Span,
+}
+
+impl HiConstraint {
+    pub const fn new(class: Path, ty: HiTy, span: Span) -> Self {
+        Self { class, ty, span }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Val {
-    pub params: TySlice,
-    pub set:    ClassConstraintSet,
+    pub params: Box<[HiTy]>,
+    pub set:    Box<[HiConstraint]>,
     pub name:   Ident,
-    pub ty:     Ty,
+    pub ty:     HiTy,
     pub span:   Span,
 }
 
 #[derive(Debug, Clone)]
 pub struct Operator {
-    pub fixity:  Fixity,
-    pub prec:    u8,
-    pub params:  TySlice,
-    pub set:     ClassConstraintSet,
-    pub op:      Ident,
-    pub ty:      Ty,
-    pub ty_span: Span,
-    pub span:    Span,
+    pub fixity: Fixity,
+    pub prec:   u8,
+    pub params: Box<[HiTy]>,
+    pub set:    Box<[HiConstraint]>,
+    pub op:     Ident,
+    pub ty:     HiTy,
+    pub span:   Span,
 }
 
 #[derive(Debug, Clone)]
@@ -552,7 +647,7 @@ pub enum StmtKind<T> {
     Val(Val),
 
     Class {
-        set:        ClassConstraintSet,
+        set:        Box<[HiConstraint]>,
         name:       Ident,
         parents:    Box<[Path]>,
         signatures: Box<[Val]>,
@@ -561,23 +656,23 @@ pub enum StmtKind<T> {
     },
 
     Instance {
-        params:   TySlice,
-        set:      ClassConstraintSet,
+        params:   Box<[HiTy]>,
+        set:      Box<[HiConstraint]>,
         class:    Path,
-        instance: Ty,
+        instance: HiTy,
         impls:    Box<[LetBind<T>]>,
     },
 
     Type {
         name:         Ident,
-        params:       TySlice,
-        constructors: Box<[Constructor<T>]>,
+        params:       Box<[HiTy]>,
+        constructors: Box<[HiCtor<T>]>,
     },
 
     Alias {
         name:   Ident,
-        params: TySlice,
-        ty:     Ty,
+        params: Box<[HiTy]>,
+        ty:     HiTy,
     },
 }
 
@@ -666,6 +761,173 @@ impl<T> Expr<T> {
     }
 }
 
+fn rename_slice(ren: &impl Rename, slice: &mut [HiTy]) {
+    for ty in slice {
+        ren.walk_hi_ty(ty);
+    }
+}
+
+pub trait Rename: Sized {
+    fn rename_hi_ty(&self, ty: &mut HiTy);
+
+    fn rename_class(&self, _class: &mut Path) {
+    }
+
+    fn rename_ctor<T>(&self, ctor: &mut HiCtor<T>) {
+        rename_slice(self, &mut ctor.params);
+    }
+
+    fn rename_constrs(&self, slice: &mut [HiConstraint]) {
+        for c in slice {
+            self.walk_hi_ty(&mut c.ty);
+            self.rename_class(&mut c.class);
+        }
+    }
+
+    fn rename_stmt<T>(&self, stmt: &mut Stmt<T>) {
+        match &mut stmt.kind {
+            StmtKind::Operator(operator) => self.rename_op(operator),
+            StmtKind::Val(val) => self.rename_val(val),
+            StmtKind::Class {
+                set,
+                parents,
+                signatures,
+                ops,
+                ..
+            } => {
+                self.rename_constrs(set);
+                for class in parents {
+                    self.rename_class(class);
+                }
+                for sig in signatures {
+                    self.rename_val(sig);
+                }
+                for op in ops {
+                    self.rename_op(op);
+                }
+            }
+            StmtKind::Instance {
+                params,
+                set,
+                class,
+                instance,
+                ..
+            } => {
+                rename_slice(self, params);
+                self.rename_constrs(set);
+                self.rename_class(class);
+                self.walk_hi_ty(instance);
+            }
+            StmtKind::Type {
+                params,
+                constructors,
+                ..
+            } => {
+                rename_slice(self, params);
+                for ctor in constructors {
+                    self.rename_ctor(ctor);
+                }
+            }
+            StmtKind::Alias { params, ty, .. } => {
+                rename_slice(self, params);
+                self.walk_hi_ty(ty);
+            }
+
+            StmtKind::Semi(_) | StmtKind::Let(_) => {}
+        }
+    }
+
+    fn rename_op(&self, op: &mut Operator) {
+        rename_slice(self, &mut op.params);
+        self.rename_constrs(&mut op.set);
+        self.walk_hi_ty(&mut op.ty);
+    }
+
+    fn rename_val(&self, val: &mut Val) {
+        rename_slice(self, &mut val.params);
+        self.rename_constrs(&mut val.set);
+        self.walk_hi_ty(&mut val.ty);
+    }
+
+    fn walk_hi_ty(&self, ty: &mut HiTy) {
+        match &mut ty.kind {
+            HiTyKind::Tuple(items) => {
+                rename_slice(self, items);
+            }
+            HiTyKind::Fn { param, ret } => {
+                self.walk_hi_ty(param);
+                self.walk_hi_ty(ret);
+            }
+            HiTyKind::Parametric { ty, args } => {
+                self.walk_hi_ty(ty);
+                rename_slice(self, args);
+            }
+
+            HiTyKind::Named(_)
+            | HiTyKind::Var(_)
+            | HiTyKind::Int
+            | HiTyKind::Bool
+            | HiTyKind::Char
+            | HiTyKind::Real
+            | HiTyKind::This => {}
+        }
+
+        self.rename_hi_ty(ty);
+    }
+}
+
+impl Rename for TyId {
+    fn rename_hi_ty(&self, ty: &mut HiTy) {
+        if ty.kind.is_this() {
+            ty.kind = HiTyKind::Var(*self);
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ParamRenamer(pub Vec<(Ident, TyId)>);
+
+impl Rename for ParamRenamer {
+    fn rename_hi_ty(&self, ty: &mut HiTy) {
+        if let Some(name) = ty.kind().get_ident()
+            && let Some(new) = self
+                .0
+                .iter()
+                .find_map(|(p, v)| if *p == name { Some(*v) } else { None })
+        {
+            ty.kind = HiTyKind::Var(new);
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ModuleRenamer(pub Ident);
+
+impl Rename for ModuleRenamer {
+    fn rename_hi_ty(&self, ty: &mut HiTy) {
+        if let Some(name) = ty.kind().get_ident() {
+            ty.kind = HiTyKind::Named(Path::from_two(self.0, name));
+        }
+    }
+
+    fn rename_class(&self, class: &mut Path) {
+        if let Some(name) = class.as_ident() {
+            *class = Path::from_two(self.0, name);
+        }
+    }
+}
+
+impl<F> Rename for F
+where
+    F: Fn(&HiTyKind) -> Option<HiTyKind>,
+{
+    fn rename_hi_ty(&self, ty: &mut HiTy) {
+        if let Some(new) = self(ty.kind()) {
+            ty.kind = new;
+        }
+    }
+}
+
 impl Substitute for Param<Ty> {
     fn substitute<S>(&mut self, subs: &S) -> bool
     where
@@ -675,65 +937,12 @@ impl Substitute for Param<Ty> {
     }
 }
 
-impl Substitute for Constructor<()> {
+impl Substitute for HiCtor<Ty> {
     fn substitute<S>(&mut self, subs: &S) -> bool
     where
         S: Fn(&TyKind) -> Option<Ty>,
     {
-        self.params.substitute(subs)
-    }
-}
-
-impl Substitute for Constructor<Ty> {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        self.ty.substitute(subs) | self.params.substitute(subs)
-    }
-}
-
-impl Substitute for Val {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        self.set.substitute(subs) | self.ty.substitute(subs) | self.params.substitute(subs)
-    }
-}
-
-impl Substitute for Operator {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        self.set.substitute(subs) | self.ty.substitute(subs) | self.params.substitute(subs)
-    }
-}
-
-impl Substitute for Stmt<()> {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        match &mut self.kind {
-            StmtKind::Type { constructors, .. } => constructors.substitute(subs),
-            StmtKind::Alias { ty, .. } => ty.substitute(subs),
-            StmtKind::Val(val) => val.substitute(subs),
-            StmtKind::Class {
-                signatures,
-                ops,
-                set,
-                ..
-            } => signatures.substitute(subs) | ops.substitute(subs) | set.substitute(subs),
-            StmtKind::Instance { instance, set, .. } => {
-                instance.substitute(subs) | set.substitute(subs)
-            }
-            StmtKind::Operator(Operator { ty, set, .. }) => {
-                set.substitute(subs) | ty.substitute(subs)
-            }
-            StmtKind::Let(_) | StmtKind::Semi(_) => false,
-        }
+        self.ty.substitute(subs)
     }
 }
 
@@ -755,29 +964,9 @@ impl Substitute for StmtKind<Ty> {
             Self::Let(bind) => bind.substitute(subs),
             Self::Semi(semi) => semi.substitute(subs),
             Self::Type { constructors, .. } => constructors.substitute(subs),
-            Self::Alias { ty, .. } => ty.substitute(subs),
-            Self::Val(val) => val.substitute(subs),
-            Self::Class {
-                set,
-                signatures,
-                defaults,
-                ..
-            } => set.substitute(subs) | signatures.substitute(subs) | defaults.substitute(subs),
-            Self::Instance {
-                params,
-                set,
-                instance,
-                impls,
-                ..
-            } => {
-                set.substitute(subs)
-                    | instance.substitute(subs)
-                    | params.substitute(subs)
-                    | impls.substitute(subs)
-            }
-            Self::Operator(Operator {
-                params, set, ty, ..
-            }) => set.substitute(subs) | params.substitute(subs) | ty.substitute(subs),
+            Self::Class { defaults, .. } => defaults.substitute(subs),
+            Self::Instance { impls, .. } => impls.substitute(subs),
+            Self::Operator(_) | Self::Val(_) | Self::Alias { .. } => false,
         }
     }
 }
@@ -894,6 +1083,12 @@ impl Display for Ident {
 impl Display for Path {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         separated_fmt(f, self.as_slice(), "::", |seg, f| write!(f, "{seg}"))
+    }
+}
+
+impl Display for HiTy {
+    fn fmt(&self, _f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
     }
 }
 
