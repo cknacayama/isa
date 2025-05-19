@@ -164,12 +164,7 @@ impl Parser {
                 match tk.data {
                     TokenKind::Ident(ident) => {
                         parser.eat();
-                        if !path.push(Ident::new(ident, tk.span)) {
-                            return Err(ParseError::new(
-                                ParseErrorKind::PathToLong,
-                                parser.last_span(),
-                            ));
-                        }
+                        path.push(Ident::new(ident, tk.span));
                     }
                     TokenKind::Underscore => {
                         parser.eat();
@@ -696,9 +691,7 @@ impl Parser {
         while self.next_if_match(TokenKind::ColonColon).is_some() {
             let id = self.expect_id()?;
             span = span.join(id.span);
-            if !path.push(id) {
-                return Err(ParseError::new(ParseErrorKind::PathToLong, span));
-            }
+            path.push(id);
         }
 
         Ok((path, span))

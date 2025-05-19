@@ -1,5 +1,4 @@
 use std::fmt::{Debug, Display};
-use std::num::NonZeroU8;
 
 use super::infer::Substitute;
 use super::token::TokenKind;
@@ -47,100 +46,53 @@ impl PartialEq for Ident {
 impl Eq for Ident {
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Path {
-    segments: [Ident; 3],
-    len:      NonZeroU8,
-}
-
-impl Debug for Path {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Path")
-            .field("segments", &self.as_slice())
-            .finish_non_exhaustive()
-    }
-}
-
-impl std::hash::Hash for Path {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.as_slice().hash(state);
-    }
-}
-
-impl Eq for Path {
-}
-
-impl PartialEq for Path {
-    fn eq(&self, other: &Self) -> bool {
-        self.as_slice() == other.as_slice()
-    }
+    segments: Vec<Ident>,
 }
 
 impl Path {
-    pub const fn push(&mut self, id: Ident) -> bool {
-        if self.len.get() >= 3 {
-            false
-        } else {
-            self.segments[self.len.get() as usize] = id;
-            self.len = self.len.saturating_add(1);
-            true
-        }
+    pub fn push(&mut self, id: Ident) {
+        self.segments.push(id);
     }
 
-    pub fn as_slice(&self) -> &[Ident] {
-        &self.segments[..self.len.get() as usize]
+    pub const fn as_slice(&self) -> &[Ident] {
+        self.segments.as_slice()
     }
 
-    pub const fn from_slice(seg: &[Ident]) -> Option<Self> {
-        match *seg {
-            [fst] => Some(Self::from_one(fst)),
-            [fst, snd] => Some(Self::from_two(fst, snd)),
-            [fst, snd, trd] => Some(Self::from_three(fst, snd, trd)),
-            _ => None,
-        }
-    }
-
-    pub const fn from_one(ident: Ident) -> Self {
-        let zero = Ident::zero();
+    pub fn from_one(ident: Ident) -> Self {
         Self {
-            segments: [ident, zero, zero],
-            len:      NonZeroU8::new(1).unwrap(),
+            segments: vec![ident],
         }
     }
 
-    pub const fn from_two(fst: Ident, snd: Ident) -> Self {
-        let zero = Ident::zero();
+    pub fn from_two(fst: Ident, snd: Ident) -> Self {
         Self {
-            segments: [fst, snd, zero],
-            len:      NonZeroU8::new(2).unwrap(),
-        }
-    }
-
-    pub const fn from_three(fst: Ident, snd: Ident, trd: Ident) -> Self {
-        Self {
-            segments: [fst, snd, trd],
-            len:      NonZeroU8::new(3).unwrap(),
+            segments: vec![fst, snd],
         }
     }
 
     pub fn span(&self) -> Span {
-        self.as_slice()
+        self.segments
             .iter()
             .map(|id| id.span)
             .reduce(Span::join)
             .unwrap()
     }
 
-    pub const fn base_name(&self) -> Ident {
-        self.segments[(self.len.get() as usize) - 1]
+    pub fn base_name(&self) -> Ident {
+        *self.segments.last().unwrap()
     }
 
-    pub const fn as_ident(&self) -> Option<Ident> {
-        if self.len.get() == 1 {
-            Some(self.segments[0])
-        } else {
-            None
+    pub fn as_ident(&self) -> Option<Ident> {
+        match self.as_slice() {
+            [id] => Some(*id),
+            _ => None,
         }
+    }
+
+    pub fn from_vec(segments: Vec<Ident>) -> Self {
+        Self { segments }
     }
 }
 
@@ -152,20 +104,6 @@ macro_rules! mod_path {
             ident: Symbol::intern(stringify!($seg)),
             span:  Span::zero(),
         })
-    }};
-    ($fst:ident::$snd:ident) => {{
-        use crate::compiler::ast::{Ident, Path};
-        use crate::global::{Span, Symbol};
-        Path::from_two(
-            Ident {
-                ident: Symbol::intern(stringify!($fst)),
-                span:  Span::zero(),
-            },
-            Ident {
-                ident: Symbol::intern(stringify!($snd)),
-                span:  Span::zero(),
-            },
-        )
     }};
 }
 pub(crate) use mod_path;

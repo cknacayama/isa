@@ -7,12 +7,12 @@ use ctor::{Ctor, CtorSet, IntRange, MaybeInfinite, RealRange};
 use pat::{PatMatrix, PatMatrixRow, PatOrWild, PatVector, Pattern, WitnessPat};
 
 use super::ast::{
-    Expr, ExprKind, ListPat, MatchArm, Operator, Pat, PatKind, RangePat, Stmt, StmtKind, mod_path,
+    Expr, ExprKind, ListPat, MatchArm, Operator, Pat, PatKind, RangePat, Stmt, StmtKind,
 };
 use super::ctx::Ctx as TypeCtx;
 use super::error::MatchNonExhaustive;
 use super::types::{Ty, TyKind, TySlice};
-use crate::global::Symbol;
+use crate::global::{Symbol, ty_path};
 
 #[derive(Debug)]
 pub struct Ctx<'a> {
@@ -32,7 +32,7 @@ impl<'a> Ctx<'a> {
             TyKind::Char => CtorSet::Integers(IntRange::character()),
             TyKind::Scheme { ty, .. } => self.ctors_for_ty(*ty),
             TyKind::Named { name, .. } => {
-                let variants = self.ctx.get_constructors_for_ty(name).len();
+                let variants = self.ctx.get_constructors_for_ty(*name).len();
                 let variants = NonZeroUsize::new(variants).unwrap();
                 CtorSet::Type { variants }
             }
@@ -92,7 +92,7 @@ impl Pattern {
     fn from_ast_pat(pat: &Pat<Ty>, ctx: &TypeCtx) -> Self {
         match &pat.kind {
             PatKind::List(list) => {
-                let list_ty = ctx.get_constructors_for_ty(&mod_path!(list::List));
+                let list_ty = ctx.get_constructors_for_ty(ty_path!(list::List));
                 let nil = Symbol::intern("Nil");
                 let nil_idx = list_ty.iter().position(|c| c.name.ident == nil).unwrap();
                 match list {
@@ -157,7 +157,7 @@ impl Pattern {
                 };
                 let name = name.base_name();
                 let idx = ctx
-                    .get_constructors_for_ty(ty_name)
+                    .get_constructors_for_ty(*ty_name)
                     .iter()
                     .position(|c| name == c.name)
                     .unwrap();

@@ -23,6 +23,9 @@ pub struct TySlice(&'static [Ty]);
 #[derive(Clone, Copy)]
 pub struct TyQuant(&'static [TyId]);
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TyPath(u32);
+
 impl Debug for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(self.0, f)
@@ -112,6 +115,12 @@ impl PartialEq for TyQuant {
 impl Eq for TyQuant {
 }
 
+impl TyPath {
+    pub fn get(self) -> &'static [Symbol] {
+        Env::get(|env| env.ctx.get_name(self))
+    }
+}
+
 impl Default for Span {
     fn default() -> Self {
         Self::zero()
@@ -156,7 +165,7 @@ impl Symbol {
     }
 }
 
-impl std::fmt::Debug for Symbol {
+impl Debug for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match Env::get(|e| e.symbols.get(*self)) {
             Some(symbol) => write!(f, "{symbol:?}"),
@@ -171,6 +180,20 @@ impl Display for Symbol {
             Some(symbol) => write!(f, "{symbol}"),
             None => write!(f, "<?{}>", self.0),
         }
+    }
+}
+
+impl Debug for TyPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = Env::get(|e| e.ctx.get_name(*self));
+        Debug::fmt(name, f)
+    }
+}
+
+impl Display for TyPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = Env::get(|e| e.ctx.get_name(*self));
+        write!(f, "{}", name.last().unwrap())
     }
 }
 
@@ -201,7 +224,7 @@ impl From<Span> for Range<usize> {
     }
 }
 
-impl std::fmt::Debug for Span {
+impl Debug for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match Env::get(|e| e.spans.get(*self)) {
             Some(span) => write!(f, "{span:?}"),
@@ -249,6 +272,10 @@ impl Ty {
 
     pub fn intern_quant(ty: Vec<TyId>) -> TyQuant {
         Env::get(|mut e| e.ctx.intern_quant(ty))
+    }
+
+    pub fn intern_path(name: Vec<Symbol>) -> TyPath {
+        Env::get(|mut e| e.ctx.intern_name(name))
     }
 
     #[must_use]
@@ -366,9 +393,11 @@ impl SpanInterner {
 
 #[derive(Default)]
 struct GlobalCtx {
-    types:       FxHashSet<&'static TyKind>,
-    slices:      FxHashSet<&'static [Ty]>,
-    quantifiers: FxHashSet<&'static [TyId]>,
+    types:        FxHashSet<&'static TyKind>,
+    slices:       FxHashSet<&'static [Ty]>,
+    quantifiers:  FxHashSet<&'static [TyId]>,
+    name_indexes: FxHashMap<&'static [Symbol], u32>,
+    names:        Vec<&'static [Symbol]>,
 }
 
 static INT: Ty = Ty(&TyKind::Int);
@@ -435,4 +464,35 @@ impl GlobalCtx {
         self.quantifiers.insert(slice);
         TyQuant(slice)
     }
+
+    fn intern_name(&mut self, name: Vec<Symbol>) -> TyPath {
+        if let Some(idx) = self.name_indexes.get(name.as_slice()) {
+            return TyPath(*idx);
+        }
+
+        let name = Box::leak(name.into_boxed_slice());
+        let idx = self.names.len().try_into().unwrap();
+        self.name_indexes.insert(name, idx);
+        self.names.push(name);
+        TyPath(idx)
+    }
+
+    fn get_name(&self, name: TyPath) -> &'static [Symbol] {
+        self.names[name.0 as usize]
+    }
 }
+
+macro_rules! ty_path {
+    ($seg:ident) => {{
+        use crate::global::{Symbol, Ty, TyPath};
+        Ty::intern_path(vec![Symbol::intern(stringify!($seg))])
+    }};
+    ($fst:ident::$snd:ident) => {{
+        use crate::global::{Symbol, Ty};
+        Ty::intern_path(vec![
+            Symbol::intern(stringify!($fst)),
+            Symbol::intern(stringify!($snd)),
+        ])
+    }};
+}
+pub(crate) use ty_path;

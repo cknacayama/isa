@@ -14,7 +14,6 @@ Ok(
                                 span: SpanData { file_id: 0, start: 0, end: 4 },
                             },
                         ],
-                        ..
                     },
                 ),
                 span: SpanData { file_id: 0, start: 0, end: 4 },
@@ -29,7 +28,6 @@ Ok(
                                 span: SpanData { file_id: 0, start: 5, end: 6 },
                             },
                         ],
-                        ..
                     },
                 ),
                 span: SpanData { file_id: 0, start: 5, end: 6 },

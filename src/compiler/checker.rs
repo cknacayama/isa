@@ -97,7 +97,7 @@ impl Checker {
             HiTyKind::Named(name) => {
                 self.ctx.get_ty_data(name)?;
                 Ok(Ty::intern(TyKind::Named {
-                    name: *name,
+                    name: Ty::name_from_path(name),
                     args: Ty::empty_slice(),
                 }))
             }
@@ -132,7 +132,7 @@ impl Checker {
                     | TyKind::Bool
                     | TyKind::Char
                     | TyKind::Real => {
-                        todo!()
+                        unreachable!()
                     }
                 }
             }
@@ -543,7 +543,7 @@ impl Checker {
 
         let module = Ident::new(self.ctx.current_module().ident, name.span);
         let ty = Ty::intern(TyKind::Named {
-            name: Path::from_two(module, name),
+            name: Ty::intern_path(vec![module.ident, name.ident]),
             args,
         });
 
@@ -570,7 +570,7 @@ impl Checker {
             .map(|c| {
                 self.ctx.get_class(&c.class)?;
                 let ty = self.check_valid_type::<SIG>(&c.ty)?;
-                Ok(ClassConstraint::new(c.class, ty, c.span))
+                Ok(ClassConstraint::new(c.class.clone(), ty, c.span))
             })
             .collect()
     }
@@ -755,7 +755,7 @@ impl Checker {
         {
             let mut set = set.to_vec();
             set.push(HiConstraint::new(
-                class,
+                class.clone(),
                 HiTy::new(HiTyKind::This, *span),
                 *span,
             ));
@@ -814,7 +814,7 @@ impl Checker {
         let var = self.gen_type_var();
         let class = Path::from_two(self.ctx.current_module(), name);
         self.ctx
-            .assume_constraints(&Set::from(ClassConstraint::new(class, var, span)));
+            .assume_constraints(&Set::from(ClassConstraint::new(class.clone(), var, span)));
         let defaults = self.check_instance_impls(&class, defaults, var)?;
 
         let kind = StmtKind::Class {
@@ -1531,7 +1531,7 @@ impl Checker {
         constraints.extend(
             data.parents()
                 .iter()
-                .map(|class| ClassConstraint::new(*class, new_var, span)),
+                .map(|class| ClassConstraint::new(class.clone(), new_var, span)),
         );
         constraints.push(ClassConstraint::new(class, new_var, span));
 

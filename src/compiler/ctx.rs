@@ -7,7 +7,7 @@ use rustc_hash::FxHashMap;
 use super::ast::{Fixity, Ident, Import, ImportClause, ImportWildcard, Path, mod_path};
 use super::error::{CheckError, CheckErrorKind, CheckResult};
 use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
-use super::types::{Ty, TyId, TyKind, TyQuant, TySlice};
+use super::types::{Ty, TyId, TyKind, TyPath, TyQuant, TySlice};
 use crate::comma_fmt;
 use crate::global::{Span, Symbol};
 
@@ -649,9 +649,14 @@ impl Ctx {
     }
 
     #[must_use]
-    pub fn get_constructors_for_ty(&self, name: &Path) -> &[Constructor] {
-        self.get_ty_data(name)
-            .map_or(&[], |data| data.constructors.as_slice())
+    pub fn get_constructors_for_ty(&self, name: TyPath) -> &[Constructor] {
+        self.get_ty_data(&Path::from_vec(
+            TyPath::get(name)
+                .iter()
+                .map(|sym| Ident::new(*sym, Span::zero()))
+                .collect(),
+        ))
+        .map_or(&[], |data| data.constructors.as_slice())
     }
 
     pub fn insert_class(&mut self, name: Symbol, data: ClassData) -> CheckResult<()> {
@@ -667,7 +672,7 @@ impl Ctx {
             }
             [module, id] => Ok((module, id)),
             _ => Err(CheckError::new(
-                CheckErrorKind::InvalidPath(*path),
+                CheckErrorKind::InvalidPath(path.clone()),
                 path.span(),
             )),
         }
@@ -732,33 +737,25 @@ impl Ctx {
             },
             ImportWildcard::Clause(clause) => {
                 let [module] = *import.path.as_slice() else {
+                    let span = import.path.span();
                     return (
                         false,
                         vec![CheckError::new(
                             CheckErrorKind::InvalidImport(import.path),
-                            import.path.span(),
+                            span,
                         )],
                     );
                 };
                 let mut new_clause = Vec::new();
-                let mut errors = Vec::new();
                 for mut import in clause {
                     let mut path = vec![module];
                     path.extend(import.path.as_slice());
-                    if let Some(path) = Path::from_slice(&path) {
-                        import.path = path;
-                        new_clause.push(import);
-                    } else {
-                        let span = import.path.span();
-                        errors.push(CheckError::new(
-                            CheckErrorKind::InvalidPath(import.path),
-                            span,
-                        ));
-                    }
+                    let path = Path::from_vec(path);
+                    import.path = path;
+                    new_clause.push(import);
                 }
                 let clause = ImportClause(new_clause.into_boxed_slice());
-                let (res, mut errs) = self.import_clause(clause);
-                errs.extend(errors);
+                let (res, errs) = self.import_clause(clause);
                 (res, errs)
             }
             ImportWildcard::Wildcard => match self.import_wildcard(&import.path) {
@@ -868,7 +865,7 @@ impl Ctx {
             }
 
             _ => Err(CheckError::new(
-                CheckErrorKind::InvalidImport(*path),
+                CheckErrorKind::InvalidImport(path.clone()),
                 path.span(),
             )),
         }
@@ -915,7 +912,7 @@ impl Ctx {
             && constrs.is_empty()
         {
             return Err(CheckError::new(
-                CheckErrorKind::MultipleInstances(*class, instance, *span),
+                CheckErrorKind::MultipleInstances(class.clone(), instance, *span),
                 data.span,
             ));
         }
@@ -926,7 +923,7 @@ impl Ctx {
                     || data.set().iter().any(|c| self.set_contains_class(set, c)))
         }) {
             return Err(CheckError::new(
-                CheckErrorKind::MultipleInstances(*class, instance, *span),
+                CheckErrorKind::MultipleInstances(class.clone(), instance, *span),
                 data.span,
             ));
         }
@@ -981,7 +978,15 @@ impl Ctx {
             return Ty::empty_slice();
         };
 
-        let mut data = self.get_ty_data(name).cloned().unwrap_or_default();
+        let mut data = self
+            .get_ty_data(&Path::from_vec(
+                TyPath::get(*name)
+                    .iter()
+                    .map(|sym| Ident::new(*sym, Span::zero()))
+                    .collect(),
+            ))
+            .cloned()
+            .unwrap_or_default();
 
         let subs = data
             .params
@@ -1006,7 +1011,7 @@ impl Ctx {
         let TyKind::Named { name, .. } = ty.kind() else {
             return Ok(());
         };
-        let ctor = self.get_constructors_for_ty(name)[idx].name;
+        let ctor = self.get_constructors_for_ty(*name)[idx].name;
         write!(f, "{ctor}")
     }
 
@@ -1022,8 +1027,9 @@ impl Ctx {
             class_data.instances.get(&ty)
         };
 
-        instance
-            .ok_or_else(|| CheckError::new(CheckErrorKind::NotInstance(ty, *class), class.span()))
+        instance.ok_or_else(|| {
+            CheckError::new(CheckErrorKind::NotInstance(ty, class.clone()), class.span())
+        })
     }
 
     fn implementation_mut(&mut self, mut ty: Ty, class: &Path) -> CheckResult<&mut InstanceData> {
@@ -1042,8 +1048,9 @@ impl Ctx {
 
         let instance = class_data.instances.get_mut(&ty);
 
-        instance
-            .ok_or_else(|| CheckError::new(CheckErrorKind::NotInstance(ty, *class), class.span()))
+        instance.ok_or_else(|| {
+            CheckError::new(CheckErrorKind::NotInstance(ty, class.clone()), class.span())
+        })
     }
 
     pub fn instantiate_class(
@@ -1087,7 +1094,7 @@ impl Ctx {
         if sets.is_empty() {
             Ok(vec![(
                 span,
-                ClassConstraintSet::from(ClassConstraint::new(*class, ty, span)),
+                ClassConstraintSet::from(ClassConstraint::new(class.clone(), ty, span)),
             )])
         } else {
             Ok(sets)
@@ -1176,7 +1183,7 @@ impl Ty {
                 ty.fmt_var(f, chars)
             }
             TyKind::Named { name, args } => {
-                write!(f, "{}", name.base_name())?;
+                write!(f, "{name}")?;
                 for arg in args.iter() {
                     if arg.is_simple_fmt() {
                         write!(f, " ")?;

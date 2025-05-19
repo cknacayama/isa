@@ -16,7 +16,6 @@ Ok(
                         span: SpanData { file_id: 0, start: 3, end: 4 },
                     },
                 ],
-                ..
             },
         ),
         span: SpanData { file_id: 0, start: 0, end: 4 },

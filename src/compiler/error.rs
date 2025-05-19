@@ -48,7 +48,6 @@ pub enum ParseErrorKind {
     ExpectedInt(TokenKind),
     ExpectedType(TokenKind),
     ExpectedPattern(TokenKind),
-    PathToLong,
     PrecendenceLimit(i64),
 }
 
@@ -62,7 +61,6 @@ impl Display for ParseErrorKind {
                 write!(f, "expected {expected}")?;
                 got.map_or(Ok(()), |got| write!(f, ", got {got}"))
             }
-            Self::PathToLong => write!(f, "path too long"),
             Self::ExpectedExpr(got) => write!(f, "expected expression, got {got}"),
             Self::ExpectedId(got) => write!(f, "expected identifier, got {got}"),
             Self::ExpectedInt(got) => write!(f, "expected integer literal, got {got}"),

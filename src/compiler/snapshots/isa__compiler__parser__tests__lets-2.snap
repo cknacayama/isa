@@ -22,7 +22,6 @@ Ok(
                                             span: SpanData { file_id: 0, start: 6, end: 7 },
                                         },
                                     ],
-                                    ..
                                 },
                                 args: [],
                             },
@@ -57,7 +56,6 @@ Ok(
                                             span: SpanData { file_id: 0, start: 24, end: 25 },
                                         },
                                     ],
-                                    ..
                                 },
                             ),
                             span: SpanData { file_id: 0, start: 24, end: 25 },
@@ -73,7 +71,6 @@ Ok(
                                         span: SpanData { file_id: 0, start: 29, end: 30 },
                                     },
                                 ],
-                                ..
                             },
                         ),
                         span: SpanData { file_id: 0, start: 29, end: 30 },

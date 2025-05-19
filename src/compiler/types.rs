@@ -1,9 +1,10 @@
 use std::ops::BitOr;
 
-use super::ast::{Path, mod_path};
+use super::ast::Path;
 use super::ctx::Generator;
 use super::infer::{Subs, Substitute};
-pub use crate::global::{Ty, TyQuant, TySlice};
+use crate::global::ty_path;
+pub use crate::global::{Ty, TyPath, TyQuant, TySlice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TyId(u32);
@@ -24,7 +25,7 @@ pub enum TyKind {
     Tuple(TySlice),
     Fn { param: Ty, ret: Ty },
     Scheme { quant: TyQuant, ty: Ty },
-    Named { name: Path, args: TySlice },
+    Named { name: TyPath, args: TySlice },
     Generic { var: TyId, args: TySlice },
     This(TySlice),
 }
@@ -139,13 +140,17 @@ impl Ty {
             .fold(ret, |ret, param| Self::intern(TyKind::Fn { param, ret }))
     }
 
+    pub fn name_from_path(path: &Path) -> TyPath {
+        Self::intern_path(path.as_slice().iter().map(|id| id.ident).collect())
+    }
+
     pub fn unit() -> Self {
         Self::intern(TyKind::Tuple(Self::empty_slice()))
     }
 
     pub fn list(ty: Self) -> Self {
         Self::intern(TyKind::Named {
-            name: mod_path!(list::List),
+            name: ty_path!(list::List),
             args: Self::intern_slice(vec![ty]),
         })
     }
