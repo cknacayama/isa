@@ -84,14 +84,14 @@ impl Path {
         *self.segments.last().unwrap()
     }
 
-    pub fn as_ident(&self) -> Option<Ident> {
+    pub const fn as_ident(&self) -> Option<Ident> {
         match self.as_slice() {
             [id] => Some(*id),
             _ => None,
         }
     }
 
-    pub fn from_vec(segments: Vec<Ident>) -> Self {
+    pub const fn from_vec(segments: Vec<Ident>) -> Self {
         Self { segments }
     }
 }

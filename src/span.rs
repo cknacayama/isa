@@ -20,12 +20,20 @@ impl SpanData {
         }
     }
 
+    #[inline]
     #[must_use]
-    pub fn join(&self, other: &Self) -> Self {
+    pub const fn join(&self, other: &Self) -> Self {
+        const fn min(lhs: usize, rhs: usize) -> usize {
+            if rhs < lhs { rhs } else { lhs }
+        }
+        const fn max(lhs: usize, rhs: usize) -> usize {
+            if rhs < lhs { lhs } else { rhs }
+        }
+
         Self {
             file_id: self.file_id,
-            start:   std::cmp::min(self.start, other.start),
-            end:     std::cmp::max(self.end, other.end),
+            start:   min(self.start, other.start),
+            end:     max(self.end, other.end),
         }
     }
 

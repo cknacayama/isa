@@ -314,7 +314,8 @@ struct FilesDatabase {
 }
 
 impl FilesDatabase {
-    fn add<Name: ToString>(&mut self, name: Name, source: String) -> usize {
+    #[allow(clippy::needless_pass_by_value)]
+    fn add(&mut self, name: impl ToString, source: String) -> usize {
         let cur = self.files.len();
         self.files.push(SimpleFile::new(name.to_string(), source));
         cur

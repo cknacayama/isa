@@ -3,7 +3,6 @@ use std::str::Chars;
 use super::error::{LexError, LexErrorKind};
 use super::token::{Token, TokenKind};
 use crate::global::{Span, Symbol};
-use crate::span::SpanData;
 
 const EOF: char = '\0';
 
@@ -75,14 +74,12 @@ impl<'a> Lexer<'a> {
     }
 
     fn make_token(&self, kind: TokenKind) -> Token {
-        let span = SpanData::new(self.file_id, self.start, self.cur);
-        let span = Span::intern(span);
+        let span = Span::intern(self.start, self.cur, self.file_id);
         Token::new(kind, span)
     }
 
     fn make_err(&self, kind: LexErrorKind) -> LexError {
-        let span = SpanData::new(self.file_id, self.start, self.cur);
-        let span = Span::intern(span);
+        let span = Span::intern(self.start, self.cur, self.file_id);
         LexError::new(kind, span)
     }
 

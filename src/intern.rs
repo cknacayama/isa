@@ -25,16 +25,16 @@ impl<'a, T: ?Sized> Interned<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> Clone for Interned<'a, T> {
+impl<T: ?Sized> Clone for Interned<'_, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'a, T: ?Sized> Copy for Interned<'a, T> {
+impl<T: ?Sized> Copy for Interned<'_, T> {
 }
 
-impl<'a, T: ?Sized> Deref for Interned<'a, T> {
+impl<T: ?Sized> Deref for Interned<'_, T> {
     type Target = T;
 
     #[inline]
@@ -43,21 +43,18 @@ impl<'a, T: ?Sized> Deref for Interned<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> PartialEq for Interned<'a, T> {
+impl<T: ?Sized> PartialEq for Interned<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         ptr::eq(self.0, other.0)
     }
 }
 
-impl<'a, T: ?Sized> Eq for Interned<'a, T> {
+impl<T: ?Sized> Eq for Interned<'_, T> {
 }
 
-impl<'a, T: ?Sized> Hash for Interned<'a, T>
-where
-    T: Hash,
-{
+impl<T: ?Sized + Hash> Hash for Interned<'_, T> {
     fn hash<H: Hasher>(&self, s: &mut H) {
-        ptr::hash(self.0, s)
+        ptr::hash(self.0, s);
     }
 }
 
@@ -70,7 +67,7 @@ impl<T: ?Sized + Debug> Debug for Interned<'_, T> {
 #[derive(PartialEq, Eq, Hash)]
 pub struct InternedIdx<'a, I, T: ?Sized>(I, PhantomData<&'a T>, PrivateZst);
 
-impl<'a, I: Copy, T: ?Sized> InternedIdx<'a, I, T> {
+impl<I: Copy, T: ?Sized> InternedIdx<'_, I, T> {
     #[inline]
     pub const fn new_unchecked(idx: I) -> Self {
         Self(idx, PhantomData, PrivateZst)
@@ -82,13 +79,13 @@ impl<'a, I: Copy, T: ?Sized> InternedIdx<'a, I, T> {
     }
 }
 
-impl<'a, I: Copy, T: ?Sized> Clone for InternedIdx<'a, I, T> {
+impl<I: Copy, T: ?Sized> Clone for InternedIdx<'_, I, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'a, I: Copy, T: ?Sized> Copy for InternedIdx<'a, I, T> {
+impl<I: Copy, T: ?Sized> Copy for InternedIdx<'_, I, T> {
 }
 
 pub trait Interner<'a, T: ?Sized> {

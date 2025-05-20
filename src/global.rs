@@ -11,9 +11,6 @@ use crate::span::SpanData;
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(u32);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Span(u32);
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ty(Interned<'static, TyKind>);
 
@@ -75,30 +72,6 @@ impl TyPath {
         Env::get(|env| env.ctx.get(self.0))
     }
 }
-
-impl Default for Span {
-    fn default() -> Self {
-        Self::zero()
-    }
-}
-
-impl Span {
-    #[must_use]
-    pub const fn new(idx: u32) -> Self {
-        Self(idx)
-    }
-
-    #[must_use]
-    pub const fn index(self) -> usize {
-        self.0 as usize
-    }
-
-    #[must_use]
-    pub const fn zero() -> Self {
-        Self(0)
-    }
-}
-
 impl Default for Symbol {
     fn default() -> Self {
         Self::zero()
@@ -152,42 +125,6 @@ impl Display for TyPath {
     }
 }
 
-impl Span {
-    pub fn intern(span: SpanData) -> Self {
-        Env::get(|mut e| e.spans.intern(span))
-    }
-
-    #[must_use]
-    pub fn join(self, other: Self) -> Self {
-        let (self_data, other_data) =
-            Env::get(|e| (e.spans.get(self).unwrap(), e.spans.get(other).unwrap()));
-        let new_data = self_data.join(&other_data);
-        Self::intern(new_data)
-    }
-
-    #[must_use]
-    pub fn file_id(self) -> usize {
-        let data = Env::get(|e| e.spans.get(self).unwrap());
-        data.file_id()
-    }
-}
-
-impl From<Span> for Range<usize> {
-    fn from(value: Span) -> Self {
-        let data = Env::get(|e| e.spans.get(value).unwrap_or_default());
-        data.start()..data.end()
-    }
-}
-
-impl Debug for Span {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match Env::get(|e| e.spans.get(*self)) {
-            Some(span) => write!(f, "{span:?}"),
-            None => f.debug_tuple("Span").field(&self.0).finish(),
-        }
-    }
-}
-
 #[derive(Default)]
 struct Env {
     symbols: SymbolInterner,
@@ -205,7 +142,7 @@ impl Env {
 impl Ty {
     #[must_use]
     pub const fn new_unchecked(ty: &'static TyKind) -> Self {
-        Ty(Interned::new_unchecked(ty))
+        Self(Interned::new_unchecked(ty))
     }
 
     #[inline]
@@ -235,22 +172,22 @@ impl Ty {
 
     #[must_use]
     pub const fn int() -> Self {
-        Ty(Interned::new_unchecked(INT))
+        Self(Interned::new_unchecked(INT))
     }
 
     #[must_use]
     pub const fn bool() -> Self {
-        Ty(Interned::new_unchecked(BOOL))
+        Self(Interned::new_unchecked(BOOL))
     }
 
     #[must_use]
     pub const fn char() -> Self {
-        Ty(Interned::new_unchecked(CHAR))
+        Self(Interned::new_unchecked(CHAR))
     }
 
     #[must_use]
     pub const fn real() -> Self {
-        Ty(Interned::new_unchecked(REAL))
+        Self(Interned::new_unchecked(REAL))
     }
 
     #[must_use]
@@ -335,14 +272,14 @@ struct SpanInterner {
 }
 
 impl SpanInterner {
-    fn get(&self, span: Span) -> Option<SpanData> {
-        self.spans.get(span.index()).copied()
+    fn get(&self, span: u32) -> SpanData {
+        self.spans[span as usize]
     }
 
     fn intern(&mut self, span: SpanData) -> Span {
         let idx = self.spans.len().try_into().unwrap();
         self.spans.push(span);
-        Span::new(idx)
+        Span::new_interned(idx)
     }
 }
 
@@ -355,12 +292,12 @@ struct GlobalCtx {
     names:        Vec<&'static [Symbol]>,
 }
 
-static INT: &'static TyKind = &TyKind::Int;
-static BOOL: &'static TyKind = &TyKind::Bool;
-static CHAR: &'static TyKind = &TyKind::Char;
-static REAL: &'static TyKind = &TyKind::Real;
-static EMPTY_SLICE: &'static [Ty] = &[];
-static EMPTY_QUANT: &'static [TyId] = &[];
+static INT: &TyKind = &TyKind::Int;
+static BOOL: &TyKind = &TyKind::Bool;
+static CHAR: &TyKind = &TyKind::Char;
+static REAL: &TyKind = &TyKind::Real;
+static EMPTY_SLICE: &[Ty] = &[];
+static EMPTY_QUANT: &[TyId] = &[];
 
 impl GlobalCtx {
     const fn try_get_primitive(ty: &TyKind) -> Option<&'static TyKind> {
@@ -467,3 +404,147 @@ macro_rules! ty_path {
     }};
 }
 pub(crate) use ty_path;
+
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+pub struct Span {
+    lo_or_index:       u32,
+    len:               u16,
+    file_id_or_marker: u16,
+}
+
+#[derive(Clone, Copy)]
+struct InlineSpan {
+    lo:      u32,
+    len:     u16,
+    file_id: u16,
+}
+
+impl InlineSpan {
+    const fn from_span(span: Span) -> Self {
+        Self {
+            lo:      span.lo_or_index,
+            len:     span.len,
+            file_id: span.file_id_or_marker,
+        }
+    }
+
+    const fn data(self) -> SpanData {
+        let lo = self.lo as usize;
+        let hi = lo + self.len as usize;
+        SpanData::new(self.file_id as usize, lo, hi)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct InternSpan {
+    index: u32,
+}
+
+impl InternSpan {
+    const fn from_span(span: Span) -> Self {
+        Self {
+            index: span.lo_or_index,
+        }
+    }
+}
+
+macro_rules! match_span_kind {
+    (
+        $span:expr,
+        InlineSpan($span1:ident) => $arm1:expr,
+        InternSpan($span2:ident) => $arm2:expr,
+    ) => {
+        if $span.file_id_or_marker != INTERNED_TAG {
+            let $span1 = InlineSpan::from_span($span);
+            $arm1
+        } else {
+            let $span2 = InternSpan::from_span($span);
+            $arm2
+        }
+    };
+}
+
+const MAX_LEN: u16 = u16::MAX;
+const MAX_LO: u32 = u32::MAX;
+const MAX_FILE_ID: u16 = 0b0111_1111_1111_1111;
+const INTERNED_TAG: u16 = !MAX_FILE_ID;
+
+impl Default for Span {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
+
+impl Span {
+    #[must_use]
+    const fn new_interned(idx: u32) -> Self {
+        Self {
+            lo_or_index:       idx,
+            len:               0,
+            file_id_or_marker: INTERNED_TAG,
+        }
+    }
+
+    #[must_use]
+    pub const fn zero() -> Self {
+        Self::new_interned(0)
+    }
+
+    pub fn intern(lo: usize, hi: usize, file_id: usize) -> Self {
+        let len = hi - lo;
+        if lo > MAX_LO as usize || file_id > MAX_FILE_ID as usize || len > MAX_LEN as usize {
+            Env::get(|mut e| e.spans.intern(SpanData::new(file_id, lo, hi)))
+        } else {
+            #[allow(clippy::cast_possible_truncation)]
+            Self {
+                lo_or_index:       lo as u32,
+                len:               len as u16,
+                file_id_or_marker: file_id as u16,
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn join(self, other: Self) -> Self {
+        // FIXME: shouldn't need to lock
+        // global state twice
+        let lhs = self.data();
+        let rhs = other.data();
+
+        let span = lhs.join(&rhs);
+        Self::intern(span.start(), span.end(), span.file_id())
+    }
+
+    #[must_use]
+    pub fn file_id(self) -> usize {
+        match_span_kind!(self,
+            InlineSpan(span) => span.file_id as usize,
+            InternSpan(span) => {
+                Env::get(|e| e.spans.get(span.index).file_id())
+            },
+        )
+    }
+
+    fn data(self) -> SpanData {
+        match_span_kind!(self,
+            InlineSpan(span) => span.data(),
+            InternSpan(span) => {
+                Env::get(|e| e.spans.get(span.index))
+            },
+        )
+    }
+}
+
+impl From<Span> for Range<usize> {
+    fn from(value: Span) -> Self {
+        let data = value.data();
+        data.start()..data.end()
+    }
+}
+
+impl Debug for Span {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let data = self.data();
+        write!(f, "{data:?}")
+    }
+}
