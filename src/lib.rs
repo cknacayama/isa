@@ -4,6 +4,7 @@ pub mod driver;
 
 pub(crate) mod compiler;
 pub(crate) mod global;
+pub(crate) mod intern;
 pub(crate) mod report;
 pub(crate) mod span;
 

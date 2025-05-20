@@ -1,11 +1,11 @@
 use std::fmt::{Debug, Display};
-use std::hash::{Hash, Hasher};
 use std::ops::{Deref, Range};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::compiler::types::{TyId, TyKind};
+use crate::intern::{IdxInterner, Interned, InternedIdx, Interner};
 use crate::span::SpanData;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -14,31 +14,31 @@ pub struct Symbol(u32);
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Span(u32);
 
-#[derive(Clone, Copy)]
-pub struct Ty(&'static TyKind);
-
-#[derive(Clone, Copy)]
-pub struct TySlice(&'static [Ty]);
-
-#[derive(Clone, Copy)]
-pub struct TyQuant(&'static [TyId]);
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Ty(Interned<'static, TyKind>);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TyPath(u32);
+pub struct TySlice(Interned<'static, [Ty]>);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TyQuant(Interned<'static, [TyId]>);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TyPath(InternedIdx<'static, u32, [Symbol]>);
 
 impl Debug for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(self.0, f)
+        Debug::fmt(&self.0, f)
     }
 }
 impl Debug for TySlice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(self.0, f)
+        Debug::fmt(&self.0, f)
     }
 }
 impl Debug for TyQuant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(self.0, f)
+        Debug::fmt(&self.0, f)
     }
 }
 
@@ -46,7 +46,7 @@ impl Deref for TySlice {
     type Target = [Ty];
 
     fn deref(&self) -> &'static Self::Target {
-        self.0
+        self.0.interned()
     }
 }
 
@@ -66,58 +66,13 @@ impl Deref for TyQuant {
     type Target = [TyId];
 
     fn deref(&self) -> &'static Self::Target {
-        self.0
+        self.0.interned()
     }
-}
-
-impl Hash for Ty {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        std::ptr::hash(self.0, state);
-    }
-}
-
-impl PartialEq for Ty {
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self.0, other.0)
-    }
-}
-
-impl Eq for Ty {
-}
-
-impl Hash for TySlice {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        std::ptr::hash(self.0, state);
-    }
-}
-
-impl PartialEq for TySlice {
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self.0, other.0)
-    }
-}
-
-impl Eq for TySlice {
-}
-
-impl Hash for TyQuant {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        std::ptr::hash(self.0, state);
-    }
-}
-
-impl PartialEq for TyQuant {
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self.0, other.0)
-    }
-}
-
-impl Eq for TyQuant {
 }
 
 impl TyPath {
     pub fn get(self) -> &'static [Symbol] {
-        Env::get(|env| env.ctx.get_name(self))
+        Env::get(|env| env.ctx.get(self.0))
     }
 }
 
@@ -185,14 +140,14 @@ impl Display for Symbol {
 
 impl Debug for TyPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = Env::get(|e| e.ctx.get_name(*self));
+        let name = Env::get(|e| e.ctx.get(self.0));
         Debug::fmt(name, f)
     }
 }
 
 impl Display for TyPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = Env::get(|e| e.ctx.get_name(*self));
+        let name = Env::get(|e| e.ctx.get(self.0));
         write!(f, "{}", name.last().unwrap())
     }
 }
@@ -249,17 +204,17 @@ impl Env {
 
 impl Ty {
     #[must_use]
-    pub const fn new_unchecked(kind: &'static TyKind) -> Self {
-        Self(kind)
+    pub const fn new_unchecked(ty: &'static TyKind) -> Self {
+        Ty(Interned::new_unchecked(ty))
     }
 
     #[inline]
     pub const fn kind(self) -> &'static TyKind {
-        self.0
+        self.0.interned()
     }
 
     pub fn intern(ty: TyKind) -> Self {
-        Env::get(|mut e| e.ctx.intern(ty))
+        Env::get(|mut e| Self(e.ctx.intern(ty)))
     }
 
     pub fn force_insert(ty: TyKind) -> Self {
@@ -267,45 +222,45 @@ impl Ty {
     }
 
     pub fn intern_slice(ty: Vec<Self>) -> TySlice {
-        Env::get(|mut e| e.ctx.intern_slice(ty))
+        Env::get(|mut e| TySlice(e.ctx.intern(ty)))
     }
 
     pub fn intern_quant(ty: Vec<TyId>) -> TyQuant {
-        Env::get(|mut e| e.ctx.intern_quant(ty))
+        Env::get(|mut e| TyQuant(e.ctx.intern(ty)))
     }
 
     pub fn intern_path(name: Vec<Symbol>) -> TyPath {
-        Env::get(|mut e| e.ctx.intern_name(name))
+        Env::get(|mut e| TyPath(e.ctx.intern_idx(name)))
     }
 
     #[must_use]
     pub const fn int() -> Self {
-        INT
+        Ty(Interned::new_unchecked(INT))
     }
 
     #[must_use]
     pub const fn bool() -> Self {
-        BOOL
+        Ty(Interned::new_unchecked(BOOL))
     }
 
     #[must_use]
     pub const fn char() -> Self {
-        CHAR
+        Ty(Interned::new_unchecked(CHAR))
     }
 
     #[must_use]
     pub const fn real() -> Self {
-        REAL
+        Ty(Interned::new_unchecked(REAL))
     }
 
     #[must_use]
     pub const fn empty_slice() -> TySlice {
-        EMPTY_SLICE
+        TySlice(Interned::new_unchecked(EMPTY_SLICE))
     }
 
     #[must_use]
     pub const fn empty_quant() -> TyQuant {
-        EMPTY_QUANT
+        TyQuant(Interned::new_unchecked(EMPTY_QUANT))
     }
 }
 
@@ -400,15 +355,15 @@ struct GlobalCtx {
     names:        Vec<&'static [Symbol]>,
 }
 
-static INT: Ty = Ty(&TyKind::Int);
-static BOOL: Ty = Ty(&TyKind::Bool);
-static CHAR: Ty = Ty(&TyKind::Char);
-static REAL: Ty = Ty(&TyKind::Real);
-static EMPTY_SLICE: TySlice = TySlice(&[]);
-static EMPTY_QUANT: TyQuant = TyQuant(&[]);
+static INT: &'static TyKind = &TyKind::Int;
+static BOOL: &'static TyKind = &TyKind::Bool;
+static CHAR: &'static TyKind = &TyKind::Char;
+static REAL: &'static TyKind = &TyKind::Real;
+static EMPTY_SLICE: &'static [Ty] = &[];
+static EMPTY_QUANT: &'static [TyId] = &[];
 
 impl GlobalCtx {
-    const fn try_get_primitive(ty: &TyKind) -> Option<Ty> {
+    const fn try_get_primitive(ty: &TyKind) -> Option<&'static TyKind> {
         match ty {
             TyKind::Int => Some(INT),
             TyKind::Bool => Some(BOOL),
@@ -421,64 +376,80 @@ impl GlobalCtx {
     fn force_insert(&mut self, ty: TyKind) -> Ty {
         let ty = Box::leak(Box::new(ty));
         self.types.insert(ty);
-        Ty(ty)
+        Ty(Interned::new_unchecked(ty))
     }
+}
 
-    fn intern(&mut self, ty: TyKind) -> Ty {
+impl Interner<'static, TyKind> for GlobalCtx {
+    type Data = TyKind;
+
+    fn intern(&mut self, ty: Self::Data) -> Interned<'static, TyKind> {
         if let Some(ty) = Self::try_get_primitive(&ty) {
-            return ty;
+            return Interned::new_unchecked(ty);
         }
         if let Some(ty) = self.types.get(&ty) {
-            return Ty(ty);
+            return Interned::new_unchecked(ty);
         }
 
         let ty = Box::leak(Box::new(ty));
         self.types.insert(ty);
-        Ty(ty)
+        Interned::new_unchecked(ty)
     }
+}
 
-    fn intern_slice(&mut self, ty: Vec<Ty>) -> TySlice {
-        if ty.is_empty() {
-            return EMPTY_SLICE;
+impl Interner<'static, [Ty]> for GlobalCtx {
+    type Data = Vec<Ty>;
+
+    fn intern(&mut self, slice: Self::Data) -> Interned<'static, [Ty]> {
+        if slice.is_empty() {
+            return Interned::new_unchecked(EMPTY_SLICE);
         }
 
-        if let Some(slice) = self.slices.get(ty.as_slice()) {
-            return TySlice(slice);
+        if let Some(slice) = self.slices.get(slice.as_slice()) {
+            return Interned::new_unchecked(*slice);
         }
 
-        let slice = Box::leak(ty.into_boxed_slice());
+        let slice = Box::leak(slice.into_boxed_slice());
         self.slices.insert(slice);
-        TySlice(slice)
+        Interned::new_unchecked(slice)
     }
+}
 
-    fn intern_quant(&mut self, ty: Vec<TyId>) -> TyQuant {
-        if ty.is_empty() {
-            return EMPTY_QUANT;
+impl Interner<'static, [TyId]> for GlobalCtx {
+    type Data = Vec<TyId>;
+
+    fn intern(&mut self, data: Self::Data) -> Interned<'static, [TyId]> {
+        if data.is_empty() {
+            return Interned::new_unchecked(EMPTY_QUANT);
         }
 
-        if let Some(slice) = self.quantifiers.get(ty.as_slice()) {
-            return TyQuant(slice);
+        if let Some(slice) = self.quantifiers.get(data.as_slice()) {
+            return Interned::new_unchecked(slice);
         }
 
-        let slice = Box::leak(ty.into_boxed_slice());
+        let slice = Box::leak(data.into_boxed_slice());
         self.quantifiers.insert(slice);
-        TyQuant(slice)
+        Interned::new_unchecked(slice)
     }
+}
 
-    fn intern_name(&mut self, name: Vec<Symbol>) -> TyPath {
-        if let Some(idx) = self.name_indexes.get(name.as_slice()) {
-            return TyPath(*idx);
+impl IdxInterner<'static, u32, [Symbol]> for GlobalCtx {
+    type Data = Vec<Symbol>;
+
+    fn intern_idx(&mut self, data: Self::Data) -> InternedIdx<'static, u32, [Symbol]> {
+        if let Some(idx) = self.name_indexes.get(data.as_slice()) {
+            return InternedIdx::new_unchecked(*idx);
         }
 
-        let name = Box::leak(name.into_boxed_slice());
+        let name = Box::leak(data.into_boxed_slice());
         let idx = self.names.len().try_into().unwrap();
         self.name_indexes.insert(name, idx);
         self.names.push(name);
-        TyPath(idx)
+        InternedIdx::new_unchecked(idx)
     }
 
-    fn get_name(&self, name: TyPath) -> &'static [Symbol] {
-        self.names[name.0 as usize]
+    fn get(&self, idx: InternedIdx<'static, u32, [Symbol]>) -> &'static [Symbol] {
+        self.names[idx.index() as usize]
     }
 }
 
