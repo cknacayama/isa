@@ -33,8 +33,7 @@ impl Display for LexErrorKind {
     }
 }
 
-impl std::error::Error for LexErrorKind {
-}
+impl std::error::Error for LexErrorKind {}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ParseErrorKind {
@@ -70,8 +69,7 @@ impl Display for ParseErrorKind {
         }
     }
 }
-impl std::error::Error for ParseErrorKind {
-}
+impl std::error::Error for ParseErrorKind {}
 
 #[derive(Debug, Clone)]
 pub struct Uninferable {
@@ -393,11 +391,8 @@ impl Display for MatchNonExhaustive {
     }
 }
 
-impl std::error::Error for Uninferable {
-}
+impl std::error::Error for Uninferable {}
 
-impl std::error::Error for IsaError {
-}
+impl std::error::Error for IsaError {}
 
-impl std::error::Error for MatchNonExhaustive {
-}
+impl std::error::Error for MatchNonExhaustive {}

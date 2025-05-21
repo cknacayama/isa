@@ -253,8 +253,7 @@ pub struct ClassConstraint {
     span:  Span,
 }
 
-impl Eq for ClassConstraint {
-}
+impl Eq for ClassConstraint {}
 
 impl PartialEq for ClassConstraint {
     fn eq(&self, other: &Self) -> bool {

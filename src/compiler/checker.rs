@@ -524,12 +524,7 @@ impl Checker {
             span:   constructor.span,
             ty:     ret,
         };
-        let ctor = Constructor {
-            name: constructor.name,
-            params,
-            span: constructor.span,
-            ty: ret,
-        };
+        let ctor = Constructor::new(constructor.name, params, constructor.span, ret);
         Ok((hi, ctor))
     }
 

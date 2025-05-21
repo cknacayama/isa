@@ -55,8 +55,7 @@ pub struct Spand<T> {
     pub span: Span,
 }
 
-impl<T: Eq> Eq for Spand<T> {
-}
+impl<T: Eq> Eq for Spand<T> {}
 
 impl<T: PartialEq> PartialEq for Spand<T> {
     fn eq(&self, other: &Self) -> bool {
@@ -70,8 +69,7 @@ impl<T: Display> Display for Spand<T> {
     }
 }
 
-impl<T: Error> Error for Spand<T> {
-}
+impl<T: Error> Error for Spand<T> {}
 
 impl<T> Spand<T> {
     pub const fn new(data: T, span: Span) -> Self {

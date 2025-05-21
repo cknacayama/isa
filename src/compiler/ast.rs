@@ -45,8 +45,7 @@ impl PartialEq for Ident {
     }
 }
 
-impl Eq for Ident {
-}
+impl Eq for Ident {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Path {
@@ -303,8 +302,7 @@ impl PartialEq for HiTy {
     }
 }
 
-impl Eq for HiTy {
-}
+impl Eq for HiTy {}
 
 impl HiTy {
     #[must_use]
@@ -726,8 +724,7 @@ fn rename_slice(ren: &impl Rename, slice: &mut [HiTy]) {
 pub trait Rename: Sized {
     fn rename_hi_ty(&self, ty: &mut HiTy);
 
-    fn rename_class(&self, _class: &mut Path) {
-    }
+    fn rename_class(&self, _class: &mut Path) {}
 
     fn rename_ctor<T>(&self, ctor: &mut HiCtor<T>) {
         rename_slice(self, &mut ctor.params);

@@ -20,10 +20,6 @@ pub struct Ctx<'a> {
 }
 
 impl<'a> Ctx<'a> {
-    const fn new(ctx: &'a TypeCtx) -> Self {
-        Self { ctx }
-    }
-
     fn ctors_for_ty(&self, ty: Ty) -> CtorSet {
         match ty.kind() {
             TyKind::Tuple(_) => CtorSet::Single,
@@ -41,10 +37,6 @@ impl<'a> Ctx<'a> {
             }
             TyKind::This(_) => unreachable!(),
         }
-    }
-
-    fn ctor_arity(&self, ty: Ty, ctor: &Ctor) -> usize {
-        self.ctor_subtypes(ty, ctor).len()
     }
 
     fn ctor_subtypes(&self, ty: Ty, ctor: &Ctor) -> TySlice {
@@ -94,13 +86,13 @@ impl Pattern {
             PatKind::List(list) => {
                 let list_ty = ctx.get_constructors_for_ty(ty_path!(list::List));
                 let nil = Symbol::intern("Nil");
-                let nil_idx = list_ty.iter().position(|c| c.name.ident == nil).unwrap();
+                let nil_idx = list_ty.iter().position(|c| c.name().ident == nil).unwrap();
                 match list {
                     ListPat::Nil => Self::new(Ctor::Type(nil_idx), Vec::new()),
                     ListPat::Single(pat) => {
                         let pat = Self::from_ast_pat(pat, ctx);
                         let cons = Symbol::intern("Cons");
-                        let cons_idx = list_ty.iter().position(|c| c.name.ident == cons).unwrap();
+                        let cons_idx = list_ty.iter().position(|c| c.name().ident == cons).unwrap();
                         let fields =
                             vec![(0, pat), (1, Self::new(Ctor::Type(nil_idx), Vec::new()))];
                         Self::new(Ctor::Type(cons_idx), fields)
@@ -109,7 +101,7 @@ impl Pattern {
                         let pat = Self::from_ast_pat(pat, ctx);
                         let pat1 = Self::from_ast_pat(pat1, ctx);
                         let cons = Symbol::intern("Cons");
-                        let cons_idx = list_ty.iter().position(|c| c.name.ident == cons).unwrap();
+                        let cons_idx = list_ty.iter().position(|c| c.name().ident == cons).unwrap();
                         let fields = vec![(0, pat), (1, pat1)];
                         Self::new(Ctor::Type(cons_idx), fields)
                     }
@@ -159,7 +151,7 @@ impl Pattern {
                 let idx = ctx
                     .get_constructors_for_ty(*ty_name)
                     .iter()
-                    .position(|c| name == c.name)
+                    .position(|c| name == c.name())
                     .unwrap();
                 Self::new(Ctor::Type(idx), fields)
             }
@@ -387,7 +379,7 @@ fn check_match_pats<'a>(
         matrix.push(row);
     }
 
-    let ctx = Ctx::new(ctx);
+    let ctx = Ctx { ctx };
 
     matrix.compute_exhaustiveness(&ctx).single_column()
 }

@@ -77,7 +77,7 @@ impl WitnessVector {
 
     fn apply_constructor(&mut self, ctor: Ctor, ty: Ty, ctx: &Ctx) {
         let len = self.0.len();
-        let arity = ctx.ctor_arity(ty, &ctor);
+        let arity = ctx.ctor_subtypes(ty, &ctor).len();
         let fields = self.0.drain((len - arity)..).rev().collect();
         self.0.push(WitnessPat::new(ctor, fields, ty));
     }
@@ -171,10 +171,6 @@ impl Pattern {
         &self.ctor
     }
 
-    const fn is_or_pat(&self) -> bool {
-        self.ctor().is_or()
-    }
-
     fn iter_fields(&self) -> impl Iterator<Item = (usize, &Self)> {
         self.fields.iter().map(|(i, pat)| (*i, pat))
     }
@@ -196,7 +192,7 @@ impl<'a> PatOrWild<'a> {
 
     fn expand_or_pat(self) -> Vec<Self> {
         match self {
-            PatOrWild::Pat(pat) if pat.is_or_pat() => pat
+            PatOrWild::Pat(pat) if pat.ctor().is_or() => pat
                 .iter_fields()
                 .map(|(_, pat)| PatOrWild::Pat(pat))
                 .collect(),

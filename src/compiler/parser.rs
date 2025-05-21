@@ -38,11 +38,7 @@ impl Parser {
     where
         P: FnOnce(TokenKind) -> bool,
     {
-        self.peek_kind().is_some_and(p)
-    }
-
-    fn peek_kind(&self) -> Option<TokenKind> {
-        self.peek().map(|tk| tk.data)
+        self.peek().map(|tk| tk.data).is_some_and(p)
     }
 
     const fn eat(&mut self) {

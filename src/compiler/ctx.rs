@@ -13,10 +13,27 @@ use crate::global::{Span, Symbol};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Constructor {
-    pub name:   Ident,
-    pub params: TySlice,
-    pub span:   Span,
-    pub ty:     Ty,
+    name:   Ident,
+    params: TySlice,
+    span:   Span,
+    ty:     Ty,
+}
+
+impl Constructor {
+    #[must_use]
+    pub const fn new(name: Ident, params: TySlice, span: Span, ty: Ty) -> Self {
+        Self {
+            name,
+            params,
+            span,
+            ty,
+        }
+    }
+
+    #[must_use]
+    pub const fn name(&self) -> Ident {
+        self.name
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -196,28 +213,11 @@ pub struct TyData {
 }
 
 impl TyData {
-    #[must_use]
-    const fn new(params: TyQuant, constructors: Vec<Constructor>, span: Span) -> Self {
-        Self {
-            params,
-            constructors,
-            span,
-        }
-    }
-
-    fn constructors(&self) -> &[Constructor] {
-        &self.constructors
-    }
-
-    pub fn find_constructor(&self, ctor: Ident) -> CheckResult<&Constructor> {
+    fn find_constructor(&self, ctor: Ident) -> CheckResult<&Constructor> {
         self.constructors
             .iter()
             .find(|c| c.name == ctor)
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::NotConstructorName, ctor))
-    }
-
-    fn params(&self) -> &[TyId] {
-        &self.params
     }
 }
 
@@ -231,11 +231,6 @@ impl InstanceData {
     #[must_use]
     pub const fn new(set: ClassConstraintSet, span: Span) -> Self {
         Self { set, span }
-    }
-
-    #[must_use]
-    pub const fn set(&self) -> &ClassConstraintSet {
-        &self.set
     }
 }
 
@@ -496,6 +491,7 @@ impl Ctx {
         self.env.pop()
     }
 
+    #[must_use]
     fn free_type_variables(&self) -> Vec<TyId> {
         self.env
             .iter()
@@ -546,7 +542,14 @@ impl Ctx {
         let module = self.current_mut()?;
 
         module
-            .insert_type(name.ident, TyData::new(params, Vec::new(), name.span))
+            .insert_type(
+                name.ident,
+                TyData {
+                    params,
+                    constructors: Vec::new(),
+                    span: name.span,
+                },
+            )
             .map_or(Ok(()), |prev| {
                 let prev = match prev {
                     ImportData::Import(ident) => {
@@ -935,8 +938,7 @@ impl Ctx {
 
         if let Some((span, _)) = constrs.iter().find(|(_, set)| {
             set.iter().all(|c| c.ty().is_var())
-                && (data.set().is_empty()
-                    || data.set().iter().any(|c| self.set_contains_class(set, c)))
+                && (data.set.is_empty() || data.set.iter().any(|c| self.set_contains_class(set, c)))
         }) {
             return Err(CheckError::new(
                 CheckErrorKind::MultipleInstances(class.clone(), instance, *span),
@@ -1087,7 +1089,7 @@ impl Ctx {
             .filter_map(|(inst, data)| {
                 inst.get_scheme_ty()?
                     .zip_args(ty)
-                    .map(|args| (args, data.set().iter(), data.span))
+                    .map(|args| (args, data.set.iter(), data.span))
             })
             .map(|(args, set, inst_span)| {
                 let mut new = ClassConstraintSet::new();
@@ -1314,11 +1316,11 @@ impl Display for ModuleData {
                 chars: ('a'..='z').chain('A'..='Z').chain('0'..='9'),
             };
             write!(f, "  type {id}")?;
-            for p in ty.params() {
+            for p in ty.params.iter() {
                 write!(f, " '{}", chars.get(*p))?;
             }
             writeln!(f, " =")?;
-            for c in ty.constructors() {
+            for c in &ty.constructors {
                 write!(f, "    | {}", c.name)?;
                 for p in c.params.iter() {
                     write!(f, " ")?;

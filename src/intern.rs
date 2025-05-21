@@ -32,8 +32,7 @@ impl<T: ?Sized> Clone for Interned<'_, T> {
     }
 }
 
-impl<T: ?Sized> Copy for Interned<'_, T> {
-}
+impl<T: ?Sized> Copy for Interned<'_, T> {}
 
 impl<T: ?Sized> Deref for Interned<'_, T> {
     type Target = T;
@@ -50,8 +49,7 @@ impl<T: ?Sized> PartialEq for Interned<'_, T> {
     }
 }
 
-impl<T: ?Sized> Eq for Interned<'_, T> {
-}
+impl<T: ?Sized> Eq for Interned<'_, T> {}
 
 impl<T: ?Sized + Hash> Hash for Interned<'_, T> {
     fn hash<H: Hasher>(&self, s: &mut H) {
@@ -86,8 +84,7 @@ impl<I: Copy, T: ?Sized> Clone for InternedIdx<'_, I, T> {
     }
 }
 
-impl<I: Copy, T: ?Sized> Copy for InternedIdx<'_, I, T> {
-}
+impl<I: Copy, T: ?Sized> Copy for InternedIdx<'_, I, T> {}
 
 pub trait Interner<'a, T: ?Sized> {
     type Data;

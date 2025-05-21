@@ -12,6 +12,7 @@ use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use codespan_reporting::{files, term};
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use crate::comma_fmt;
 use crate::compiler::ast::Module;
 use crate::compiler::checker::Checker;
 use crate::compiler::ctx::Ctx;
@@ -22,7 +23,6 @@ use crate::compiler::parser::Parser;
 use crate::compiler::token::{Token, TokenKind};
 use crate::compiler::types::Ty;
 use crate::report::{Report, report_collection};
-use crate::separated_fmt;
 
 pub struct Driver {
     db: FilesDatabase,
@@ -103,10 +103,9 @@ impl Driver {
 
         let mut message = String::from("could not compile {");
 
-        let _ = separated_fmt(
+        let _ = comma_fmt(
             &mut message,
             files.into_iter().map(|id| self.db.get(id).unwrap().name()),
-            ", ",
             |file, msg| {
                 msg.push_str(file);
                 Ok(())
