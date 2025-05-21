@@ -141,6 +141,7 @@ pub trait Generator {
 pub struct IdGenerator(u32);
 
 impl IdGenerator {
+    #[must_use]
     pub const fn new() -> Self {
         Self(0)
     }
@@ -227,10 +228,12 @@ pub struct InstanceData {
 }
 
 impl InstanceData {
+    #[must_use]
     pub const fn new(set: ClassConstraintSet, span: Span) -> Self {
         Self { set, span }
     }
 
+    #[must_use]
     pub const fn set(&self) -> &ClassConstraintSet {
         &self.set
     }
@@ -254,6 +257,7 @@ pub struct ClassData {
 }
 
 impl ClassData {
+    #[must_use]
     pub fn new(span: Span) -> Self {
         Self {
             parents: Box::new([]),
@@ -275,18 +279,22 @@ impl ClassData {
         self.constraints = constraints;
     }
 
+    #[must_use]
     pub const fn signatures(&self) -> &FxHashMap<Ident, MemberData> {
         &self.signatures
     }
 
+    #[must_use]
     pub const fn span(&self) -> Span {
         self.span
     }
 
+    #[must_use]
     pub const fn constraints(&self) -> &ClassConstraintSet {
         &self.constraints
     }
 
+    #[must_use]
     pub fn parents(&self) -> &[Path] {
         &self.parents
     }
@@ -349,26 +357,32 @@ impl OperatorData {
         }
     }
 
+    #[must_use]
     pub const fn span(&self) -> Span {
         self.span
     }
 
+    #[must_use]
     pub const fn ty(&self) -> &Ty {
         &self.ty
     }
 
+    #[must_use]
     pub const fn set(&self) -> &ClassConstraintSet {
         &self.set
     }
 
+    #[must_use]
     pub const fn fixity(&self) -> Fixity {
         self.fixity
     }
 
+    #[must_use]
     pub const fn prec(&self) -> u8 {
         self.prec
     }
 
+    #[must_use]
     pub const fn class_member(&self) -> bool {
         self.class_member
     }
@@ -384,6 +398,7 @@ pub struct Ctx {
 }
 
 impl Ctx {
+    #[must_use]
     pub const fn current_module(&self) -> Ident {
         self.current_module
     }
@@ -437,6 +452,7 @@ impl Ctx {
             .ok_or_else(|| CheckError::from_ident(CheckErrorKind::Unbound, self.current_module))
     }
 
+    #[must_use]
     pub const fn current_depth(&self) -> usize {
         self.env.len()
     }

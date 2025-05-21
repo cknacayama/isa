@@ -25,6 +25,7 @@ impl Subs {
         self.old
     }
 
+    #[must_use]
     pub const fn subs(&self) -> Ty {
         self.subs
     }
@@ -163,6 +164,7 @@ impl EqConstraint {
         parent
     }
 
+    #[must_use]
     pub const fn span(&self) -> Span {
         self.span
     }
@@ -261,18 +263,22 @@ impl PartialEq for ClassConstraint {
 }
 
 impl ClassConstraint {
+    #[must_use]
     pub const fn new(class: Path, ty: Ty, span: Span) -> Self {
         Self { class, ty, span }
     }
 
+    #[must_use]
     pub const fn class(&self) -> &Path {
         &self.class
     }
 
+    #[must_use]
     pub const fn ty(&self) -> Ty {
         self.ty
     }
 
+    #[must_use]
     pub const fn span(&self) -> Span {
         self.span
     }
@@ -298,6 +304,7 @@ pub enum Constraint {
 }
 
 impl Constraint {
+    #[must_use]
     pub fn span(&self) -> Span {
         match self {
             Self::Eq(eq_constraint) => eq_constraint.span(),
@@ -346,13 +353,21 @@ impl DerefMut for ClassConstraintSet {
     }
 }
 
+impl Default for ClassConstraintSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClassConstraintSet {
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             constrs: Vec::new(),
         }
     }
 
+    #[must_use]
     pub fn join(mut self, other: Self) -> Self {
         self.extend(other);
         self

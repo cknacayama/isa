@@ -68,6 +68,7 @@ impl Deref for TyQuant {
 }
 
 impl TyPath {
+    #[must_use]
     pub fn get(self) -> &'static [Symbol] {
         Env::get(|env| env.ctx.get(self.0))
     }
@@ -84,10 +85,12 @@ impl Symbol {
         Self(0)
     }
 
+    #[must_use]
     pub fn intern(symbol: &str) -> Self {
         Env::get(|mut e| e.symbols.intern(symbol))
     }
 
+    #[must_use]
     pub fn intern_owned(symbol: String) -> Self {
         Env::get(|mut e| e.symbols.intern_owned(symbol))
     }
@@ -146,26 +149,32 @@ impl Ty {
     }
 
     #[inline]
+    #[must_use]
     pub const fn kind(self) -> &'static TyKind {
         self.0.interned()
     }
 
+    #[must_use]
     pub fn intern(ty: TyKind) -> Self {
         Env::get(|mut e| Self(e.ctx.intern(ty)))
     }
 
+    #[must_use]
     pub fn force_insert(ty: TyKind) -> Self {
         Env::get(|mut e| e.ctx.force_insert(ty))
     }
 
+    #[must_use]
     pub fn intern_slice(ty: Vec<Self>) -> TySlice {
         Env::get(|mut e| TySlice(e.ctx.intern(ty)))
     }
 
+    #[must_use]
     pub fn intern_quant(ty: Vec<TyId>) -> TyQuant {
         Env::get(|mut e| TyQuant(e.ctx.intern(ty)))
     }
 
+    #[must_use]
     pub fn intern_path(name: Vec<Symbol>) -> TyPath {
         Env::get(|mut e| TyPath(e.ctx.intern_idx(name)))
     }
@@ -490,6 +499,7 @@ impl Span {
         Self::new_interned(0)
     }
 
+    #[must_use]
     pub fn intern(lo: usize, hi: usize, file_id: usize) -> Self {
         let len = hi - lo;
         if lo > MAX_LO as usize || file_id > MAX_FILE_ID as usize || len > MAX_LEN as usize {
@@ -512,7 +522,7 @@ impl Span {
         let rhs = other.data();
 
         let span = lhs.join(&rhs);
-        Self::intern(span.start(), span.end(), span.file_id())
+        Self::intern(span.lo(), span.hi(), span.file_id())
     }
 
     #[must_use]
@@ -538,7 +548,7 @@ impl Span {
 impl From<Span> for Range<usize> {
     fn from(value: Span) -> Self {
         let data = value.data();
-        data.start()..data.end()
+        data.lo()..data.hi()
     }
 }
 

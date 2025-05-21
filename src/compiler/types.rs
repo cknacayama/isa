@@ -10,6 +10,7 @@ pub use crate::global::{Ty, TyPath, TyQuant, TySlice};
 pub struct TyId(u32);
 
 impl TyId {
+    #[must_use]
     pub const fn new(id: u32) -> Self {
         Self(id)
     }
@@ -31,6 +32,7 @@ pub enum TyKind {
 }
 
 impl TyKind {
+    #[must_use]
     pub const fn as_var(&self) -> Option<TyId> {
         if let Self::Var(v) = self {
             Some(*v)
@@ -72,6 +74,7 @@ impl Ty {
         (ty, subs)
     }
 
+    #[must_use]
     pub fn zip_args(self, rhs: Self) -> Option<Vec<(Self, Self)>> {
         match (self.kind(), rhs.kind()) {
             (TyKind::Named { name: n1, args: a1 }, TyKind::Named { name: n2, args: a2 })
@@ -102,6 +105,7 @@ impl Ty {
         }
     }
 
+    #[must_use]
     pub fn equivalent(self, rhs: Self) -> bool {
         match (self.kind(), rhs.kind()) {
             (TyKind::Named { name: n1, args: a1 }, TyKind::Named { name: n2, args: a2 }) => {
@@ -140,14 +144,17 @@ impl Ty {
             .fold(ret, |ret, param| Self::intern(TyKind::Fn { param, ret }))
     }
 
+    #[must_use]
     pub fn name_from_path(path: &Path) -> TyPath {
         Self::intern_path(path.as_slice().iter().map(|id| id.ident).collect())
     }
 
+    #[must_use]
     pub fn unit() -> Self {
         Self::intern(TyKind::Tuple(Self::empty_slice()))
     }
 
+    #[must_use]
     pub fn list(ty: Self) -> Self {
         Self::intern(TyKind::Named {
             name: ty_path!(list::List),
@@ -155,11 +162,13 @@ impl Ty {
         })
     }
 
+    #[must_use]
     pub fn tuple(args: Vec<Self>) -> Self {
         let args = Self::intern_slice(args);
         Self::intern(TyKind::Tuple(args))
     }
 
+    #[must_use]
     pub fn function_arity(self) -> usize {
         match self.kind() {
             TyKind::Fn { ret, .. } => 1 + ret.function_arity(),
@@ -178,6 +187,7 @@ impl Ty {
         matches!(self.kind(), TyKind::Char)
     }
 
+    #[must_use]
     pub fn is_simple_fmt(self) -> bool {
         match self.kind() {
             TyKind::Int
@@ -195,6 +205,7 @@ impl Ty {
         }
     }
 
+    #[must_use]
     pub const fn get_scheme_ty(self) -> Option<Self> {
         if let TyKind::Scheme { ty, .. } = self.kind() {
             Some(*ty)

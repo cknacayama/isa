@@ -234,6 +234,7 @@ pub struct RealRange {
 }
 
 impl RealRange {
+    #[must_use]
     pub const fn inclusive(lo: f64, hi: f64) -> Self {
         Self {
             lo,
@@ -242,6 +243,7 @@ impl RealRange {
         }
     }
 
+    #[must_use]
     pub const fn exclusive(lo: f64, hi: f64) -> Self {
         Self {
             lo,

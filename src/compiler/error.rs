@@ -82,6 +82,7 @@ pub struct Uninferable {
 }
 
 impl Uninferable {
+    #[must_use]
     pub fn new(constr: Constraint, subs: Vec<Subs>) -> Self {
         Self {
             constr,
@@ -89,10 +90,12 @@ impl Uninferable {
         }
     }
 
+    #[must_use]
     pub const fn constr(&self) -> &Constraint {
         &self.constr
     }
 
+    #[must_use]
     pub fn subs(&self) -> &[Subs] {
         &self.subs
     }
@@ -161,18 +164,22 @@ impl DiagnosticLabel {
         }
     }
 
+    #[must_use]
     pub fn as_primary(&self) -> Label<usize> {
         Label::primary(self.span().file_id(), self.span()).with_message(self.message())
     }
 
+    #[must_use]
     pub fn as_secondary(&self) -> Label<usize> {
         Label::secondary(self.span().file_id(), self.span()).with_message(self.message())
     }
 
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
 
+    #[must_use]
     pub const fn span(&self) -> Span {
         self.span
     }
@@ -304,6 +311,7 @@ impl IsaError {
     }
 
     #[allow(clippy::needless_pass_by_value)]
+    #[must_use]
     pub fn with_note(self, note: impl ToString) -> Self {
         Self {
             note: Some(note.to_string()),
@@ -312,23 +320,28 @@ impl IsaError {
     }
 
     #[allow(clippy::needless_pass_by_value)]
+    #[must_use]
     pub fn with_label(mut self, label: DiagnosticLabel) -> Self {
         self.labels.push(label);
         self
     }
 
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
 
+    #[must_use]
     pub const fn primary_label(&self) -> &DiagnosticLabel {
         &self.primary_label
     }
 
+    #[must_use]
     pub fn labels(&self) -> &[DiagnosticLabel] {
         &self.labels
     }
 
+    #[must_use]
     pub fn note(&self) -> Option<&str> {
         self.note.as_deref()
     }

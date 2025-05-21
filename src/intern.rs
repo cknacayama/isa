@@ -20,6 +20,7 @@ impl<'a, T: ?Sized> Interned<'a, T> {
     }
 
     #[inline]
+    #[must_use]
     pub const fn interned(&self) -> &'a T {
         self.0
     }

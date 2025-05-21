@@ -6,18 +6,14 @@ use crate::global::Span;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SpanData {
     file_id: usize,
-    start:   usize,
-    end:     usize,
+    lo:      usize,
+    hi:      usize,
 }
 
 impl SpanData {
     #[must_use]
-    pub const fn new(file_id: usize, start: usize, end: usize) -> Self {
-        Self {
-            file_id,
-            start,
-            end,
-        }
+    pub const fn new(file_id: usize, lo: usize, hi: usize) -> Self {
+        Self { file_id, lo, hi }
     }
 
     #[inline]
@@ -32,21 +28,22 @@ impl SpanData {
 
         Self {
             file_id: self.file_id,
-            start:   min(self.start, other.start),
-            end:     max(self.end, other.end),
+            lo:      min(self.lo, other.lo),
+            hi:      max(self.hi, other.hi),
         }
     }
 
     #[must_use]
-    pub const fn start(&self) -> usize {
-        self.start
+    pub const fn lo(&self) -> usize {
+        self.lo
     }
 
     #[must_use]
-    pub const fn end(&self) -> usize {
-        self.end
+    pub const fn hi(&self) -> usize {
+        self.hi
     }
 
+    #[must_use]
     pub const fn file_id(&self) -> usize {
         self.file_id
     }

@@ -29,6 +29,7 @@ pub struct Checker {
 pub type IsaResult<T> = Result<T, IsaError>;
 
 impl Checker {
+    #[must_use]
     pub const fn with_ctx(ctx: Ctx) -> Self {
         Self {
             ctx,
@@ -1948,18 +1949,22 @@ pub struct AliasData {
 }
 
 impl AliasData {
+    #[must_use]
     pub const fn new(params: Box<[TyId]>, ty: HiTy) -> Self {
         Self { params, ty }
     }
 
+    #[must_use]
     pub fn params(&self) -> &[TyId] {
         &self.params
     }
 
+    #[must_use]
     pub const fn ty(&self) -> &HiTy {
         &self.ty
     }
 
+    #[must_use]
     pub fn subs(&self, args: &[HiTy]) -> HiTy {
         let mut ty = self.ty().clone();
         (|ty: &HiTyKind| {

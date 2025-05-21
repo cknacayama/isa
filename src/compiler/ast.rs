@@ -19,10 +19,12 @@ impl Default for Ident {
 }
 
 impl Ident {
+    #[must_use]
     pub const fn new(ident: Symbol, span: Span) -> Self {
         Self { ident, span }
     }
 
+    #[must_use]
     pub const fn zero() -> Self {
         Self {
             ident: Symbol::zero(),
@@ -56,16 +58,19 @@ impl Path {
         self.segments.push(id);
     }
 
+    #[must_use]
     pub const fn as_slice(&self) -> &[Ident] {
         self.segments.as_slice()
     }
 
+    #[must_use]
     pub fn from_one(ident: Ident) -> Self {
         Self {
             segments: vec![ident],
         }
     }
 
+    #[must_use]
     pub fn from_two(fst: Ident, snd: Ident) -> Self {
         Self {
             segments: vec![fst, snd],
@@ -80,10 +85,12 @@ impl Path {
             .unwrap()
     }
 
+    #[must_use]
     pub fn base_name(&self) -> Ident {
         *self.segments.last().unwrap()
     }
 
+    #[must_use]
     pub const fn as_ident(&self) -> Option<Ident> {
         match self.as_slice() {
             [id] => Some(*id),
@@ -91,6 +98,7 @@ impl Path {
         }
     }
 
+    #[must_use]
     pub const fn from_vec(segments: Vec<Ident>) -> Self {
         Self { segments }
     }
@@ -126,6 +134,7 @@ impl Display for Fixity {
 }
 
 impl Fixity {
+    #[must_use]
     pub const fn from_tk(tk: TokenKind) -> Option<Self> {
         match tk {
             TokenKind::KwInfix => Some(Self::Nonfix),
@@ -146,6 +155,7 @@ impl Fixity {
         matches!(self, Self::Prefix)
     }
 
+    #[must_use]
     pub const fn minimum_arity(self) -> usize {
         match self {
             Self::Infixl | Self::Infixr | Self::Nonfix => 2,
@@ -205,6 +215,7 @@ impl TokenKind {
         )
     }
 
+    #[must_use]
     pub const fn recover_start_point(&self) -> bool {
         matches!(
             self,
@@ -261,6 +272,7 @@ impl HiTyKind {
         self.as_named().and_then(Path::as_ident)
     }
 
+    #[must_use]
     pub const fn as_named(&self) -> Option<&Path> {
         if let Self::Named(v) = self {
             Some(v)
@@ -269,6 +281,7 @@ impl HiTyKind {
         }
     }
 
+    #[must_use]
     pub const fn as_var(&self) -> Option<TyId> {
         if let Self::Var(v) = self {
             Some(*v)
@@ -294,14 +307,17 @@ impl Eq for HiTy {
 }
 
 impl HiTy {
+    #[must_use]
     pub const fn new(kind: HiTyKind, span: Span) -> Self {
         Self { kind, span }
     }
 
+    #[must_use]
     pub const fn kind(&self) -> &HiTyKind {
         &self.kind
     }
 
+    #[must_use]
     pub fn contains_name(&self, name: &Path) -> Option<Span> {
         match self.kind() {
             HiTyKind::Named(path) if name == path => Some(self.span),
@@ -451,6 +467,7 @@ pub enum PatKind<T> {
 }
 
 impl<T> PatKind<T> {
+    #[must_use]
     pub const fn is_rest_pat(&self) -> bool {
         matches!(self, Self::List(_) | Self::Ident(_) | Self::Wild)
     }
@@ -549,6 +566,7 @@ pub struct HiConstraint {
 }
 
 impl HiConstraint {
+    #[must_use]
     pub const fn new(class: Path, ty: HiTy, span: Span) -> Self {
         Self { class, ty, span }
     }

@@ -19,10 +19,12 @@ impl From<Diagnosed> for Vec<Diagnosed> {
 }
 
 impl Diagnosed {
+    #[must_use]
     pub const fn id(&self) -> usize {
         self.id
     }
 
+    #[must_use]
     pub const fn diagnostic(&self) -> &Diagnostic<usize> {
         &self.diagnostic
     }

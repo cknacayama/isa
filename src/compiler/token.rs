@@ -105,10 +105,12 @@ impl TokenKind {
         }
     }
 
+    #[must_use]
     pub const fn identifier_character(c: char) -> bool {
         c == '_' || c.is_ascii_alphanumeric()
     }
 
+    #[must_use]
     pub const fn operator_character(c: char) -> bool {
         matches!(
             c,
@@ -116,6 +118,7 @@ impl TokenKind {
         )
     }
 
+    #[must_use]
     pub fn operator(op: &str) -> Self {
         match op {
             "=" => Self::Eq,
@@ -128,6 +131,7 @@ impl TokenKind {
         }
     }
 
+    #[must_use]
     pub const fn as_operator(&self) -> Option<Symbol> {
         if let Self::Operator(v) = self {
             Some(*v)
@@ -136,6 +140,7 @@ impl TokenKind {
         }
     }
 
+    #[must_use]
     pub const fn as_ident(&self) -> Option<Symbol> {
         if let Self::Ident(v) = self {
             Some(*v)
