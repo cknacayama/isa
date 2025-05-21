@@ -41,6 +41,7 @@ pub trait Substitute {
                 if res {
                     *ty = Ty::intern(TyKind::Fn { param, ret });
                 }
+
                 res
             }
             TyKind::Scheme {
@@ -210,7 +211,7 @@ pub trait Substitute {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Subs {
     old:  TyId,
     subs: Ty,
@@ -270,13 +271,9 @@ impl Substitute for Subs {
     }
 }
 
-impl<'a, I, T> Substitute for I
-where
-    I: IntoIterator<Item = &'a T> + Copy,
-    T: Substitute + 'a,
-{
+impl Substitute for [Subs] {
     fn substitute_ty(&self, ty: &mut Ty) -> bool {
-        sfold(self.into_iter().map(|s| s.walk_ty(ty)))
+        sfold(self.iter().map(|s| s.walk_ty(ty)))
     }
 }
 

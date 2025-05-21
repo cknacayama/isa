@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 use std::ops::{Deref, Range};
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -100,19 +100,15 @@ impl Symbol {
 
 impl Debug for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match Env::get(|e| e.symbols.get(*self)) {
-            Some(symbol) => write!(f, "{symbol:?}"),
-            None => f.debug_tuple("Symbol").field(&self.0).finish(),
-        }
+        let symbol = Env::get(|e| e.symbols.get(*self));
+        write!(f, "{symbol:?}")
     }
 }
 
 impl Display for Symbol {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match Env::get(|e| e.symbols.get(*self)) {
-            Some(symbol) => write!(f, "{symbol}"),
-            None => write!(f, "<?{}>", self.0),
-        }
+        let symbol = Env::get(|e| e.symbols.get(*self));
+        write!(f, "{symbol}")
     }
 }
 
@@ -139,8 +135,8 @@ struct Env {
 
 impl Env {
     fn get<T>(f: impl FnOnce(MutexGuard<'_, Self>) -> T) -> T {
-        static GLOBAL_DATA: OnceLock<Mutex<Env>> = OnceLock::new();
-        f(GLOBAL_DATA.get_or_init(Default::default).lock().unwrap())
+        static GLOBAL_DATA: LazyLock<Mutex<Env>> = LazyLock::new(Default::default);
+        f(GLOBAL_DATA.lock().unwrap())
     }
 }
 
@@ -248,8 +244,8 @@ impl Default for SymbolInterner {
 }
 
 impl SymbolInterner {
-    fn get(&self, symbol: Symbol) -> Option<&'static str> {
-        self.symbols.get(symbol.0 as usize).copied()
+    fn get(&self, symbol: Symbol) -> &'static str {
+        self.symbols[symbol.0 as usize]
     }
 
     fn intern(&mut self, symbol: &str) -> Symbol {
@@ -498,7 +494,11 @@ impl Span {
 
     #[must_use]
     pub const fn zero() -> Self {
-        Self::new_interned(0)
+        Self {
+            lo_or_index:       0,
+            len:               0,
+            file_id_or_marker: 0,
+        }
     }
 
     #[must_use]

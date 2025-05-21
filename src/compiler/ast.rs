@@ -5,7 +5,7 @@ use super::types::TyId;
 use crate::global::{Span, Symbol};
 use crate::separated_fmt;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Ident {
     pub ident: Symbol,
     pub span:  Span,
