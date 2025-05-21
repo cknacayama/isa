@@ -1,0 +1,89 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 503
+expression: "Lexer :: new(0, r\"\\_ -> 10 + (\\x -> x) 10\").collect :: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: Backslash,
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Underscore,
+            span: SpanData { file_id: 0, lo: 1, hi: 2 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, lo: 3, hi: 5 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                10,
+            ),
+            span: SpanData { file_id: 0, lo: 6, hi: 8 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "+",
+            ),
+            span: SpanData { file_id: 0, lo: 9, hi: 10 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, lo: 11, hi: 12 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Backslash,
+            span: SpanData { file_id: 0, lo: 12, hi: 13 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "x",
+            ),
+            span: SpanData { file_id: 0, lo: 13, hi: 14 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, lo: 15, hi: 17 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "x",
+            ),
+            span: SpanData { file_id: 0, lo: 18, hi: 19 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, lo: 19, hi: 20 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Integer(
+                10,
+            ),
+            span: SpanData { file_id: 0, lo: 21, hi: 23 },
+        },
+    ),
+]

@@ -4,7 +4,8 @@ use codespan_reporting::diagnostic::Label;
 
 use super::ast::{Ident, Path};
 use super::exhaust::pat::WitnessPat;
-use super::infer::{Constraint, Subs};
+use super::infer::Constraint;
+use super::subs::Subs;
 use super::token::TokenKind;
 use super::types::Ty;
 use crate::global::{Span, Symbol};

@@ -1,0 +1,13 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 281
+expression: "Lexer :: new(0, \"bool\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: KwBool,
+            span: SpanData { file_id: 0, lo: 0, hi: 4 },
+        },
+    ),
+)

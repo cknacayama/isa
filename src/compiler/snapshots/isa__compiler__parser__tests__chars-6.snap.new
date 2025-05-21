@@ -1,0 +1,14 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1398
+expression: "create_parser(r\"'\\''\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Char(
+            39,
+        ),
+        span: SpanData { file_id: 0, lo: 0, hi: 4 },
+        ty: (),
+    },
+)

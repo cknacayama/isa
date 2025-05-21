@@ -1,0 +1,21 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1367
+expression: "create_parser(\"ifs\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Path(
+            Path {
+                segments: [
+                    Ident {
+                        ident: "ifs",
+                        span: SpanData { file_id: 0, lo: 0, hi: 3 },
+                    },
+                ],
+            },
+        ),
+        span: SpanData { file_id: 0, lo: 0, hi: 3 },
+        ty: (),
+    },
+)

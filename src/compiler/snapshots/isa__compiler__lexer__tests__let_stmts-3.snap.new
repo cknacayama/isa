@@ -1,0 +1,121 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 531
+expression: "Lexer :: new(0, \"let foo (a,b,c) = a + b - c;\").collect :: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: KwLet,
+            span: SpanData { file_id: 0, lo: 0, hi: 3 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "foo",
+            ),
+            span: SpanData { file_id: 0, lo: 4, hi: 7 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, lo: 8, hi: 9 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, lo: 9, hi: 10 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, lo: 10, hi: 11 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, lo: 11, hi: 12 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, lo: 12, hi: 13 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "c",
+            ),
+            span: SpanData { file_id: 0, lo: 13, hi: 14 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, lo: 14, hi: 15 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Eq,
+            span: SpanData { file_id: 0, lo: 16, hi: 17 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, lo: 18, hi: 19 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "+",
+            ),
+            span: SpanData { file_id: 0, lo: 20, hi: 21 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, lo: 22, hi: 23 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Operator(
+                "-",
+            ),
+            span: SpanData { file_id: 0, lo: 24, hi: 25 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "c",
+            ),
+            span: SpanData { file_id: 0, lo: 26, hi: 27 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Semicolon,
+            span: SpanData { file_id: 0, lo: 27, hi: 28 },
+        },
+    ),
+]

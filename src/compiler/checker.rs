@@ -12,9 +12,9 @@ use super::error::{
     CheckError, CheckErrorKind, CheckResult, DiagnosticLabel, IsaError, Uninferable,
 };
 use super::infer::{
-    ClassConstraint, ClassConstraintSet as Set, Constraint, EqConstraint, EqConstraintSet, Subs,
-    Substitute,
+    ClassConstraint, ClassConstraintSet as Set, Constraint, EqConstraint, EqConstraintSet,
 };
+use super::subs::{SelfSub, Subs, Substitute};
 use super::types::{Ty, TyId, TyKind, TyQuant, TySlice};
 use crate::compiler::ctx::OperatorData;
 use crate::global::{Span, Symbol};
@@ -182,8 +182,8 @@ impl Checker {
                     Constraint::Eq(_) => {
                         let mut then_ty = then.ty;
                         let mut els_ty = otherwise.ty;
-                        then_ty.substitute_many(err.subs());
-                        els_ty.substitute_many(err.subs());
+                        err.subs().walk_ty(&mut then_ty);
+                        err.subs().walk_ty(&mut els_ty);
                         let fst = DiagnosticLabel::new("if and else have different types", span);
                         let snd =
                             DiagnosticLabel::new(format!("if has type `{then_ty}`"), then.span);
@@ -200,9 +200,9 @@ impl Checker {
                 IsaError::new("type mismatch", fst_label, labels)
             })?;
 
-        cond.substitute_many(&subs);
-        then.substitute_many(&subs);
-        otherwise.substitute_many(&subs);
+        subs.as_slice().substitute_expr(&mut cond);
+        subs.as_slice().substitute_expr(&mut then);
+        subs.as_slice().substitute_expr(&mut otherwise);
 
         let ty = then.ty;
 
@@ -227,7 +227,7 @@ impl Checker {
         let pos = self.subs_count();
 
         let (expr, set) = self.check_expr(expr)?;
-        pat.ty.substitute_many(self.subs_from(pos));
+        self.subs_from(pos).substitute_pat(&mut pat);
 
         self.ctx.pop_scope();
 
@@ -264,8 +264,8 @@ impl Checker {
                 return IsaError::from(err);
             }
 
-            callee.ty.substitute_many(err.subs());
-            arg.ty.substitute_many(err.subs());
+            err.subs().walk_ty(&mut callee.ty);
+            err.subs().walk_ty(&mut arg.ty);
 
             let (fst, labels) = if let TyKind::Fn { param, .. } = callee.ty.kind() {
                 let fst = DiagnosticLabel::new(
@@ -286,9 +286,9 @@ impl Checker {
             IsaError::new("type mismatch", fst, labels)
         })?;
 
-        callee.substitute_many(&subs);
-        arg.substitute_many(&subs);
-        var.substitute_many(&subs);
+        subs.as_slice().substitute_expr(&mut callee);
+        subs.as_slice().substitute_expr(&mut arg);
+        subs.as_slice().walk_ty(&mut var);
 
         let kind = ExprKind::Call {
             callee: Box::new(callee),
@@ -308,7 +308,7 @@ impl Checker {
         self.ctx.push_scope();
 
         let (val_decl, val_subs) = self.instantiate(val_decl);
-        val_set.substitute_many(&val_subs);
+        val_subs.as_slice().substitute_class_set(&mut val_set);
 
         let mut param_iter = val_decl.param_iter();
 
@@ -328,7 +328,7 @@ impl Checker {
                 let mut pat = self.check_pat(p.pat)?;
                 let c = EqConstraint::new(decl, pat.ty, pat.span);
                 let (subs, _) = self.unify(c, [])?;
-                pat.ty.substitute_many(&subs);
+                subs.as_slice().substitute_pat(&mut pat);
 
                 Ok(Param::new(pat))
             })
@@ -343,7 +343,9 @@ impl Checker {
             let (mut expr, set) = self.check_expr(bind.expr)?;
 
             let subs = self.subs_from(pos);
-            typed_params.substitute_many(subs);
+            for param in &mut typed_params {
+                subs.substitute_param(param);
+            }
 
             expr.ty = Ty::function(typed_params.iter().map(|p| p.pat.ty), expr.ty);
             (expr, set)
@@ -377,7 +379,7 @@ impl Checker {
                 .iter()
                 .any(|v| v.subs().as_var().is_some_and(|v| v == s.old()))
         }) {
-            expr.ty.substitute_many(&subs);
+            subs.as_slice().walk_ty(&mut expr.ty);
             let ty = self.ctx.generalize(expr.ty);
             return Err(val_error(&ty, expr.span));
         }
@@ -393,8 +395,10 @@ impl Checker {
                 .with_note("let bind should have same type as val declaration"));
         }
 
-        expr.ty.substitute_many(&subs);
-        typed_params.substitute_many(&subs);
+        subs.as_slice().substitute_expr(&mut expr);
+        for param in &mut typed_params {
+            subs.as_slice().substitute_param(param);
+        }
 
         let ty = self.ctx.generalize(expr.ty);
 
@@ -413,8 +417,9 @@ impl Checker {
                 .clone();
             if op.class_member() {
                 let ty = self.gen_type_var();
-                op.ty.substitute_self(ty);
-                op.set.substitute_self(ty);
+                let subs = SelfSub::new(ty);
+                subs.walk_ty(&mut op.ty);
+                subs.substitute_class_set(&mut op.set);
             }
 
             return self.check_let_bind_with_val(bind, op.ty, op.set, op.span);
@@ -448,13 +453,16 @@ impl Checker {
             let (mut expr, set) = self.check_expr(bind.expr)?;
 
             let subs = self.subs_from(pos);
-            typed_params.substitute_many(subs);
+            for param in &mut typed_params {
+                subs.substitute_param(param);
+            }
 
             expr.ty = Ty::function(typed_params.iter().map(|p| p.pat.ty), expr.ty);
 
             let subs = Subs::new(var_id, expr.ty);
 
-            expr.substitute_eq(&subs);
+            subs.substitute_expr(&mut expr);
+
             (expr, set)
         };
 
@@ -509,30 +517,24 @@ impl Checker {
 
     fn check_constructor(
         &self,
-        constructor: HiCtor<()>,
+        constructor: HiCtor,
         quant: TyQuant,
         ret: Ty,
-    ) -> IsaResult<(HiCtor<Ty>, Constructor)> {
+    ) -> IsaResult<(HiCtor, Constructor)> {
         let params = self.check_params(&constructor.params)?;
         let mut ret = Ty::function(params.iter().copied(), ret);
         if !quant.is_empty() {
             ret = Ty::intern(TyKind::Scheme { quant, ty: ret });
         }
-        let hi = HiCtor {
-            name:   constructor.name,
-            params: constructor.params,
-            span:   constructor.span,
-            ty:     ret,
-        };
         let ctor = Constructor::new(constructor.name, params, constructor.span, ret);
-        Ok((hi, ctor))
+        Ok((constructor, ctor))
     }
 
     fn check_type_definition(
         &mut self,
         name: Ident,
         params: Box<[HiTy]>,
-        constructors: Box<[HiCtor<()>]>,
+        constructors: Box<[HiCtor]>,
         span: Span,
     ) -> IsaResult<Stmt<Ty>> {
         let (quant, args) = self.check_quant(&params);
@@ -710,8 +712,10 @@ impl Checker {
 
         let (subs, _) = self.unify(c, [])?;
 
-        typed_args.substitute_many(&subs);
-        ty.substitute_many(&subs);
+        for pat in &mut typed_args {
+            subs.as_slice().substitute_pat(pat);
+        }
+        subs.as_slice().walk_ty(&mut ty);
 
         let kind = PatKind::Constructor {
             name,
@@ -811,7 +815,7 @@ impl Checker {
         let class = Path::from_two(self.ctx.current_module(), name);
         self.ctx
             .assume_constraints(&Set::from(ClassConstraint::new(class.clone(), var, span)));
-        let defaults = self.check_instance_impls(&class, defaults, var)?;
+        let defaults = self.check_instance_impls(&class, defaults, SelfSub::new(var))?;
 
         let kind = StmtKind::Class {
             set: hiset,
@@ -829,7 +833,7 @@ impl Checker {
         &mut self,
         class: &Path,
         impls: impl IntoIterator<Item = LetBind<()>>,
-        subs: Ty,
+        subs: SelfSub,
     ) -> IsaResult<Vec<LetBind<Ty>>> {
         let impls = impls
             .into_iter()
@@ -853,7 +857,8 @@ impl Checker {
                             DiagnosticLabel::new("type class declared here", class_data.span());
                         IsaError::new("not a member", fst, vec![snd])
                     })?;
-                ty.substitute_self(subs);
+
+                subs.walk_ty(&mut ty);
                 let name = bind.name;
                 let operator = bind.operator;
                 let (_, expr, params, _) =
@@ -920,7 +925,7 @@ impl Checker {
 
         self.ctx.set_constraints(&class, scheme, set.clone());
         self.ctx.assume_constraints(&set);
-        let impls = self.check_instance_impls(&class, impls, ty)?;
+        let impls = self.check_instance_impls(&class, impls, SelfSub::new(ty))?;
 
         let kind = StmtKind::Instance {
             params: hiparams,
@@ -956,7 +961,7 @@ impl Checker {
                 let mut ty = Ty::list(pat.ty);
                 let c = EqConstraint::new(ty, pat1.ty, span);
                 let (subs, _) = self.unify(c, [])?;
-                ty.substitute_many(&subs);
+                subs.as_slice().walk_ty(&mut ty);
                 let kind = PatKind::List(ListPat::Cons(Box::new(pat), Box::new(pat1)));
 
                 Ok(Pat::new(kind, span, ty))
@@ -985,8 +990,10 @@ impl Checker {
                     IsaError::from(err).with_note("or sub-patterns should have same type")
                 })?;
 
-                patterns.substitute_many(&subs);
-                var.substitute_many(&subs);
+                for pat in &mut patterns {
+                    subs.as_slice().substitute_pat(pat);
+                }
+                subs.as_slice().walk_ty(&mut var);
 
                 Ok(Pat::new(
                     PatKind::Or(patterns.into_boxed_slice()),
@@ -1045,7 +1052,7 @@ impl Checker {
 
         let (expr, set) = self.check_expr(expr)?;
 
-        pat.ty.substitute_many(self.subs_from(count));
+        self.subs_from(count).substitute_pat(&mut pat);
 
         self.ctx.pop_scope();
 
@@ -1101,9 +1108,11 @@ impl Checker {
             IsaError::from(err).with_label(snd).with_note(note)
         })?;
 
-        expr.substitute_many(&subs);
-        typed_arms.substitute_many(&subs);
-        var.substitute_many(&subs);
+        subs.as_slice().substitute_expr(&mut expr);
+        subs.as_slice().walk_ty(&mut var);
+        for arm in &mut typed_arms {
+            subs.as_slice().substitute_match_arm(arm);
+        }
 
         let kind = ExprKind::Match {
             expr: Box::new(expr),
@@ -1125,7 +1134,7 @@ impl Checker {
                     ty, mut constrs, ..
                 } = ctx.get_var(id)?.clone();
                 let (ty, subs) = ty.instantiate(generator);
-                constrs.substitute_many(&subs);
+                subs.as_slice().substitute_class_set(&mut constrs);
 
                 Ok((Path::from_one(id), ty, constrs))
             }
@@ -1149,7 +1158,7 @@ impl Checker {
                 } = module.get_var(id)?.clone();
 
                 let (ty, subs) = ty.instantiate(generator);
-                constrs.substitute_many(&subs);
+                subs.as_slice().substitute_class_set(&mut constrs);
 
                 Ok((Path::from_one(id), ty, constrs))
             }
@@ -1182,15 +1191,15 @@ impl Checker {
         let from_class = data.class_member();
         let mut set = data.set().clone();
         for c in set.iter_mut() {
-            *c.span_mut() = span;
+            c.span = span;
         }
 
         let (mut ty, subs) = self.instantiate(*data.ty());
-        set.substitute_many(&subs);
+        subs.as_slice().substitute_class_set(&mut set);
         if from_class {
-            let var = self.gen_type_var();
-            ty.substitute_self(var);
-            set.substitute_self(var);
+            let subs = SelfSub::new(self.gen_type_var());
+            subs.walk_ty(&mut ty);
+            subs.substitute_class_set(&mut set);
         }
 
         let kind = ExprKind::Operator(op);
@@ -1212,14 +1221,14 @@ impl Checker {
         let from_class = data.class_member();
         let mut set = data.set().clone();
         for c in set.iter_mut() {
-            *c.span_mut() = span;
+            c.span = span;
         }
         let (mut ty, subs) = self.instantiate(*data.ty());
-        set.substitute_many(&subs);
+        subs.as_slice().substitute_class_set(&mut set);
         if from_class {
-            let var = self.gen_type_var();
-            ty.substitute_self(var);
-            set.substitute_self(var);
+            let subs = SelfSub::new(self.gen_type_var());
+            subs.walk_ty(&mut ty);
+            subs.substitute_class_set(&mut set);
         }
         set.extend(lhs_set);
         set.extend(rhs_set);
@@ -1236,7 +1245,7 @@ impl Checker {
             let label = DiagnosticLabel::new(format!("operator `{op}` has type `{ty}`"), op.span);
             IsaError::from(err).with_label(label)
         })?;
-        ret.substitute_many(&subs);
+        subs.as_slice().walk_ty(&mut ret);
 
         let kind = ExprKind::Infix {
             op,
@@ -1253,14 +1262,14 @@ impl Checker {
         let from_class = data.class_member();
         let mut set = data.set().clone();
         for c in set.iter_mut() {
-            *c.span_mut() = op.span;
+            c.span = op.span;
         }
         let (mut op_ty, subs) = self.instantiate(*data.ty());
-        set.substitute_many(&subs);
+        subs.as_slice().substitute_class_set(&mut set);
         if from_class {
-            let var = self.gen_type_var();
-            op_ty.substitute_self(var);
-            set.substitute_self(var);
+            let subs = SelfSub::new(self.gen_type_var());
+            subs.walk_ty(&mut op_ty);
+            subs.substitute_class_set(&mut set);
         }
         set.extend(expr_set);
         let TyKind::Fn { param: ty, ret } = op_ty.kind() else {
@@ -1269,7 +1278,7 @@ impl Checker {
         let mut ret = *ret;
         let c = EqConstraint::new(*ty, expr.ty, expr.span);
         let (subs, set) = self.unify(c, set)?;
-        ret.substitute_many(&subs);
+        subs.as_slice().walk_ty(&mut ret);
         let kind = ExprKind::Prefix {
             op,
             expr: Box::new(expr),
@@ -1294,7 +1303,7 @@ impl Checker {
 
         let (subs, set) = self.unify(constrs, set)?;
         let mut ty = id;
-        ty.substitute_many(&subs);
+        subs.as_slice().walk_ty(&mut ty);
 
         let ty = Ty::list(ty);
 
@@ -1499,7 +1508,7 @@ impl Checker {
         class = ctx.resolve_class_name(&class)?;
         let mut constraints = data.constraints().clone();
         for c in constraints.iter_mut() {
-            *c.span_mut() = span;
+            c.span = span;
         }
         let MemberData {
             ty: sig,
@@ -1512,17 +1521,18 @@ impl Checker {
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(member.ident), span))?;
 
         for c in member_set.iter_mut() {
-            *c.span_mut() = span;
+            c.span = span;
         }
 
         let (mut sig, sig_subs) = sig.instantiate(generator);
         let new_var = generator.gen_type_var();
+        let self_sub = SelfSub::new(new_var);
         constraints.extend(member_set);
 
-        constraints.substitute_self(new_var);
-        sig.substitute_self(new_var);
-        constraints.substitute_many(&sig_subs);
-        sig.substitute_many(&sig_subs);
+        self_sub.substitute_class_set(&mut constraints);
+        self_sub.walk_ty(&mut sig);
+        sig_subs.as_slice().substitute_class_set(&mut constraints);
+        sig_subs.as_slice().walk_ty(&mut sig);
 
         constraints.extend(
             data.parents()

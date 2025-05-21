@@ -783,7 +783,7 @@ impl Parser {
         }
     }
 
-    fn parse_constructor(&mut self) -> ParseResult<HiCtor<()>> {
+    fn parse_constructor(&mut self) -> ParseResult<HiCtor> {
         let name = self.expect_id()?;
         let mut span = name.span;
 
@@ -797,12 +797,7 @@ impl Parser {
 
         let params = params.into_boxed_slice();
 
-        Ok(HiCtor {
-            name,
-            params,
-            span,
-            ty: (),
-        })
+        Ok(HiCtor { name, params, span })
     }
 
     fn parse_type_definition(&mut self) -> ParseResult<Stmt<()>> {

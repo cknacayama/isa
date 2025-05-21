@@ -1,0 +1,91 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1462
+expression: "create_parser(\"a + ((c ^^ []) >>= 'd')\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Infix {
+            op: Ident {
+                ident: "+",
+                span: SpanData { file_id: 0, lo: 2, hi: 3 },
+            },
+            lhs: Expr {
+                kind: Path(
+                    Path {
+                        segments: [
+                            Ident {
+                                ident: "a",
+                                span: SpanData { file_id: 0, lo: 0, hi: 1 },
+                            },
+                        ],
+                    },
+                ),
+                span: SpanData { file_id: 0, lo: 0, hi: 1 },
+                ty: (),
+            },
+            rhs: Expr {
+                kind: Paren(
+                    Expr {
+                        kind: Infix {
+                            op: Ident {
+                                ident: ">>=",
+                                span: SpanData { file_id: 0, lo: 15, hi: 18 },
+                            },
+                            lhs: Expr {
+                                kind: Paren(
+                                    Expr {
+                                        kind: Infix {
+                                            op: Ident {
+                                                ident: "^^",
+                                                span: SpanData { file_id: 0, lo: 8, hi: 10 },
+                                            },
+                                            lhs: Expr {
+                                                kind: Path(
+                                                    Path {
+                                                        segments: [
+                                                            Ident {
+                                                                ident: "c",
+                                                                span: SpanData { file_id: 0, lo: 6, hi: 7 },
+                                                            },
+                                                        ],
+                                                    },
+                                                ),
+                                                span: SpanData { file_id: 0, lo: 6, hi: 7 },
+                                                ty: (),
+                                            },
+                                            rhs: Expr {
+                                                kind: List(
+                                                    [],
+                                                ),
+                                                span: SpanData { file_id: 0, lo: 11, hi: 13 },
+                                                ty: (),
+                                            },
+                                        },
+                                        span: SpanData { file_id: 0, lo: 6, hi: 13 },
+                                        ty: (),
+                                    },
+                                ),
+                                span: SpanData { file_id: 0, lo: 5, hi: 14 },
+                                ty: (),
+                            },
+                            rhs: Expr {
+                                kind: Char(
+                                    100,
+                                ),
+                                span: SpanData { file_id: 0, lo: 19, hi: 22 },
+                                ty: (),
+                            },
+                        },
+                        span: SpanData { file_id: 0, lo: 5, hi: 22 },
+                        ty: (),
+                    },
+                ),
+                span: SpanData { file_id: 0, lo: 4, hi: 23 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, lo: 0, hi: 23 },
+        ty: (),
+    },
+)

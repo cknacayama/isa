@@ -28,11 +28,13 @@ impl Debug for Ty {
         Debug::fmt(&self.0, f)
     }
 }
+
 impl Debug for TySlice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.0, f)
     }
 }
+
 impl Debug for TyQuant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.0, f)
@@ -156,7 +158,7 @@ impl Ty {
 
     #[must_use]
     pub fn intern(ty: TyKind) -> Self {
-        Env::get(|mut e| Self(e.ctx.intern(ty)))
+        Self(Env::get(|mut e| e.ctx.intern(ty)))
     }
 
     #[must_use]
@@ -166,17 +168,17 @@ impl Ty {
 
     #[must_use]
     pub fn intern_slice(ty: Vec<Self>) -> TySlice {
-        Env::get(|mut e| TySlice(e.ctx.intern(ty)))
+        TySlice(Env::get(|mut e| e.ctx.intern(ty)))
     }
 
     #[must_use]
     pub fn intern_quant(ty: Vec<TyId>) -> TyQuant {
-        Env::get(|mut e| TyQuant(e.ctx.intern(ty)))
+        TyQuant(Env::get(|mut e| e.ctx.intern(ty)))
     }
 
     #[must_use]
     pub fn intern_path(name: Vec<Symbol>) -> TyPath {
-        Env::get(|mut e| TyPath(e.ctx.intern_idx(name)))
+        TyPath(Env::get(|mut e| e.ctx.intern_idx(name)))
     }
 
     #[must_use]

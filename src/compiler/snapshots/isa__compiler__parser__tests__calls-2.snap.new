@@ -1,0 +1,122 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1476
+expression: "create_parser(r\"map (\\x -> x + 1) [1,2,3]\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Call {
+            callee: Expr {
+                kind: Call {
+                    callee: Expr {
+                        kind: Path(
+                            Path {
+                                segments: [
+                                    Ident {
+                                        ident: "map",
+                                        span: SpanData { file_id: 0, lo: 0, hi: 3 },
+                                    },
+                                ],
+                            },
+                        ),
+                        span: SpanData { file_id: 0, lo: 0, hi: 3 },
+                        ty: (),
+                    },
+                    arg: Expr {
+                        kind: Paren(
+                            Expr {
+                                kind: Fn {
+                                    param: Param {
+                                        pat: Pat {
+                                            kind: Constructor {
+                                                name: Path {
+                                                    segments: [
+                                                        Ident {
+                                                            ident: "x",
+                                                            span: SpanData { file_id: 0, lo: 6, hi: 7 },
+                                                        },
+                                                    ],
+                                                },
+                                                args: [],
+                                            },
+                                            span: SpanData { file_id: 0, lo: 6, hi: 7 },
+                                            ty: (),
+                                        },
+                                    },
+                                    expr: Expr {
+                                        kind: Infix {
+                                            op: Ident {
+                                                ident: "+",
+                                                span: SpanData { file_id: 0, lo: 13, hi: 14 },
+                                            },
+                                            lhs: Expr {
+                                                kind: Path(
+                                                    Path {
+                                                        segments: [
+                                                            Ident {
+                                                                ident: "x",
+                                                                span: SpanData { file_id: 0, lo: 11, hi: 12 },
+                                                            },
+                                                        ],
+                                                    },
+                                                ),
+                                                span: SpanData { file_id: 0, lo: 11, hi: 12 },
+                                                ty: (),
+                                            },
+                                            rhs: Expr {
+                                                kind: Int(
+                                                    1,
+                                                ),
+                                                span: SpanData { file_id: 0, lo: 15, hi: 16 },
+                                                ty: (),
+                                            },
+                                        },
+                                        span: SpanData { file_id: 0, lo: 11, hi: 16 },
+                                        ty: (),
+                                    },
+                                },
+                                span: SpanData { file_id: 0, lo: 5, hi: 16 },
+                                ty: (),
+                            },
+                        ),
+                        span: SpanData { file_id: 0, lo: 4, hi: 17 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, lo: 0, hi: 17 },
+                ty: (),
+            },
+            arg: Expr {
+                kind: List(
+                    [
+                        Expr {
+                            kind: Int(
+                                1,
+                            ),
+                            span: SpanData { file_id: 0, lo: 19, hi: 20 },
+                            ty: (),
+                        },
+                        Expr {
+                            kind: Int(
+                                2,
+                            ),
+                            span: SpanData { file_id: 0, lo: 21, hi: 22 },
+                            ty: (),
+                        },
+                        Expr {
+                            kind: Int(
+                                3,
+                            ),
+                            span: SpanData { file_id: 0, lo: 23, hi: 24 },
+                            ty: (),
+                        },
+                    ],
+                ),
+                span: SpanData { file_id: 0, lo: 18, hi: 25 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, lo: 0, hi: 25 },
+        ty: (),
+    },
+)

@@ -1,0 +1,15 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 325
+expression: "Lexer :: new(0, \"emodule\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: Ident(
+                "emodule",
+            ),
+            span: SpanData { file_id: 0, lo: 0, hi: 7 },
+        },
+    ),
+)

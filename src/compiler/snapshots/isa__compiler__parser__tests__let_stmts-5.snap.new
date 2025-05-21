@@ -1,0 +1,59 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1500
+expression: "create_parser(\"let mengo _ _c _ = true;\").parse_stmt()"
+---
+Ok(
+    Stmt {
+        kind: Let(
+            LetBind {
+                operator: false,
+                name: Ident {
+                    ident: "mengo",
+                    span: SpanData { file_id: 0, lo: 4, hi: 9 },
+                },
+                params: [
+                    Param {
+                        pat: Pat {
+                            kind: Wild,
+                            span: SpanData { file_id: 0, lo: 10, hi: 11 },
+                            ty: (),
+                        },
+                    },
+                    Param {
+                        pat: Pat {
+                            kind: Constructor {
+                                name: Path {
+                                    segments: [
+                                        Ident {
+                                            ident: "_c",
+                                            span: SpanData { file_id: 0, lo: 12, hi: 14 },
+                                        },
+                                    ],
+                                },
+                                args: [],
+                            },
+                            span: SpanData { file_id: 0, lo: 12, hi: 14 },
+                            ty: (),
+                        },
+                    },
+                    Param {
+                        pat: Pat {
+                            kind: Wild,
+                            span: SpanData { file_id: 0, lo: 15, hi: 16 },
+                            ty: (),
+                        },
+                    },
+                ],
+                expr: Expr {
+                    kind: Bool(
+                        true,
+                    ),
+                    span: SpanData { file_id: 0, lo: 19, hi: 23 },
+                    ty: (),
+                },
+            },
+        ),
+        span: SpanData { file_id: 0, lo: 0, hi: 23 },
+    },
+)

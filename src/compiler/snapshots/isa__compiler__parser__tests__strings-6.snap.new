@@ -1,0 +1,14 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1411
+expression: "create_parser(r#\"\"ba2\\0a\"\"#).parse_expr()"
+---
+Ok(
+    Expr {
+        kind: String(
+            "ba2\0a",
+        ),
+        span: SpanData { file_id: 0, lo: 0, hi: 8 },
+        ty: (),
+    },
+)

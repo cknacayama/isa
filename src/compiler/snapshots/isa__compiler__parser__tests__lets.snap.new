@@ -1,0 +1,35 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1434
+expression: "create_parser(\"let a = 10 in 10\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Let {
+            bind: LetBind {
+                operator: false,
+                name: Ident {
+                    ident: "a",
+                    span: SpanData { file_id: 0, lo: 4, hi: 5 },
+                },
+                params: [],
+                expr: Expr {
+                    kind: Int(
+                        10,
+                    ),
+                    span: SpanData { file_id: 0, lo: 8, hi: 10 },
+                    ty: (),
+                },
+            },
+            body: Expr {
+                kind: Int(
+                    10,
+                ),
+                span: SpanData { file_id: 0, lo: 14, hi: 16 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, lo: 0, hi: 16 },
+        ty: (),
+    },
+)

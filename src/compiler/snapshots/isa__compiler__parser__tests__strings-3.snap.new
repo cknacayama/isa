@@ -1,0 +1,14 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1408
+expression: "create_parser(r#\"\"bar\\r\"\"#).parse_expr()"
+---
+Ok(
+    Expr {
+        kind: String(
+            "bar\r",
+        ),
+        span: SpanData { file_id: 0, lo: 0, hi: 7 },
+        ty: (),
+    },
+)

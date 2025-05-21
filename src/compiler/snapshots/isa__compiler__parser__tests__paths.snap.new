@@ -1,0 +1,25 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1440
+expression: "create_parser(\"a::b\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Path(
+            Path {
+                segments: [
+                    Ident {
+                        ident: "a",
+                        span: SpanData { file_id: 0, lo: 0, hi: 1 },
+                    },
+                    Ident {
+                        ident: "b",
+                        span: SpanData { file_id: 0, lo: 3, hi: 4 },
+                    },
+                ],
+            },
+        ),
+        span: SpanData { file_id: 0, lo: 0, hi: 4 },
+        ty: (),
+    },
+)

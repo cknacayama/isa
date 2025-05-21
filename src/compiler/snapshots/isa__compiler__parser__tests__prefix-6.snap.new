@@ -1,0 +1,114 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1454
+expression: "create_parser(r#\"- - - - - - - + - + 1\"#).parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Prefix {
+            op: Ident {
+                ident: "-",
+                span: SpanData { file_id: 0, lo: 0, hi: 1 },
+            },
+            expr: Expr {
+                kind: Prefix {
+                    op: Ident {
+                        ident: "-",
+                        span: SpanData { file_id: 0, lo: 2, hi: 3 },
+                    },
+                    expr: Expr {
+                        kind: Prefix {
+                            op: Ident {
+                                ident: "-",
+                                span: SpanData { file_id: 0, lo: 4, hi: 5 },
+                            },
+                            expr: Expr {
+                                kind: Prefix {
+                                    op: Ident {
+                                        ident: "-",
+                                        span: SpanData { file_id: 0, lo: 6, hi: 7 },
+                                    },
+                                    expr: Expr {
+                                        kind: Prefix {
+                                            op: Ident {
+                                                ident: "-",
+                                                span: SpanData { file_id: 0, lo: 8, hi: 9 },
+                                            },
+                                            expr: Expr {
+                                                kind: Prefix {
+                                                    op: Ident {
+                                                        ident: "-",
+                                                        span: SpanData { file_id: 0, lo: 10, hi: 11 },
+                                                    },
+                                                    expr: Expr {
+                                                        kind: Prefix {
+                                                            op: Ident {
+                                                                ident: "-",
+                                                                span: SpanData { file_id: 0, lo: 12, hi: 13 },
+                                                            },
+                                                            expr: Expr {
+                                                                kind: Prefix {
+                                                                    op: Ident {
+                                                                        ident: "+",
+                                                                        span: SpanData { file_id: 0, lo: 14, hi: 15 },
+                                                                    },
+                                                                    expr: Expr {
+                                                                        kind: Prefix {
+                                                                            op: Ident {
+                                                                                ident: "-",
+                                                                                span: SpanData { file_id: 0, lo: 16, hi: 17 },
+                                                                            },
+                                                                            expr: Expr {
+                                                                                kind: Prefix {
+                                                                                    op: Ident {
+                                                                                        ident: "+",
+                                                                                        span: SpanData { file_id: 0, lo: 18, hi: 19 },
+                                                                                    },
+                                                                                    expr: Expr {
+                                                                                        kind: Int(
+                                                                                            1,
+                                                                                        ),
+                                                                                        span: SpanData { file_id: 0, lo: 20, hi: 21 },
+                                                                                        ty: (),
+                                                                                    },
+                                                                                },
+                                                                                span: SpanData { file_id: 0, lo: 18, hi: 21 },
+                                                                                ty: (),
+                                                                            },
+                                                                        },
+                                                                        span: SpanData { file_id: 0, lo: 16, hi: 21 },
+                                                                        ty: (),
+                                                                    },
+                                                                },
+                                                                span: SpanData { file_id: 0, lo: 14, hi: 21 },
+                                                                ty: (),
+                                                            },
+                                                        },
+                                                        span: SpanData { file_id: 0, lo: 12, hi: 21 },
+                                                        ty: (),
+                                                    },
+                                                },
+                                                span: SpanData { file_id: 0, lo: 10, hi: 21 },
+                                                ty: (),
+                                            },
+                                        },
+                                        span: SpanData { file_id: 0, lo: 8, hi: 21 },
+                                        ty: (),
+                                    },
+                                },
+                                span: SpanData { file_id: 0, lo: 6, hi: 21 },
+                                ty: (),
+                            },
+                        },
+                        span: SpanData { file_id: 0, lo: 4, hi: 21 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, lo: 2, hi: 21 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, lo: 0, hi: 21 },
+        ty: (),
+    },
+)

@@ -1,8 +1,6 @@
-use std::ops::BitOr;
-
 use super::ast::Path;
 use super::ctx::Generator;
-use super::infer::{Subs, Substitute};
+use super::subs::{Subs, Substitute};
 use crate::global::ty_path;
 pub use crate::global::{Ty, TyPath, TyQuant, TySlice};
 
@@ -69,7 +67,7 @@ impl Ty {
             .map(|q| Subs::new(*q, generator.gen_type_var()))
             .collect();
 
-        ty.substitute_many(&subs);
+        subs.as_slice().substitute_ty(&mut ty);
 
         (ty, subs)
     }
@@ -276,91 +274,6 @@ impl Ty {
     #[must_use]
     pub const fn is_var(self) -> bool {
         matches!(self.kind(), TyKind::Var(..))
-    }
-}
-
-impl Substitute for Ty {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Self>,
-    {
-        let ty = match self.kind() {
-            TyKind::Fn { param, ret } => {
-                let mut param = *param;
-                let mut ret = *ret;
-                param
-                    .substitute(subs)
-                    .bitor(ret.substitute(subs))
-                    .then_some(TyKind::Fn { param, ret })
-            }
-            TyKind::Scheme { quant, ty } => {
-                let mut ty = *ty;
-                ty.substitute(subs)
-                    .then_some(TyKind::Scheme { quant: *quant, ty })
-            }
-            TyKind::Named { name, args } => {
-                let mut args = args.to_vec();
-                if args.substitute(subs) {
-                    let args = Self::intern_slice(args);
-                    Some(TyKind::Named { name: *name, args })
-                } else {
-                    None
-                }
-            }
-            TyKind::Generic { var, args } => {
-                let mut args = args.to_vec();
-                if args.substitute(subs) {
-                    let args = Self::intern_slice(args);
-                    Some(TyKind::Generic { var: *var, args })
-                } else {
-                    None
-                }
-            }
-            TyKind::Tuple(args) => {
-                let mut args = args.to_vec();
-                if args.substitute(subs) {
-                    let args = Self::intern_slice(args);
-                    Some(TyKind::Tuple(args))
-                } else {
-                    None
-                }
-            }
-            TyKind::This(args) => {
-                let mut args = args.to_vec();
-                if args.substitute(subs) {
-                    let args = Self::intern_slice(args);
-                    Some(TyKind::This(args))
-                } else {
-                    None
-                }
-            }
-            TyKind::Int | TyKind::Bool | TyKind::Char | TyKind::Real | TyKind::Var(_) => None,
-        };
-
-        if let Some(ty) = ty {
-            *self = subs(&ty).unwrap_or_else(|| Self::intern(ty));
-            true
-        } else if let Some(new) = subs(self.kind()) {
-            *self = new;
-            true
-        } else {
-            false
-        }
-    }
-}
-
-impl Substitute for TySlice {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        let mut slice = self.to_vec();
-        if slice.substitute(subs) {
-            *self = Ty::intern_slice(slice);
-            true
-        } else {
-            false
-        }
     }
 }
 

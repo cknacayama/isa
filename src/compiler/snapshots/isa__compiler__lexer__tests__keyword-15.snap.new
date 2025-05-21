@@ -1,0 +1,13 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 287
+expression: "Lexer :: new(0, \"instance\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: KwInstance,
+            span: SpanData { file_id: 0, lo: 0, hi: 8 },
+        },
+    ),
+)

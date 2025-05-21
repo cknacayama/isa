@@ -1,0 +1,15 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 324
+expression: "Lexer :: new(0, \"dwith\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: Ident(
+                "dwith",
+            ),
+            span: SpanData { file_id: 0, lo: 0, hi: 5 },
+        },
+    ),
+)

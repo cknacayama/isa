@@ -1,0 +1,15 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 420
+expression: "Lexer :: new(0, r\"λ\").next()"
+---
+Some(
+    Err(
+        Spand {
+            data: InvalidChar(
+                'λ',
+            ),
+            span: SpanData { file_id: 0, lo: 0, hi: 2 },
+        },
+    ),
+)

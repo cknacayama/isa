@@ -1,0 +1,15 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 309
+expression: "Lexer :: new(0, \"aint\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: Ident(
+                "aint",
+            ),
+            span: SpanData { file_id: 0, lo: 0, hi: 4 },
+        },
+    ),
+)

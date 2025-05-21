@@ -1,0 +1,146 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1484
+expression: "create_parser(\"match [10] with [] -> match [] with _ -> 10,, [a]b -> a+b\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Match {
+            expr: Expr {
+                kind: List(
+                    [
+                        Expr {
+                            kind: Int(
+                                10,
+                            ),
+                            span: SpanData { file_id: 0, lo: 7, hi: 9 },
+                            ty: (),
+                        },
+                    ],
+                ),
+                span: SpanData { file_id: 0, lo: 6, hi: 10 },
+                ty: (),
+            },
+            arms: [
+                MatchArm {
+                    pat: Pat {
+                        kind: List(
+                            Nil,
+                        ),
+                        span: SpanData { file_id: 0, lo: 16, hi: 18 },
+                        ty: (),
+                    },
+                    expr: Expr {
+                        kind: Match {
+                            expr: Expr {
+                                kind: List(
+                                    [],
+                                ),
+                                span: SpanData { file_id: 0, lo: 28, hi: 30 },
+                                ty: (),
+                            },
+                            arms: [
+                                MatchArm {
+                                    pat: Pat {
+                                        kind: Wild,
+                                        span: SpanData { file_id: 0, lo: 36, hi: 37 },
+                                        ty: (),
+                                    },
+                                    expr: Expr {
+                                        kind: Int(
+                                            10,
+                                        ),
+                                        span: SpanData { file_id: 0, lo: 41, hi: 43 },
+                                        ty: (),
+                                    },
+                                },
+                            ],
+                        },
+                        span: SpanData { file_id: 0, lo: 22, hi: 44 },
+                        ty: (),
+                    },
+                },
+                MatchArm {
+                    pat: Pat {
+                        kind: List(
+                            Cons(
+                                Pat {
+                                    kind: Constructor {
+                                        name: Path {
+                                            segments: [
+                                                Ident {
+                                                    ident: "a",
+                                                    span: SpanData { file_id: 0, lo: 47, hi: 48 },
+                                                },
+                                            ],
+                                        },
+                                        args: [],
+                                    },
+                                    span: SpanData { file_id: 0, lo: 47, hi: 48 },
+                                    ty: (),
+                                },
+                                Pat {
+                                    kind: Constructor {
+                                        name: Path {
+                                            segments: [
+                                                Ident {
+                                                    ident: "b",
+                                                    span: SpanData { file_id: 0, lo: 49, hi: 50 },
+                                                },
+                                            ],
+                                        },
+                                        args: [],
+                                    },
+                                    span: SpanData { file_id: 0, lo: 49, hi: 50 },
+                                    ty: (),
+                                },
+                            ),
+                        ),
+                        span: SpanData { file_id: 0, lo: 46, hi: 50 },
+                        ty: (),
+                    },
+                    expr: Expr {
+                        kind: Infix {
+                            op: Ident {
+                                ident: "+",
+                                span: SpanData { file_id: 0, lo: 55, hi: 56 },
+                            },
+                            lhs: Expr {
+                                kind: Path(
+                                    Path {
+                                        segments: [
+                                            Ident {
+                                                ident: "a",
+                                                span: SpanData { file_id: 0, lo: 54, hi: 55 },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                span: SpanData { file_id: 0, lo: 54, hi: 55 },
+                                ty: (),
+                            },
+                            rhs: Expr {
+                                kind: Path(
+                                    Path {
+                                        segments: [
+                                            Ident {
+                                                ident: "b",
+                                                span: SpanData { file_id: 0, lo: 56, hi: 57 },
+                                            },
+                                        ],
+                                    },
+                                ),
+                                span: SpanData { file_id: 0, lo: 56, hi: 57 },
+                                ty: (),
+                            },
+                        },
+                        span: SpanData { file_id: 0, lo: 54, hi: 57 },
+                        ty: (),
+                    },
+                },
+            ],
+        },
+        span: SpanData { file_id: 0, lo: 0, hi: 57 },
+        ty: (),
+    },
+)

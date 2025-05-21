@@ -1,0 +1,67 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1429
+expression: "create_parser(\"(('a'),('b'),('c'),('d'),)\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Tuple(
+            [
+                Expr {
+                    kind: Paren(
+                        Expr {
+                            kind: Char(
+                                97,
+                            ),
+                            span: SpanData { file_id: 0, lo: 2, hi: 5 },
+                            ty: (),
+                        },
+                    ),
+                    span: SpanData { file_id: 0, lo: 1, hi: 6 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Paren(
+                        Expr {
+                            kind: Char(
+                                98,
+                            ),
+                            span: SpanData { file_id: 0, lo: 8, hi: 11 },
+                            ty: (),
+                        },
+                    ),
+                    span: SpanData { file_id: 0, lo: 7, hi: 12 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Paren(
+                        Expr {
+                            kind: Char(
+                                99,
+                            ),
+                            span: SpanData { file_id: 0, lo: 14, hi: 17 },
+                            ty: (),
+                        },
+                    ),
+                    span: SpanData { file_id: 0, lo: 13, hi: 18 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Paren(
+                        Expr {
+                            kind: Char(
+                                100,
+                            ),
+                            span: SpanData { file_id: 0, lo: 20, hi: 23 },
+                            ty: (),
+                        },
+                    ),
+                    span: SpanData { file_id: 0, lo: 19, hi: 24 },
+                    ty: (),
+                },
+            ],
+        ),
+        span: SpanData { file_id: 0, lo: 0, hi: 26 },
+        ty: (),
+    },
+)

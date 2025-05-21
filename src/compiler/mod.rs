@@ -6,5 +6,6 @@ pub mod exhaust;
 pub mod infer;
 pub mod lexer;
 pub mod parser;
+pub mod subs;
 pub mod token;
 pub mod types;

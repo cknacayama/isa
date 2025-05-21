@@ -6,7 +6,8 @@ use rustc_hash::FxHashMap;
 
 use super::ast::{Fixity, Ident, Import, ImportClause, ImportWildcard, Path, mod_path};
 use super::error::{CheckError, CheckErrorKind, CheckResult};
-use super::infer::{ClassConstraint, ClassConstraintSet, Subs, Substitute};
+use super::infer::{ClassConstraint, ClassConstraintSet};
+use super::subs::{Subs, Substitute};
 use super::types::{Ty, TyId, TyKind, TyPath, TyQuant, TySlice};
 use crate::comma_fmt;
 use crate::global::{Span, Symbol};
@@ -175,15 +176,6 @@ impl Generator for IdGenerator {
         let id = self.0;
         self.0 += 1;
         TyId::new(id)
-    }
-}
-
-impl Substitute for VarData {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        self.ty.substitute(subs) | self.constrs.substitute(subs)
     }
 }
 
@@ -1015,7 +1007,7 @@ impl Ctx {
             .collect::<Vec<_>>();
 
         let mut ctor = data.constructors.swap_remove(idx);
-        ctor.params.substitute_many(&subs);
+        subs.as_slice().substitute_slice(&mut ctor.params);
 
         ctor.params
     }
@@ -1122,26 +1114,9 @@ impl Ctx {
     pub fn set_constraints(&mut self, class: &Path, ty: Ty, constr: ClassConstraintSet) {
         self.implementation_mut(ty, class).unwrap().set = constr;
     }
-}
 
-impl Substitute for Ctx {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        let mut res = false;
-        // We can skip the first scope
-        // because you do not access type
-        // variables from these binds
-        // due to instantiation
-        for env in &mut self.env[1..] {
-            res |= env
-                .values_mut()
-                .map(|t| t.substitute(subs))
-                .reduce(BitOr::bitor)
-                .unwrap_or(false);
-        }
-        res
+    pub const fn env_mut(&mut self) -> &mut Vec<FxHashMap<Symbol, VarData>> {
+        &mut self.env
     }
 }
 
@@ -1215,7 +1190,7 @@ impl Ty {
                 Ok(())
             }
             TyKind::This(args) => {
-                write!(f, "TyKind")?;
+                write!(f, "Self")?;
                 for arg in args.iter() {
                     if arg.is_simple_fmt() {
                         write!(f, " ")?;

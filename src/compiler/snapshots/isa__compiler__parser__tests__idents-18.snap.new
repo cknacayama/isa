@@ -1,0 +1,21 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1381
+expression: "create_parser(\"_01infixr\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Path(
+            Path {
+                segments: [
+                    Ident {
+                        ident: "_01infixr",
+                        span: SpanData { file_id: 0, lo: 0, hi: 9 },
+                    },
+                ],
+            },
+        ),
+        span: SpanData { file_id: 0, lo: 0, hi: 9 },
+        ty: (),
+    },
+)

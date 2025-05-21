@@ -1,0 +1,36 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1417
+expression: "create_parser(\"[1,2,3]\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: List(
+            [
+                Expr {
+                    kind: Int(
+                        1,
+                    ),
+                    span: SpanData { file_id: 0, lo: 1, hi: 2 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Int(
+                        2,
+                    ),
+                    span: SpanData { file_id: 0, lo: 3, hi: 4 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Int(
+                        3,
+                    ),
+                    span: SpanData { file_id: 0, lo: 5, hi: 6 },
+                    ty: (),
+                },
+            ],
+        ),
+        span: SpanData { file_id: 0, lo: 0, hi: 7 },
+        ty: (),
+    },
+)

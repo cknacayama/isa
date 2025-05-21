@@ -1,0 +1,123 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 462
+expression: "Lexer :: new(0, \"(('a'),('b'),('c'),('d'),)\").collect :: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, lo: 1, hi: 2 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Char(
+                97,
+            ),
+            span: SpanData { file_id: 0, lo: 2, hi: 5 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, lo: 5, hi: 6 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, lo: 6, hi: 7 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, lo: 7, hi: 8 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Char(
+                98,
+            ),
+            span: SpanData { file_id: 0, lo: 8, hi: 11 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, lo: 11, hi: 12 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, lo: 12, hi: 13 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, lo: 13, hi: 14 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Char(
+                99,
+            ),
+            span: SpanData { file_id: 0, lo: 14, hi: 17 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, lo: 17, hi: 18 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, lo: 18, hi: 19 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: LParen,
+            span: SpanData { file_id: 0, lo: 19, hi: 20 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Char(
+                100,
+            ),
+            span: SpanData { file_id: 0, lo: 20, hi: 23 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, lo: 23, hi: 24 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Comma,
+            span: SpanData { file_id: 0, lo: 24, hi: 25 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: RParen,
+            span: SpanData { file_id: 0, lo: 25, hi: 26 },
+        },
+    ),
+]

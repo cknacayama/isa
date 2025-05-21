@@ -1,0 +1,35 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 501
+expression: "Lexer :: new(0, r\"\\x -> x\").collect :: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: Backslash,
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "x",
+            ),
+            span: SpanData { file_id: 0, lo: 1, hi: 2 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Arrow,
+            span: SpanData { file_id: 0, lo: 3, hi: 5 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "x",
+            ),
+            span: SpanData { file_id: 0, lo: 6, hi: 7 },
+        },
+    ),
+]

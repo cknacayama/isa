@@ -1,0 +1,134 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1463
+expression: "create_parser(\"1 * 2 * 3 + ((() & (1) ^^ []) >>= 'd')\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Infix {
+            op: Ident {
+                ident: "+",
+                span: SpanData { file_id: 0, lo: 10, hi: 11 },
+            },
+            lhs: Expr {
+                kind: Infix {
+                    op: Ident {
+                        ident: "*",
+                        span: SpanData { file_id: 0, lo: 6, hi: 7 },
+                    },
+                    lhs: Expr {
+                        kind: Infix {
+                            op: Ident {
+                                ident: "*",
+                                span: SpanData { file_id: 0, lo: 2, hi: 3 },
+                            },
+                            lhs: Expr {
+                                kind: Int(
+                                    1,
+                                ),
+                                span: SpanData { file_id: 0, lo: 0, hi: 1 },
+                                ty: (),
+                            },
+                            rhs: Expr {
+                                kind: Int(
+                                    2,
+                                ),
+                                span: SpanData { file_id: 0, lo: 4, hi: 5 },
+                                ty: (),
+                            },
+                        },
+                        span: SpanData { file_id: 0, lo: 0, hi: 5 },
+                        ty: (),
+                    },
+                    rhs: Expr {
+                        kind: Int(
+                            3,
+                        ),
+                        span: SpanData { file_id: 0, lo: 8, hi: 9 },
+                        ty: (),
+                    },
+                },
+                span: SpanData { file_id: 0, lo: 0, hi: 9 },
+                ty: (),
+            },
+            rhs: Expr {
+                kind: Paren(
+                    Expr {
+                        kind: Infix {
+                            op: Ident {
+                                ident: ">>=",
+                                span: SpanData { file_id: 0, lo: 30, hi: 33 },
+                            },
+                            lhs: Expr {
+                                kind: Paren(
+                                    Expr {
+                                        kind: Infix {
+                                            op: Ident {
+                                                ident: "^^",
+                                                span: SpanData { file_id: 0, lo: 23, hi: 25 },
+                                            },
+                                            lhs: Expr {
+                                                kind: Infix {
+                                                    op: Ident {
+                                                        ident: "&",
+                                                        span: SpanData { file_id: 0, lo: 17, hi: 18 },
+                                                    },
+                                                    lhs: Expr {
+                                                        kind: Tuple(
+                                                            [],
+                                                        ),
+                                                        span: SpanData { file_id: 0, lo: 14, hi: 16 },
+                                                        ty: (),
+                                                    },
+                                                    rhs: Expr {
+                                                        kind: Paren(
+                                                            Expr {
+                                                                kind: Int(
+                                                                    1,
+                                                                ),
+                                                                span: SpanData { file_id: 0, lo: 20, hi: 21 },
+                                                                ty: (),
+                                                            },
+                                                        ),
+                                                        span: SpanData { file_id: 0, lo: 19, hi: 22 },
+                                                        ty: (),
+                                                    },
+                                                },
+                                                span: SpanData { file_id: 0, lo: 14, hi: 22 },
+                                                ty: (),
+                                            },
+                                            rhs: Expr {
+                                                kind: List(
+                                                    [],
+                                                ),
+                                                span: SpanData { file_id: 0, lo: 26, hi: 28 },
+                                                ty: (),
+                                            },
+                                        },
+                                        span: SpanData { file_id: 0, lo: 14, hi: 28 },
+                                        ty: (),
+                                    },
+                                ),
+                                span: SpanData { file_id: 0, lo: 13, hi: 29 },
+                                ty: (),
+                            },
+                            rhs: Expr {
+                                kind: Char(
+                                    100,
+                                ),
+                                span: SpanData { file_id: 0, lo: 34, hi: 37 },
+                                ty: (),
+                            },
+                        },
+                        span: SpanData { file_id: 0, lo: 13, hi: 37 },
+                        ty: (),
+                    },
+                ),
+                span: SpanData { file_id: 0, lo: 12, hi: 38 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, lo: 0, hi: 38 },
+        ty: (),
+    },
+)

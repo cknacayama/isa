@@ -1,0 +1,31 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1459
+expression: "create_parser(\"1 + 1\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: Infix {
+            op: Ident {
+                ident: "+",
+                span: SpanData { file_id: 0, lo: 2, hi: 3 },
+            },
+            lhs: Expr {
+                kind: Int(
+                    1,
+                ),
+                span: SpanData { file_id: 0, lo: 0, hi: 1 },
+                ty: (),
+            },
+            rhs: Expr {
+                kind: Int(
+                    1,
+                ),
+                span: SpanData { file_id: 0, lo: 4, hi: 5 },
+                ty: (),
+            },
+        },
+        span: SpanData { file_id: 0, lo: 0, hi: 5 },
+        ty: (),
+    },
+)

@@ -1,132 +1,20 @@
 use std::collections::VecDeque;
-use std::ops::{BitOr, Deref, DerefMut};
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use super::ast::Path;
 use super::ctx::Ctx;
 use super::error::Uninferable;
-use super::types::{Ty, TyId, TyKind};
+use super::subs::{Subs, Substitute};
+use super::types::{Ty, TyKind};
 use crate::global::Span;
 
 #[derive(Debug, Clone)]
-pub struct Subs {
-    old:  TyId,
-    subs: Ty,
-}
-
-impl Subs {
-    #[must_use]
-    pub const fn new(old: TyId, new: Ty) -> Self {
-        Self { old, subs: new }
-    }
-
-    #[must_use]
-    pub const fn old(&self) -> TyId {
-        self.old
-    }
-
-    #[must_use]
-    pub const fn subs(&self) -> Ty {
-        self.subs
-    }
-}
-
-pub trait Substitute {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>;
-
-    /// Used mainly for type inference and unification of constraint sets
-    fn substitute_eq(&mut self, subs: &Subs) -> bool {
-        if subs.subs().kind().as_var().is_some_and(|t| t == subs.old()) {
-            return false;
-        }
-        self.substitute(&|t| match t {
-            TyKind::Var(id) if *id == subs.old => Some(subs.subs),
-            TyKind::Generic { var, args } if *var == subs.old => match subs.subs.kind() {
-                TyKind::Var(new) => Some(Ty::intern(TyKind::Generic {
-                    var:  *new,
-                    args: *args,
-                })),
-                TyKind::Named { name, args: named } => {
-                    let mut named = named.to_vec();
-                    named.extend_from_slice(args);
-                    Some(Ty::intern(TyKind::Named {
-                        name: *name,
-                        args: Ty::intern_slice(named),
-                    }))
-                }
-                TyKind::Generic { var, args: generic } => {
-                    let mut generic = generic.to_vec();
-                    generic.extend_from_slice(args);
-                    Some(Ty::intern(TyKind::Generic {
-                        var:  *var,
-                        args: Ty::intern_slice(generic),
-                    }))
-                }
-                _ => None,
-            },
-            _ => None,
-        })
-    }
-
-    fn substitute_many<'a, T>(&mut self, subs: T) -> bool
-    where
-        T: IntoIterator<Item = &'a Subs>,
-    {
-        subs.into_iter()
-            .map(|s| self.substitute_eq(s))
-            .reduce(BitOr::bitor)
-            .unwrap_or(false)
-    }
-
-    fn substitute_self(&mut self, instance: Ty) -> bool {
-        self.substitute(&|ty| match ty {
-            TyKind::This(args) if args.is_empty() => Some(instance),
-            TyKind::This(args) => match instance.kind() {
-                TyKind::Var(new) => Some(Ty::intern(TyKind::Generic {
-                    var:  *new,
-                    args: *args,
-                })),
-                TyKind::Named { name, args: named } => {
-                    let mut named = named.to_vec();
-                    named.extend_from_slice(args);
-                    Some(Ty::intern(TyKind::Named {
-                        name: *name,
-                        args: Ty::intern_slice(named),
-                    }))
-                }
-                TyKind::Generic { var, args: generic } => {
-                    let mut generic = generic.to_vec();
-                    generic.extend_from_slice(args);
-                    Some(Ty::intern(TyKind::Generic {
-                        var:  *var,
-                        args: Ty::intern_slice(generic),
-                    }))
-                }
-                _ => None,
-            },
-
-            _ => None,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
 pub struct EqConstraint {
-    lhs:    Ty,
-    rhs:    Ty,
-    span:   Span,
-    parent: Option<Rc<EqConstraint>>,
-}
-
-impl Substitute for EqConstraint {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        self.lhs.substitute(subs) | self.rhs.substitute(subs)
-    }
+    pub lhs:  Ty,
+    pub rhs:  Ty,
+    pub span: Span,
+    parent:   Option<Rc<EqConstraint>>,
 }
 
 impl EqConstraint {
@@ -198,35 +86,6 @@ impl DerefMut for EqConstraintSet {
     }
 }
 
-impl Substitute for EqConstraintSet {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        self.constrs
-            .iter_mut()
-            .map(|t| t.substitute(subs))
-            .reduce(BitOr::bitor)
-            .unwrap_or(false)
-    }
-}
-
-impl<T> Substitute for [T]
-where
-    T: Substitute,
-{
-    #[inline]
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        self.iter_mut()
-            .map(|t| t.substitute(subs))
-            .reduce(BitOr::bitor)
-            .unwrap_or(false)
-    }
-}
-
 impl<T> From<T> for EqConstraintSet
 where
     VecDeque<EqConstraint>: From<T>,
@@ -248,9 +107,9 @@ impl From<EqConstraint> for EqConstraintSet {
 
 #[derive(Debug, Clone)]
 pub struct ClassConstraint {
-    class: Path,
-    ty:    Ty,
-    span:  Span,
+    pub class: Path,
+    pub ty:    Ty,
+    pub span:  Span,
 }
 
 impl Eq for ClassConstraint {}
@@ -280,19 +139,6 @@ impl ClassConstraint {
     #[must_use]
     pub const fn span(&self) -> Span {
         self.span
-    }
-
-    pub const fn span_mut(&mut self) -> &mut Span {
-        &mut self.span
-    }
-}
-
-impl Substitute for ClassConstraint {
-    fn substitute<S>(&mut self, subs: &S) -> bool
-    where
-        S: Fn(&TyKind) -> Option<Ty>,
-    {
-        self.ty.substitute(subs)
     }
 }
 
@@ -411,7 +257,7 @@ fn unify_eq(
         {
             let s = Subs::new(*old, Ty::new_unchecked(new));
 
-            cset.substitute_eq(&s);
+            s.substitute_eq_set(cset);
 
             subs.push(s);
         }
@@ -435,7 +281,7 @@ fn unify_eq(
             }
             if v1 != v2 {
                 let s = Subs::new(v2, Ty::intern(TyKind::Var(v1)));
-                cset.substitute_eq(&s);
+                s.substitute_eq_set(cset);
                 subs.push(s);
             }
         }
@@ -455,7 +301,7 @@ fn unify_eq(
             }
             let args = Ty::intern_slice(named_iter.rev().copied().collect());
             let s = Subs::new(var, Ty::intern(TyKind::Named { name, args }));
-            cset.substitute_eq(&s);
+            s.substitute_eq_set(cset);
 
             subs.push(s);
         }
@@ -503,7 +349,7 @@ fn unify_eq(
         _ => {
             let c = if let Some(parent) = c.parent {
                 let mut parent = parent.as_ref().clone();
-                parent.substitute_many(subs.as_slice());
+                subs.as_slice().substitute_eq_constr(&mut parent);
                 parent
             } else {
                 c
@@ -560,13 +406,13 @@ impl Ctx {
             unify_eq(c, &mut cset, &mut subs)?;
         }
 
-        classes.substitute_many(&subs);
+        subs.as_slice().substitute_class_set(&mut classes);
 
         let constrs = self
             .unify_class(classes)
             .map_err(|c| Uninferable::new(Constraint::Class(c), subs.clone()))?;
 
-        self.substitute_many(&subs);
+        subs.as_slice().substitute_ctx(self);
 
         Ok((subs, constrs))
     }

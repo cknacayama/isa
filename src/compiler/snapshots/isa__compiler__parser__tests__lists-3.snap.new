@@ -1,0 +1,71 @@
+---
+source: src/compiler/parser.rs
+assertion_line: 1418
+expression: "create_parser(\"[a,b,c,d]\").parse_expr()"
+---
+Ok(
+    Expr {
+        kind: List(
+            [
+                Expr {
+                    kind: Path(
+                        Path {
+                            segments: [
+                                Ident {
+                                    ident: "a",
+                                    span: SpanData { file_id: 0, lo: 1, hi: 2 },
+                                },
+                            ],
+                        },
+                    ),
+                    span: SpanData { file_id: 0, lo: 1, hi: 2 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Path(
+                        Path {
+                            segments: [
+                                Ident {
+                                    ident: "b",
+                                    span: SpanData { file_id: 0, lo: 3, hi: 4 },
+                                },
+                            ],
+                        },
+                    ),
+                    span: SpanData { file_id: 0, lo: 3, hi: 4 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Path(
+                        Path {
+                            segments: [
+                                Ident {
+                                    ident: "c",
+                                    span: SpanData { file_id: 0, lo: 5, hi: 6 },
+                                },
+                            ],
+                        },
+                    ),
+                    span: SpanData { file_id: 0, lo: 5, hi: 6 },
+                    ty: (),
+                },
+                Expr {
+                    kind: Path(
+                        Path {
+                            segments: [
+                                Ident {
+                                    ident: "d",
+                                    span: SpanData { file_id: 0, lo: 7, hi: 8 },
+                                },
+                            ],
+                        },
+                    ),
+                    span: SpanData { file_id: 0, lo: 7, hi: 8 },
+                    ty: (),
+                },
+            ],
+        ),
+        span: SpanData { file_id: 0, lo: 0, hi: 9 },
+        ty: (),
+    },
+)

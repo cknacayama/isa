@@ -1,0 +1,13 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 437
+expression: "Lexer :: new(0, r#\"\"foo\"#).next()"
+---
+Some(
+    Err(
+        Spand {
+            data: UnterminatedString,
+            span: SpanData { file_id: 0, lo: 0, hi: 4 },
+        },
+    ),
+)

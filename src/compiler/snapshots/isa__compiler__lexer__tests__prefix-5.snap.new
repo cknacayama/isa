@@ -1,0 +1,23 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 486
+expression: "Lexer :: new(0, r#\"-'c'\"#).collect :: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: Operator(
+                "-",
+            ),
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Char(
+                99,
+            ),
+            span: SpanData { file_id: 0, lo: 1, hi: 4 },
+        },
+    ),
+]

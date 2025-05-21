@@ -1,0 +1,13 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 277
+expression: "Lexer :: new(0, \"then\").next()"
+---
+Some(
+    Ok(
+        Spand {
+            data: KwThen,
+            span: SpanData { file_id: 0, lo: 0, hi: 4 },
+        },
+    ),
+)

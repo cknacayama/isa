@@ -1,0 +1,65 @@
+---
+source: src/compiler/lexer.rs
+assertion_line: 476
+expression: "Lexer :: new(0, \"a::b::c a::T\").collect :: < Vec < _ >> ()"
+---
+[
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: ColonColon,
+            span: SpanData { file_id: 0, lo: 1, hi: 3 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "b",
+            ),
+            span: SpanData { file_id: 0, lo: 3, hi: 4 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: ColonColon,
+            span: SpanData { file_id: 0, lo: 4, hi: 6 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "c",
+            ),
+            span: SpanData { file_id: 0, lo: 6, hi: 7 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "a",
+            ),
+            span: SpanData { file_id: 0, lo: 8, hi: 9 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: ColonColon,
+            span: SpanData { file_id: 0, lo: 9, hi: 11 },
+        },
+    ),
+    Ok(
+        Spand {
+            data: Ident(
+                "T",
+            ),
+            span: SpanData { file_id: 0, lo: 11, hi: 12 },
+        },
+    ),
+]
