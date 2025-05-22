@@ -6,7 +6,7 @@ expression: "Lexer :: new(0, \"let a = 10;\").collect :: < Vec < _ >> ()"
     Ok(
         Spand {
             data: KwLet,
-            span: SpanData { file_id: 0, start: 0, end: 3 },
+            span: SpanData { file_id: 0, lo: 0, hi: 3 },
         },
     ),
     Ok(
@@ -14,13 +14,13 @@ expression: "Lexer :: new(0, \"let a = 10;\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "a",
             ),
-            span: SpanData { file_id: 0, start: 4, end: 5 },
+            span: SpanData { file_id: 0, lo: 4, hi: 5 },
         },
     ),
     Ok(
         Spand {
             data: Eq,
-            span: SpanData { file_id: 0, start: 6, end: 7 },
+            span: SpanData { file_id: 0, lo: 6, hi: 7 },
         },
     ),
     Ok(
@@ -28,13 +28,13 @@ expression: "Lexer :: new(0, \"let a = 10;\").collect :: < Vec < _ >> ()"
             data: Integer(
                 10,
             ),
-            span: SpanData { file_id: 0, start: 8, end: 10 },
+            span: SpanData { file_id: 0, lo: 8, hi: 10 },
         },
     ),
     Ok(
         Spand {
             data: Semicolon,
-            span: SpanData { file_id: 0, start: 10, end: 11 },
+            span: SpanData { file_id: 0, lo: 10, hi: 11 },
         },
     ),
 ]

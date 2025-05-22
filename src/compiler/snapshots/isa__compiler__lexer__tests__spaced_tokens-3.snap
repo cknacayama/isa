@@ -8,7 +8,7 @@ Some(
             data: Integer(
                 13,
             ),
-            span: SpanData { file_id: 0, start: 71, end: 73 },
+            span: SpanData { file_id: 0, lo: 71, hi: 73 },
         },
     ),
 )

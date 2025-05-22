@@ -252,9 +252,7 @@ fn unify_eq(
 
         (TyKind::Var(v1), TyKind::Var(v2)) if v1 == v2 => {}
 
-        (new, TyKind::Var(old)) | (TyKind::Var(old), new)
-            if !Ty::new_unchecked(new).occurs(*old) =>
-        {
+        (new, TyKind::Var(old)) | (TyKind::Var(old), new) if !new.occurs(*old) => {
             let s = Subs::new(*old, Ty::new_unchecked(new));
 
             s.substitute_eq_set(cset);

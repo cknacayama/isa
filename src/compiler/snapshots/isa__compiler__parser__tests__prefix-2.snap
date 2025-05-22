@@ -9,21 +9,21 @@ Ok(
                 kind: Prefix {
                     op: Ident {
                         ident: "!",
-                        span: SpanData { file_id: 0, start: 0, end: 1 },
+                        span: SpanData { file_id: 0, lo: 1, hi: 2 },
                     },
                     expr: Expr {
                         kind: Bool(
                             false,
                         ),
-                        span: SpanData { file_id: 0, start: 2, end: 7 },
+                        span: SpanData { file_id: 0, lo: 2, hi: 7 },
                         ty: (),
                     },
                 },
-                span: SpanData { file_id: 0, start: 0, end: 7 },
+                span: SpanData { file_id: 0, lo: 1, hi: 7 },
                 ty: (),
             },
         ),
-        span: SpanData { file_id: 0, start: 0, end: 8 },
+        span: SpanData { file_id: 0, lo: 0, hi: 8 },
         ty: (),
     },
 )

@@ -11,12 +11,12 @@ Ok(
                         segments: [
                             Ident {
                                 ident: "Some",
-                                span: SpanData { file_id: 0, start: 0, end: 4 },
+                                span: SpanData { file_id: 0, lo: 0, hi: 4 },
                             },
                         ],
                     },
                 ),
-                span: SpanData { file_id: 0, start: 0, end: 4 },
+                span: SpanData { file_id: 0, lo: 0, hi: 4 },
                 ty: (),
             },
             arg: Expr {
@@ -25,16 +25,16 @@ Ok(
                         segments: [
                             Ident {
                                 ident: "x",
-                                span: SpanData { file_id: 0, start: 5, end: 6 },
+                                span: SpanData { file_id: 0, lo: 5, hi: 6 },
                             },
                         ],
                     },
                 ),
-                span: SpanData { file_id: 0, start: 5, end: 6 },
+                span: SpanData { file_id: 0, lo: 5, hi: 6 },
                 ty: (),
             },
         },
-        span: SpanData { file_id: 0, start: 0, end: 6 },
+        span: SpanData { file_id: 0, lo: 0, hi: 6 },
         ty: (),
     },
 )

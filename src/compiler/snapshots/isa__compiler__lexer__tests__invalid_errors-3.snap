@@ -8,7 +8,7 @@ expression: "Lexer :: new(0, r\"λ ba λ\").collect :: < Vec < _ >> ()"
             data: InvalidChar(
                 'λ',
             ),
-            span: SpanData { file_id: 0, start: 0, end: 2 },
+            span: SpanData { file_id: 0, lo: 0, hi: 2 },
         },
     ),
     Ok(
@@ -16,7 +16,7 @@ expression: "Lexer :: new(0, r\"λ ba λ\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "ba",
             ),
-            span: SpanData { file_id: 0, start: 3, end: 5 },
+            span: SpanData { file_id: 0, lo: 3, hi: 5 },
         },
     ),
     Err(
@@ -24,7 +24,7 @@ expression: "Lexer :: new(0, r\"λ ba λ\").collect :: < Vec < _ >> ()"
             data: InvalidChar(
                 'λ',
             ),
-            span: SpanData { file_id: 0, start: 6, end: 8 },
+            span: SpanData { file_id: 0, lo: 6, hi: 8 },
         },
     ),
 ]

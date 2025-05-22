@@ -16,7 +16,7 @@ use crate::comma_fmt;
 use crate::compiler::ast::Module;
 use crate::compiler::checker::Checker;
 use crate::compiler::ctx::Ctx;
-use crate::compiler::error::{LexError, MatchNonExhaustive, ParseError};
+use crate::compiler::error::{CompileError, LexError, MatchNonExhaustive, ParseError};
 use crate::compiler::exhaust::check_matches;
 use crate::compiler::lexer::Lexer;
 use crate::compiler::parser::Parser;
@@ -160,7 +160,7 @@ impl Driver {
         if errs.is_empty() { Ok(()) } else { Err(errs) }
     }
 
-    pub fn run(&self) -> Result<(), ()> {
+    pub fn run(&self) -> Result<(), CompileError> {
         let ctx = Ctx::default();
 
         let instants = CompileInstant::default();

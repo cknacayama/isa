@@ -392,8 +392,25 @@ impl Display for MatchNonExhaustive {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct CompileError;
+
+impl From<()> for CompileError {
+    fn from((): ()) -> Self {
+        Self
+    }
+}
+
+impl Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "compilation error")
+    }
+}
+
 impl std::error::Error for Uninferable {}
 
 impl std::error::Error for IsaError {}
 
 impl std::error::Error for MatchNonExhaustive {}
+
+impl std::error::Error for CompileError {}

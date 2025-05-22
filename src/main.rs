@@ -6,6 +6,6 @@ fn main() -> ExitCode {
     let driver = Driver::new();
     match driver.run() {
         Ok(()) => ExitCode::SUCCESS,
-        Err(()) => ExitCode::FAILURE,
+        Err(_) => ExitCode::FAILURE,
     }
 }

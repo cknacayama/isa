@@ -38,22 +38,27 @@ impl TyKind {
             None
         }
     }
+
+    #[must_use]
+    pub fn occurs(&self, var: TyId) -> bool {
+        match self {
+            Self::Fn { param, ret } => param.occurs(var) || ret.occurs(var),
+            Self::Var(n) => *n == var,
+            Self::Scheme { ty, .. } => ty.occurs(var),
+            Self::This(args) | Self::Tuple(args) | Self::Named { args, .. } => {
+                args.iter().any(|t| t.occurs(var))
+            }
+            Self::Generic { var: n, args } => *n == var || args.iter().any(|t| t.occurs(var)),
+
+            Self::Int | Self::Char | Self::Bool | Self::Real => false,
+        }
+    }
 }
 
 impl Ty {
     #[must_use]
     pub fn occurs(self, var: TyId) -> bool {
-        match self.kind() {
-            TyKind::Fn { param, ret } => param.occurs(var) || ret.occurs(var),
-            TyKind::Var(n) => *n == var,
-            TyKind::Scheme { ty, .. } => ty.occurs(var),
-            TyKind::This(args) | TyKind::Tuple(args) | TyKind::Named { args, .. } => {
-                args.iter().any(|t| t.occurs(var))
-            }
-            TyKind::Generic { var: n, args } => *n == var || args.iter().any(|t| t.occurs(var)),
-
-            TyKind::Int | TyKind::Char | TyKind::Bool | TyKind::Real => false,
-        }
+        self.kind().occurs(var)
     }
 
     pub fn instantiate(self, generator: &mut impl Generator) -> (Self, Vec<Subs>) {

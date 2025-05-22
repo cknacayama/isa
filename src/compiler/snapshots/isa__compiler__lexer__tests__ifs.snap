@@ -6,37 +6,37 @@ expression: "Lexer :: new(0, \"if true then true else false\").collect :: < Vec 
     Ok(
         Spand {
             data: KwIf,
-            span: SpanData { file_id: 0, start: 0, end: 2 },
+            span: SpanData { file_id: 0, lo: 0, hi: 2 },
         },
     ),
     Ok(
         Spand {
             data: KwTrue,
-            span: SpanData { file_id: 0, start: 3, end: 7 },
+            span: SpanData { file_id: 0, lo: 3, hi: 7 },
         },
     ),
     Ok(
         Spand {
             data: KwThen,
-            span: SpanData { file_id: 0, start: 8, end: 12 },
+            span: SpanData { file_id: 0, lo: 8, hi: 12 },
         },
     ),
     Ok(
         Spand {
             data: KwTrue,
-            span: SpanData { file_id: 0, start: 13, end: 17 },
+            span: SpanData { file_id: 0, lo: 13, hi: 17 },
         },
     ),
     Ok(
         Spand {
             data: KwElse,
-            span: SpanData { file_id: 0, start: 18, end: 22 },
+            span: SpanData { file_id: 0, lo: 18, hi: 22 },
         },
     ),
     Ok(
         Spand {
             data: KwFalse,
-            span: SpanData { file_id: 0, start: 23, end: 28 },
+            span: SpanData { file_id: 0, lo: 23, hi: 28 },
         },
     ),
 ]

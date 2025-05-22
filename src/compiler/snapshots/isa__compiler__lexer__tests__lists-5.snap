@@ -6,13 +6,13 @@ expression: "Lexer :: new(0, \"[['a'],['b'],['c'],['d'],]\").collect :: < Vec < 
     Ok(
         Spand {
             data: LBracket,
-            span: SpanData { file_id: 0, start: 0, end: 1 },
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
         },
     ),
     Ok(
         Spand {
             data: LBracket,
-            span: SpanData { file_id: 0, start: 1, end: 2 },
+            span: SpanData { file_id: 0, lo: 1, hi: 2 },
         },
     ),
     Ok(
@@ -20,25 +20,25 @@ expression: "Lexer :: new(0, \"[['a'],['b'],['c'],['d'],]\").collect :: < Vec < 
             data: Char(
                 97,
             ),
-            span: SpanData { file_id: 0, start: 2, end: 5 },
+            span: SpanData { file_id: 0, lo: 2, hi: 5 },
         },
     ),
     Ok(
         Spand {
             data: RBracket,
-            span: SpanData { file_id: 0, start: 5, end: 6 },
+            span: SpanData { file_id: 0, lo: 5, hi: 6 },
         },
     ),
     Ok(
         Spand {
             data: Comma,
-            span: SpanData { file_id: 0, start: 6, end: 7 },
+            span: SpanData { file_id: 0, lo: 6, hi: 7 },
         },
     ),
     Ok(
         Spand {
             data: LBracket,
-            span: SpanData { file_id: 0, start: 7, end: 8 },
+            span: SpanData { file_id: 0, lo: 7, hi: 8 },
         },
     ),
     Ok(
@@ -46,25 +46,25 @@ expression: "Lexer :: new(0, \"[['a'],['b'],['c'],['d'],]\").collect :: < Vec < 
             data: Char(
                 98,
             ),
-            span: SpanData { file_id: 0, start: 8, end: 11 },
+            span: SpanData { file_id: 0, lo: 8, hi: 11 },
         },
     ),
     Ok(
         Spand {
             data: RBracket,
-            span: SpanData { file_id: 0, start: 11, end: 12 },
+            span: SpanData { file_id: 0, lo: 11, hi: 12 },
         },
     ),
     Ok(
         Spand {
             data: Comma,
-            span: SpanData { file_id: 0, start: 12, end: 13 },
+            span: SpanData { file_id: 0, lo: 12, hi: 13 },
         },
     ),
     Ok(
         Spand {
             data: LBracket,
-            span: SpanData { file_id: 0, start: 13, end: 14 },
+            span: SpanData { file_id: 0, lo: 13, hi: 14 },
         },
     ),
     Ok(
@@ -72,25 +72,25 @@ expression: "Lexer :: new(0, \"[['a'],['b'],['c'],['d'],]\").collect :: < Vec < 
             data: Char(
                 99,
             ),
-            span: SpanData { file_id: 0, start: 14, end: 17 },
+            span: SpanData { file_id: 0, lo: 14, hi: 17 },
         },
     ),
     Ok(
         Spand {
             data: RBracket,
-            span: SpanData { file_id: 0, start: 17, end: 18 },
+            span: SpanData { file_id: 0, lo: 17, hi: 18 },
         },
     ),
     Ok(
         Spand {
             data: Comma,
-            span: SpanData { file_id: 0, start: 18, end: 19 },
+            span: SpanData { file_id: 0, lo: 18, hi: 19 },
         },
     ),
     Ok(
         Spand {
             data: LBracket,
-            span: SpanData { file_id: 0, start: 19, end: 20 },
+            span: SpanData { file_id: 0, lo: 19, hi: 20 },
         },
     ),
     Ok(
@@ -98,25 +98,25 @@ expression: "Lexer :: new(0, \"[['a'],['b'],['c'],['d'],]\").collect :: < Vec < 
             data: Char(
                 100,
             ),
-            span: SpanData { file_id: 0, start: 20, end: 23 },
+            span: SpanData { file_id: 0, lo: 20, hi: 23 },
         },
     ),
     Ok(
         Spand {
             data: RBracket,
-            span: SpanData { file_id: 0, start: 23, end: 24 },
+            span: SpanData { file_id: 0, lo: 23, hi: 24 },
         },
     ),
     Ok(
         Spand {
             data: Comma,
-            span: SpanData { file_id: 0, start: 24, end: 25 },
+            span: SpanData { file_id: 0, lo: 24, hi: 25 },
         },
     ),
     Ok(
         Spand {
             data: RBracket,
-            span: SpanData { file_id: 0, start: 25, end: 26 },
+            span: SpanData { file_id: 0, lo: 25, hi: 26 },
         },
     ),
 ]

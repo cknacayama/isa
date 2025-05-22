@@ -30,8 +30,12 @@ impl Parser {
         self.peek().is_some_and(|tk| tk.data == t)
     }
 
+    fn peek_n<const N: usize>(&self) -> Option<Token> {
+        self.tokens.get(self.cur + N).copied()
+    }
+
     fn peek(&self) -> Option<Token> {
-        self.tokens.get(self.cur).copied()
+        self.peek_n::<0>()
     }
 
     fn peek_and<P>(&self, p: P) -> bool
@@ -41,11 +45,15 @@ impl Parser {
         self.peek().map(|tk| tk.data).is_some_and(p)
     }
 
-    const fn eat(&mut self) {
-        self.cur += 1;
+    const fn eat_n<const N: usize>(&mut self) {
+        self.cur += N;
     }
 
-    #[must_use]
+    const fn eat(&mut self) {
+        self.eat_n::<1>();
+    }
+
+    #[must_use = "Must use return value. If you want to just increment the cursor, use `eat`"]
     fn next(&mut self) -> Option<Token> {
         let tk = self.peek()?;
         self.cur += 1;
@@ -77,7 +85,6 @@ impl Parser {
             self.eat();
         })
     }
-
     fn expect(&mut self, expected: TokenKind) -> ParseResult<Span> {
         let t = self.next_or_eof()?;
 
@@ -115,38 +122,36 @@ impl Parser {
         })
     }
 
-    fn parse_delimited_from<T>(
+    fn parse_delimited_from<D: Delim, T>(
         &mut self,
         span: Span,
-        delim: Delim,
         mut parse: impl FnMut(&mut Self) -> ParseResult<T>,
     ) -> ParseResult<(Vec<T>, Span)> {
         let mut data = Vec::new();
 
-        while !self.check(delim.closing()) {
+        while !self.check(D::closing()) {
             let res = parse(self)?;
             data.push(res);
-            if self.next_if_match(Delim::separator()).is_none() {
+            if self.next_if_match(D::separator()).is_none() {
                 break;
             }
         }
 
-        let span = span.join(self.expect(delim.closing())?);
+        let span = span.join(self.expect(D::closing())?);
 
         Ok((data, span))
     }
 
-    fn parse_delimited<T>(
+    fn parse_delimited<D: Delim, T>(
         &mut self,
-        delim: Delim,
         parse: impl FnMut(&mut Self) -> ParseResult<T>,
     ) -> ParseResult<(Vec<T>, Span)> {
-        let span = self.expect(delim.opening())?;
-        self.parse_delimited_from(span, delim, parse)
+        let span = self.expect(D::opening())?;
+        self.parse_delimited_from::<D, T>(span, parse)
     }
 
     fn parse_import_clause(&mut self) -> ParseResult<(ImportClause, Span)> {
-        let (imports, span) = self.parse_delimited(Delim::Brace, |parser| {
+        let (imports, span) = self.parse_delimited::<Brace, _>(|parser| {
             let id = parser.expect_id()?;
             let mut path = Path::from_one(id);
             let mut wildcard = ImportWildcard::Nil;
@@ -491,7 +496,7 @@ impl Parser {
         }
 
         let mut constrs = Vec::new();
-        let (params, _) = self.parse_delimited(Delim::Brace, |parser| {
+        let (params, _) = self.parse_delimited::<Brace, _>(|parser| {
             let name = parser.expect_id()?;
             let ty = HiTy::new(HiTyKind::Named(Path::from_one(name)), name.span);
             if parser.next_if_match(TokenKind::Colon).is_some() {
@@ -508,7 +513,7 @@ impl Parser {
 
     fn parse_class_constraint(&mut self) -> ParseResult<Vec<(Path, Span)>> {
         if self.check(TokenKind::LBrace) {
-            let (classes, _) = self.parse_delimited(Delim::Brace, Self::parse_path)?;
+            let (classes, _) = self.parse_delimited::<Brace, _>(Self::parse_path)?;
             Ok(classes)
         } else {
             Ok(vec![self.parse_path()?])
@@ -625,36 +630,23 @@ impl Parser {
     }
 
     fn parse_tuple_or_operator(&mut self, span: Span) -> ParseResult<Expr<()>> {
-        let mut exprs = Vec::new();
-
-        if let Some((op, op_span)) = self.next_if_map(|tk| match tk.data {
-            TokenKind::Operator(op) => Some((op, tk.span)),
-            _ => None,
-        }) {
-            if let Some(rspan) = self.next_if_match(TokenKind::RParen) {
-                let kind = ExprKind::Operator(Ident::new(op, op_span));
-                return Ok(Expr::untyped(kind, span.join(rspan)));
-            }
-            let expr = self.parse_prefix()?;
-            let op = Ident::new(op, span);
-            let span = span.join(expr.span);
-            let kind = ExprKind::Prefix {
-                op,
-                expr: Box::new(expr),
-            };
-            exprs.push(Expr::untyped(kind, span));
-            self.next_if_match(TokenKind::Comma);
+        if let (
+            Some(Token {
+                data: TokenKind::Operator(op),
+                span: op_span,
+            }),
+            Some(Token {
+                data: TokenKind::RParen,
+                span: paren_span,
+            }),
+        ) = (self.peek(), self.peek_n::<1>())
+        {
+            self.eat_n::<2>();
+            let kind = ExprKind::Operator(Ident::new(op, op_span));
+            return Ok(Expr::untyped(kind, span.join(paren_span)));
         }
 
-        while !self.check(TokenKind::RParen) {
-            let expr = self.parse_expr()?;
-            exprs.push(expr);
-            if self.next_if_match(TokenKind::Comma).is_none() {
-                break;
-            }
-        }
-
-        let span = span.join(self.expect(TokenKind::RParen)?);
+        let (mut exprs, span) = self.parse_delimited_from::<Paren, _>(span, Self::parse_expr)?;
 
         if exprs.len() == 1 {
             let kind = ExprKind::Paren(Box::new(exprs.pop().unwrap()));
@@ -668,7 +660,7 @@ impl Parser {
     }
 
     fn parse_list(&mut self, span: Span) -> ParseResult<Expr<()>> {
-        let (exprs, span) = self.parse_delimited_from(span, Delim::Bracket, Self::parse_expr)?;
+        let (exprs, span) = self.parse_delimited_from::<Bracket, _>(span, Self::parse_expr)?;
 
         let kind = ExprKind::List(exprs.into_boxed_slice());
 
@@ -699,7 +691,7 @@ impl Parser {
         match data {
             TokenKind::LParen => {
                 let (mut types, span) =
-                    self.parse_delimited_from(span, Delim::Paren, Self::parse_type)?;
+                    self.parse_delimited_from::<Paren, _>(span, Self::parse_type)?;
 
                 if types.len() == 1 {
                     let ty = types.pop().unwrap();
@@ -1131,7 +1123,7 @@ impl Parser {
             TokenKind::KwFalse => Ok(Pat::untyped(PatKind::Bool(false), span)),
             TokenKind::LParen => {
                 let (mut pats, span) =
-                    self.parse_delimited_from(span, Delim::Paren, Self::parse_pat)?;
+                    self.parse_delimited_from::<Paren, _>(span, Self::parse_pat)?;
 
                 if pats.len() == 1 {
                     Ok(Pat {
@@ -1282,31 +1274,48 @@ impl Parser {
     }
 }
 
-#[derive(Clone, Copy)]
-enum Delim {
-    Paren,
-    Brace,
-    Bracket,
+trait Delim {
+    fn opening() -> TokenKind;
+    fn closing() -> TokenKind;
+    fn separator() -> TokenKind;
 }
 
-impl Delim {
-    const fn opening(self) -> TokenKind {
-        match self {
-            Self::Paren => TokenKind::LParen,
-            Self::Brace => TokenKind::LBrace,
-            Self::Bracket => TokenKind::LBracket,
-        }
-    }
+struct Paren;
+struct Brace;
+struct Bracket;
 
-    const fn closing(self) -> TokenKind {
-        match self {
-            Self::Paren => TokenKind::RParen,
-            Self::Brace => TokenKind::RBrace,
-            Self::Bracket => TokenKind::RBracket,
-        }
+impl Delim for Paren {
+    fn opening() -> TokenKind {
+        TokenKind::LParen
     }
+    fn closing() -> TokenKind {
+        TokenKind::RParen
+    }
+    fn separator() -> TokenKind {
+        TokenKind::Comma
+    }
+}
 
-    const fn separator() -> TokenKind {
+impl Delim for Bracket {
+    fn opening() -> TokenKind {
+        TokenKind::LBracket
+    }
+    fn closing() -> TokenKind {
+        TokenKind::RBracket
+    }
+    fn separator() -> TokenKind {
+        TokenKind::Comma
+    }
+}
+
+impl Delim for Brace {
+    fn opening() -> TokenKind {
+        TokenKind::LBrace
+    }
+    fn closing() -> TokenKind {
+        TokenKind::RBrace
+    }
+    fn separator() -> TokenKind {
         TokenKind::Comma
     }
 }

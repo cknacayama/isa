@@ -9,12 +9,12 @@ Ok(
                 segments: [
                     Ident {
                         ident: "false18",
-                        span: SpanData { file_id: 0, start: 0, end: 7 },
+                        span: SpanData { file_id: 0, lo: 0, hi: 7 },
                     },
                 ],
             },
         ),
-        span: SpanData { file_id: 0, start: 0, end: 7 },
+        span: SpanData { file_id: 0, lo: 0, hi: 7 },
         ty: (),
     },
 )

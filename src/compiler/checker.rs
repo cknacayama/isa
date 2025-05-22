@@ -766,7 +766,7 @@ impl Checker {
 
         let val_signatures = signatures.iter().zip(vals).map(|(val, (ty, set))| {
             (
-                val.name,
+                val.name.ident,
                 MemberData {
                     has_default: defaults.iter().any(|bind| bind.name == val.name),
                     set,
@@ -778,7 +778,7 @@ impl Checker {
 
         let op_signatures = ops.iter().zip(operators).map(|(op, (ty, set))| {
             (
-                op.op,
+                op.op.ident,
                 MemberData {
                     has_default: defaults.iter().any(|bind| bind.name == op.op),
                     set,
@@ -846,7 +846,7 @@ impl Checker {
                     ..
                 } = class_data
                     .signatures()
-                    .get(&bind.name)
+                    .get(&bind.name.ident)
                     .cloned()
                     .ok_or_else(|| {
                         let fst = DiagnosticLabel::new(
@@ -909,11 +909,9 @@ impl Checker {
             MemberData {
                 span: member_span, ..
             },
-        )) = class_data
-            .signatures()
-            .iter()
-            .find(|(name, data)| !data.has_default && !impls.iter().any(|bind| bind.name.eq(name)))
-        {
+        )) = class_data.signatures().iter().find(|(name, data)| {
+            !data.has_default && !impls.iter().any(|bind| bind.name.ident.eq(name))
+        }) {
             let fst = DiagnosticLabel::new(
                 format!("member `{not_implemented}` of `{class}` not implemented"),
                 span,
@@ -1373,7 +1371,7 @@ impl Checker {
     fn check_type_declaration(
         &mut self,
         stmt: &mut Stmt<()>,
-        declared: &mut FxHashMap<Ident, Span>,
+        declared: &mut FxHashMap<Symbol, Span>,
         rename: &impl Rename,
     ) -> IsaResult<()> {
         let (name, span) = match &mut stmt.kind {
@@ -1391,7 +1389,7 @@ impl Checker {
 
                 self.ctx.insert_ty(*name, Ty::intern_quant(params))?;
 
-                (*name, stmt.span)
+                (name.ident, stmt.span)
             }
             StmtKind::Operator(Operator {
                 params, set, ty, ..
@@ -1417,7 +1415,7 @@ impl Checker {
 
                 self.ctx.insert_ty(*name, Ty::intern_quant(params))?;
 
-                (*name, stmt.span)
+                (name.ident, stmt.span)
             }
             StmtKind::Class {
                 name,
@@ -1445,7 +1443,7 @@ impl Checker {
                 let class = ClassData::new(stmt.span);
                 let _ = self.ctx.insert_class(name.ident, class);
 
-                (*name, stmt.span)
+                (name.ident, stmt.span)
             }
             StmtKind::Instance {
                 params,
@@ -1516,7 +1514,7 @@ impl Checker {
             ..
         } = data
             .signatures()
-            .get(&member)
+            .get(&member.ident)
             .cloned()
             .ok_or_else(|| CheckError::new(CheckErrorKind::Unbound(member.ident), span))?;
 
@@ -1969,20 +1967,6 @@ impl AliasData {
         &self.ty
     }
 
-    #[must_use]
-    pub fn subs(&self, args: &[HiTy]) -> HiTy {
-        let mut ty = self.ty().clone();
-        (|ty: &HiTyKind| {
-            self.params()
-                .iter()
-                .copied()
-                .position(|v| ty.as_var().is_some_and(|ty| ty == v))
-                .map(|pos| args[pos].kind().clone())
-        })
-        .walk_hi_ty(&mut ty);
-        ty
-    }
-
     pub fn resolve(aliases: &mut [(Path, Self)]) {
         let mut changed = true;
         while changed {
@@ -2000,13 +1984,41 @@ impl AliasData {
     }
 }
 
+struct AliasRenamer<'a> {
+    alias: &'a AliasData,
+    args:  &'a [HiTy],
+}
+
+impl<'a> AliasRenamer<'a> {
+    const fn new(alias: &'a AliasData, args: &'a [HiTy]) -> Self {
+        Self { alias, args }
+    }
+}
+
+impl Rename for AliasRenamer<'_> {
+    fn rename_hi_ty(&self, ty: &mut HiTy) {
+        if let Some(new) = self
+            .alias
+            .params()
+            .iter()
+            .copied()
+            .position(|v| ty.kind().as_var().is_some_and(|ty| ty == v))
+            .map(|pos| self.args[pos].kind())
+        {
+            ty.kind = new.clone();
+        }
+    }
+}
+
 impl Rename for (Path, AliasData) {
     fn rename_hi_ty(&self, old: &mut HiTy) {
         if let HiTyKind::Parametric { ty, args } = old.kind()
             && let HiTyKind::Named(name) = ty.kind()
             && name == &self.0
         {
-            *old = self.1.subs(args);
+            let mut new = self.1.ty().clone();
+            AliasRenamer::new(&self.1, args).walk_hi_ty(&mut new);
+            *old = new;
         }
     }
 }
@@ -2017,11 +2029,15 @@ impl Rename for Vec<(Path, AliasData)> {
             && let HiTyKind::Named(name) = ty.kind()
             && let Some((_, alias)) = self.iter().find(|(syn, _)| name == syn)
         {
-            *old = alias.subs(args);
+            let mut new = alias.ty().clone();
+            AliasRenamer::new(alias, args).walk_hi_ty(&mut new);
+            *old = new;
         } else if let HiTyKind::Named(name) = old.kind()
             && let Some((_, alias)) = self.iter().find(|(syn, _)| name == syn)
         {
-            *old = alias.subs(&[]);
+            let mut new = alias.ty().clone();
+            AliasRenamer::new(alias, &[]).walk_hi_ty(&mut new);
+            *old = new;
         }
     }
 }

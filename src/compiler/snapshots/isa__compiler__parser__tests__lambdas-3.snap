@@ -8,7 +8,7 @@ Ok(
             param: Param {
                 pat: Pat {
                     kind: Wild,
-                    span: SpanData { file_id: 0, start: 1, end: 2 },
+                    span: SpanData { file_id: 0, lo: 1, hi: 2 },
                     ty: (),
                 },
             },
@@ -16,13 +16,13 @@ Ok(
                 kind: Infix {
                     op: Ident {
                         ident: "+",
-                        span: SpanData { file_id: 0, start: 9, end: 10 },
+                        span: SpanData { file_id: 0, lo: 9, hi: 10 },
                     },
                     lhs: Expr {
                         kind: Int(
                             10,
                         ),
-                        span: SpanData { file_id: 0, start: 6, end: 8 },
+                        span: SpanData { file_id: 0, lo: 6, hi: 8 },
                         ty: (),
                     },
                     rhs: Expr {
@@ -38,13 +38,13 @@ Ok(
                                                             segments: [
                                                                 Ident {
                                                                     ident: "x",
-                                                                    span: SpanData { file_id: 0, start: 13, end: 14 },
+                                                                    span: SpanData { file_id: 0, lo: 13, hi: 14 },
                                                                 },
                                                             ],
                                                         },
                                                         args: [],
                                                     },
-                                                    span: SpanData { file_id: 0, start: 13, end: 14 },
+                                                    span: SpanData { file_id: 0, lo: 13, hi: 14 },
                                                     ty: (),
                                                 },
                                             },
@@ -54,39 +54,39 @@ Ok(
                                                         segments: [
                                                             Ident {
                                                                 ident: "x",
-                                                                span: SpanData { file_id: 0, start: 18, end: 19 },
+                                                                span: SpanData { file_id: 0, lo: 18, hi: 19 },
                                                             },
                                                         ],
                                                     },
                                                 ),
-                                                span: SpanData { file_id: 0, start: 18, end: 19 },
+                                                span: SpanData { file_id: 0, lo: 18, hi: 19 },
                                                 ty: (),
                                             },
                                         },
-                                        span: SpanData { file_id: 0, start: 12, end: 19 },
+                                        span: SpanData { file_id: 0, lo: 12, hi: 19 },
                                         ty: (),
                                     },
                                 ),
-                                span: SpanData { file_id: 0, start: 11, end: 20 },
+                                span: SpanData { file_id: 0, lo: 11, hi: 20 },
                                 ty: (),
                             },
                             arg: Expr {
                                 kind: Int(
                                     10,
                                 ),
-                                span: SpanData { file_id: 0, start: 21, end: 23 },
+                                span: SpanData { file_id: 0, lo: 21, hi: 23 },
                                 ty: (),
                             },
                         },
-                        span: SpanData { file_id: 0, start: 11, end: 23 },
+                        span: SpanData { file_id: 0, lo: 11, hi: 23 },
                         ty: (),
                     },
                 },
-                span: SpanData { file_id: 0, start: 6, end: 23 },
+                span: SpanData { file_id: 0, lo: 6, hi: 23 },
                 ty: (),
             },
         },
-        span: SpanData { file_id: 0, start: 0, end: 23 },
+        span: SpanData { file_id: 0, lo: 0, hi: 23 },
         ty: (),
     },
 )

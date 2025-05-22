@@ -6,7 +6,7 @@ expression: "Lexer :: new(0, \"[a,b,c,d]\").collect :: < Vec < _ >> ()"
     Ok(
         Spand {
             data: LBracket,
-            span: SpanData { file_id: 0, start: 0, end: 1 },
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
         },
     ),
     Ok(
@@ -14,13 +14,13 @@ expression: "Lexer :: new(0, \"[a,b,c,d]\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "a",
             ),
-            span: SpanData { file_id: 0, start: 1, end: 2 },
+            span: SpanData { file_id: 0, lo: 1, hi: 2 },
         },
     ),
     Ok(
         Spand {
             data: Comma,
-            span: SpanData { file_id: 0, start: 2, end: 3 },
+            span: SpanData { file_id: 0, lo: 2, hi: 3 },
         },
     ),
     Ok(
@@ -28,13 +28,13 @@ expression: "Lexer :: new(0, \"[a,b,c,d]\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "b",
             ),
-            span: SpanData { file_id: 0, start: 3, end: 4 },
+            span: SpanData { file_id: 0, lo: 3, hi: 4 },
         },
     ),
     Ok(
         Spand {
             data: Comma,
-            span: SpanData { file_id: 0, start: 4, end: 5 },
+            span: SpanData { file_id: 0, lo: 4, hi: 5 },
         },
     ),
     Ok(
@@ -42,13 +42,13 @@ expression: "Lexer :: new(0, \"[a,b,c,d]\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "c",
             ),
-            span: SpanData { file_id: 0, start: 5, end: 6 },
+            span: SpanData { file_id: 0, lo: 5, hi: 6 },
         },
     ),
     Ok(
         Spand {
             data: Comma,
-            span: SpanData { file_id: 0, start: 6, end: 7 },
+            span: SpanData { file_id: 0, lo: 6, hi: 7 },
         },
     ),
     Ok(
@@ -56,13 +56,13 @@ expression: "Lexer :: new(0, \"[a,b,c,d]\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "d",
             ),
-            span: SpanData { file_id: 0, start: 7, end: 8 },
+            span: SpanData { file_id: 0, lo: 7, hi: 8 },
         },
     ),
     Ok(
         Spand {
             data: RBracket,
-            span: SpanData { file_id: 0, start: 8, end: 9 },
+            span: SpanData { file_id: 0, lo: 8, hi: 9 },
         },
     ),
 ]

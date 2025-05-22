@@ -9,7 +9,7 @@ Ok(
                 kind: Bool(
                     false,
                 ),
-                span: SpanData { file_id: 0, start: 3, end: 8 },
+                span: SpanData { file_id: 0, lo: 3, hi: 8 },
                 ty: (),
             },
             then: Expr {
@@ -18,36 +18,36 @@ Ok(
                         kind: Bool(
                             true,
                         ),
-                        span: SpanData { file_id: 0, start: 17, end: 21 },
+                        span: SpanData { file_id: 0, lo: 17, hi: 21 },
                         ty: (),
                     },
                     then: Expr {
                         kind: Bool(
                             false,
                         ),
-                        span: SpanData { file_id: 0, start: 27, end: 32 },
+                        span: SpanData { file_id: 0, lo: 27, hi: 32 },
                         ty: (),
                     },
                     otherwise: Expr {
                         kind: Bool(
                             true,
                         ),
-                        span: SpanData { file_id: 0, start: 38, end: 42 },
+                        span: SpanData { file_id: 0, lo: 38, hi: 42 },
                         ty: (),
                     },
                 },
-                span: SpanData { file_id: 0, start: 14, end: 42 },
+                span: SpanData { file_id: 0, lo: 14, hi: 42 },
                 ty: (),
             },
             otherwise: Expr {
                 kind: Bool(
                     false,
                 ),
-                span: SpanData { file_id: 0, start: 48, end: 53 },
+                span: SpanData { file_id: 0, lo: 48, hi: 53 },
                 ty: (),
             },
         },
-        span: SpanData { file_id: 0, start: 0, end: 53 },
+        span: SpanData { file_id: 0, lo: 0, hi: 53 },
         ty: (),
     },
 )

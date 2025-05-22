@@ -36,7 +36,7 @@ pub trait Substitute {
                 res
             }
             TyKind::Fn { mut param, mut ret } => {
-                let res = self.walk_ty(&mut param).bitor(self.walk_ty(&mut ret));
+                let res = self.walk_ty(&mut param) | self.walk_ty(&mut ret);
 
                 if res {
                     *ty = Ty::intern(TyKind::Fn { param, ret });
@@ -281,7 +281,7 @@ impl Substitute for [Subs] {
 pub struct SelfSub(Ty);
 
 impl SelfSub {
-    pub const fn new(ty: Ty) -> Self {
+    #[must_use] pub const fn new(ty: Ty) -> Self {
         Self(ty)
     }
 }

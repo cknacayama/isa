@@ -9,27 +9,27 @@ Ok(
                 operator: false,
                 name: Ident {
                     ident: "bar",
-                    span: SpanData { file_id: 0, start: 4, end: 7 },
+                    span: SpanData { file_id: 0, lo: 4, hi: 7 },
                 },
                 params: [
                     Param {
                         pat: Pat {
                             kind: Wild,
-                            span: SpanData { file_id: 0, start: 8, end: 9 },
+                            span: SpanData { file_id: 0, lo: 8, hi: 9 },
                             ty: (),
                         },
                     },
                     Param {
                         pat: Pat {
                             kind: Wild,
-                            span: SpanData { file_id: 0, start: 10, end: 11 },
+                            span: SpanData { file_id: 0, lo: 10, hi: 11 },
                             ty: (),
                         },
                     },
                     Param {
                         pat: Pat {
                             kind: Wild,
-                            span: SpanData { file_id: 0, start: 12, end: 13 },
+                            span: SpanData { file_id: 0, lo: 12, hi: 13 },
                             ty: (),
                         },
                     },
@@ -38,11 +38,11 @@ Ok(
                     kind: Bool(
                         true,
                     ),
-                    span: SpanData { file_id: 0, start: 16, end: 20 },
+                    span: SpanData { file_id: 0, lo: 16, hi: 20 },
                     ty: (),
                 },
             },
         ),
-        span: SpanData { file_id: 0, start: 0, end: 20 },
+        span: SpanData { file_id: 0, lo: 0, hi: 20 },
     },
 )

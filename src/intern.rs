@@ -1,6 +1,6 @@
+use std::collections::HashSet;
 use std::fmt::{self, Debug};
-use std::hash::{Hash, Hasher};
-use std::marker::PhantomData;
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::ops::Deref;
 use std::ptr;
 
@@ -63,37 +63,25 @@ impl<T: ?Sized + Debug> Debug for Interned<'_, T> {
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
-pub struct InternedIdx<'a, I, T: ?Sized>(I, PhantomData<&'a T>, PrivateZst);
-
-impl<I: Copy, T: ?Sized> InternedIdx<'_, I, T> {
-    #[inline]
-    pub const fn new_unchecked(idx: I) -> Self {
-        Self(idx, PhantomData, PrivateZst)
-    }
-
-    #[inline]
-    pub const fn index(&self) -> I {
-        self.0
-    }
-}
-
-impl<I: Copy, T: ?Sized> Clone for InternedIdx<'_, I, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<I: Copy, T: ?Sized> Copy for InternedIdx<'_, I, T> {}
-
 pub trait Interner<'a, T: ?Sized> {
     type Data;
     fn intern(&mut self, data: Self::Data) -> Interned<'a, T>;
 }
 
-pub trait IdxInterner<'a, I, T: ?Sized> {
-    type Data;
+impl<T, H> Interner<'static, [T]> for HashSet<&'static [T], H>
+where
+    T: Eq + Hash,
+    H: BuildHasher,
+{
+    type Data = Vec<T>;
 
-    fn intern_idx(&mut self, data: Self::Data) -> InternedIdx<'a, I, T>;
-    fn get(&self, idx: InternedIdx<'a, I, T>) -> &'a T;
+    fn intern(&mut self, data: Self::Data) -> Interned<'static, [T]> {
+        if let Some(interned) = self.get(data.as_slice()) {
+            return Interned::new_unchecked(*interned);
+        }
+
+        let interned = Box::leak(data.into_boxed_slice());
+        self.insert(interned);
+        Interned::new_unchecked(interned)
+    }
 }

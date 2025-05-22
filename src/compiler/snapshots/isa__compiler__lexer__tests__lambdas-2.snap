@@ -6,13 +6,13 @@ expression: "Lexer :: new(0, r\"\\(a,b) -> a + b\").collect :: < Vec < _ >> ()"
     Ok(
         Spand {
             data: Backslash,
-            span: SpanData { file_id: 0, start: 0, end: 1 },
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
         },
     ),
     Ok(
         Spand {
             data: LParen,
-            span: SpanData { file_id: 0, start: 1, end: 2 },
+            span: SpanData { file_id: 0, lo: 1, hi: 2 },
         },
     ),
     Ok(
@@ -20,13 +20,13 @@ expression: "Lexer :: new(0, r\"\\(a,b) -> a + b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "a",
             ),
-            span: SpanData { file_id: 0, start: 2, end: 3 },
+            span: SpanData { file_id: 0, lo: 2, hi: 3 },
         },
     ),
     Ok(
         Spand {
             data: Comma,
-            span: SpanData { file_id: 0, start: 3, end: 4 },
+            span: SpanData { file_id: 0, lo: 3, hi: 4 },
         },
     ),
     Ok(
@@ -34,19 +34,19 @@ expression: "Lexer :: new(0, r\"\\(a,b) -> a + b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "b",
             ),
-            span: SpanData { file_id: 0, start: 4, end: 5 },
+            span: SpanData { file_id: 0, lo: 4, hi: 5 },
         },
     ),
     Ok(
         Spand {
             data: RParen,
-            span: SpanData { file_id: 0, start: 5, end: 6 },
+            span: SpanData { file_id: 0, lo: 5, hi: 6 },
         },
     ),
     Ok(
         Spand {
             data: Arrow,
-            span: SpanData { file_id: 0, start: 7, end: 9 },
+            span: SpanData { file_id: 0, lo: 7, hi: 9 },
         },
     ),
     Ok(
@@ -54,7 +54,7 @@ expression: "Lexer :: new(0, r\"\\(a,b) -> a + b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "a",
             ),
-            span: SpanData { file_id: 0, start: 10, end: 11 },
+            span: SpanData { file_id: 0, lo: 10, hi: 11 },
         },
     ),
     Ok(
@@ -62,7 +62,7 @@ expression: "Lexer :: new(0, r\"\\(a,b) -> a + b\").collect :: < Vec < _ >> ()"
             data: Operator(
                 "+",
             ),
-            span: SpanData { file_id: 0, start: 12, end: 13 },
+            span: SpanData { file_id: 0, lo: 12, hi: 13 },
         },
     ),
     Ok(
@@ -70,7 +70,7 @@ expression: "Lexer :: new(0, r\"\\(a,b) -> a + b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "b",
             ),
-            span: SpanData { file_id: 0, start: 14, end: 15 },
+            span: SpanData { file_id: 0, lo: 14, hi: 15 },
         },
     ),
 ]

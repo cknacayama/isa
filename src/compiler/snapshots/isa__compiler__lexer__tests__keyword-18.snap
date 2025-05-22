@@ -6,7 +6,7 @@ Some(
     Ok(
         Spand {
             data: KwInfixr,
-            span: SpanData { file_id: 0, start: 0, end: 6 },
+            span: SpanData { file_id: 0, lo: 0, hi: 6 },
         },
     ),
 )

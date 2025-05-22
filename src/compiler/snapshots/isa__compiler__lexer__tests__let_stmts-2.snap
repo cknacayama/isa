@@ -6,7 +6,7 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
     Ok(
         Spand {
             data: KwLet,
-            span: SpanData { file_id: 0, start: 0, end: 3 },
+            span: SpanData { file_id: 0, lo: 0, hi: 3 },
         },
     ),
     Ok(
@@ -14,7 +14,7 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Ident(
                 "fib",
             ),
-            span: SpanData { file_id: 0, start: 4, end: 7 },
+            span: SpanData { file_id: 0, lo: 4, hi: 7 },
         },
     ),
     Ok(
@@ -22,19 +22,19 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Ident(
                 "n",
             ),
-            span: SpanData { file_id: 0, start: 8, end: 9 },
+            span: SpanData { file_id: 0, lo: 8, hi: 9 },
         },
     ),
     Ok(
         Spand {
             data: Eq,
-            span: SpanData { file_id: 0, start: 10, end: 11 },
+            span: SpanData { file_id: 0, lo: 10, hi: 11 },
         },
     ),
     Ok(
         Spand {
             data: KwMatch,
-            span: SpanData { file_id: 0, start: 12, end: 17 },
+            span: SpanData { file_id: 0, lo: 12, hi: 17 },
         },
     ),
     Ok(
@@ -42,19 +42,19 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Ident(
                 "n",
             ),
-            span: SpanData { file_id: 0, start: 18, end: 19 },
+            span: SpanData { file_id: 0, lo: 18, hi: 19 },
         },
     ),
     Ok(
         Spand {
             data: KwWith,
-            span: SpanData { file_id: 0, start: 20, end: 24 },
+            span: SpanData { file_id: 0, lo: 20, hi: 24 },
         },
     ),
     Ok(
         Spand {
             data: DotDot,
-            span: SpanData { file_id: 0, start: 25, end: 27 },
+            span: SpanData { file_id: 0, lo: 25, hi: 27 },
         },
     ),
     Ok(
@@ -62,13 +62,13 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Integer(
                 2,
             ),
-            span: SpanData { file_id: 0, start: 27, end: 28 },
+            span: SpanData { file_id: 0, lo: 27, hi: 28 },
         },
     ),
     Ok(
         Spand {
             data: Arrow,
-            span: SpanData { file_id: 0, start: 29, end: 31 },
+            span: SpanData { file_id: 0, lo: 29, hi: 31 },
         },
     ),
     Ok(
@@ -76,25 +76,25 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Ident(
                 "n",
             ),
-            span: SpanData { file_id: 0, start: 32, end: 33 },
+            span: SpanData { file_id: 0, lo: 32, hi: 33 },
         },
     ),
     Ok(
         Spand {
             data: Comma,
-            span: SpanData { file_id: 0, start: 33, end: 34 },
+            span: SpanData { file_id: 0, lo: 33, hi: 34 },
         },
     ),
     Ok(
         Spand {
             data: Underscore,
-            span: SpanData { file_id: 0, start: 35, end: 36 },
+            span: SpanData { file_id: 0, lo: 35, hi: 36 },
         },
     ),
     Ok(
         Spand {
             data: Arrow,
-            span: SpanData { file_id: 0, start: 37, end: 39 },
+            span: SpanData { file_id: 0, lo: 37, hi: 39 },
         },
     ),
     Ok(
@@ -102,13 +102,13 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Ident(
                 "fib",
             ),
-            span: SpanData { file_id: 0, start: 40, end: 43 },
+            span: SpanData { file_id: 0, lo: 40, hi: 43 },
         },
     ),
     Ok(
         Spand {
             data: LParen,
-            span: SpanData { file_id: 0, start: 44, end: 45 },
+            span: SpanData { file_id: 0, lo: 44, hi: 45 },
         },
     ),
     Ok(
@@ -116,7 +116,7 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Ident(
                 "n",
             ),
-            span: SpanData { file_id: 0, start: 45, end: 46 },
+            span: SpanData { file_id: 0, lo: 45, hi: 46 },
         },
     ),
     Ok(
@@ -124,7 +124,7 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Operator(
                 "-",
             ),
-            span: SpanData { file_id: 0, start: 47, end: 48 },
+            span: SpanData { file_id: 0, lo: 47, hi: 48 },
         },
     ),
     Ok(
@@ -132,13 +132,13 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Integer(
                 1,
             ),
-            span: SpanData { file_id: 0, start: 49, end: 50 },
+            span: SpanData { file_id: 0, lo: 49, hi: 50 },
         },
     ),
     Ok(
         Spand {
             data: RParen,
-            span: SpanData { file_id: 0, start: 50, end: 51 },
+            span: SpanData { file_id: 0, lo: 50, hi: 51 },
         },
     ),
     Ok(
@@ -146,7 +146,7 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Operator(
                 "+",
             ),
-            span: SpanData { file_id: 0, start: 52, end: 53 },
+            span: SpanData { file_id: 0, lo: 52, hi: 53 },
         },
     ),
     Ok(
@@ -154,13 +154,13 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Ident(
                 "fib",
             ),
-            span: SpanData { file_id: 0, start: 54, end: 57 },
+            span: SpanData { file_id: 0, lo: 54, hi: 57 },
         },
     ),
     Ok(
         Spand {
             data: LParen,
-            span: SpanData { file_id: 0, start: 58, end: 59 },
+            span: SpanData { file_id: 0, lo: 58, hi: 59 },
         },
     ),
     Ok(
@@ -168,7 +168,7 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Ident(
                 "n",
             ),
-            span: SpanData { file_id: 0, start: 59, end: 60 },
+            span: SpanData { file_id: 0, lo: 59, hi: 60 },
         },
     ),
     Ok(
@@ -176,7 +176,7 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Operator(
                 "-",
             ),
-            span: SpanData { file_id: 0, start: 61, end: 62 },
+            span: SpanData { file_id: 0, lo: 61, hi: 62 },
         },
     ),
     Ok(
@@ -184,13 +184,13 @@ expression: "Lexer ::\nnew(0,\n\"let fib n = match n with ..2 -> n, _ -> fib (n 
             data: Integer(
                 2,
             ),
-            span: SpanData { file_id: 0, start: 63, end: 64 },
+            span: SpanData { file_id: 0, lo: 63, hi: 64 },
         },
     ),
     Ok(
         Spand {
             data: RParen,
-            span: SpanData { file_id: 0, start: 64, end: 65 },
+            span: SpanData { file_id: 0, lo: 64, hi: 65 },
         },
     ),
 ]

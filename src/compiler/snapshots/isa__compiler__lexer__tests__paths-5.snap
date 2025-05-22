@@ -8,13 +8,13 @@ expression: "Lexer :: new(0, \"a::b::c C::a::T b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "a",
             ),
-            span: SpanData { file_id: 0, start: 0, end: 1 },
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
         },
     ),
     Ok(
         Spand {
             data: ColonColon,
-            span: SpanData { file_id: 0, start: 1, end: 3 },
+            span: SpanData { file_id: 0, lo: 1, hi: 3 },
         },
     ),
     Ok(
@@ -22,13 +22,13 @@ expression: "Lexer :: new(0, \"a::b::c C::a::T b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "b",
             ),
-            span: SpanData { file_id: 0, start: 3, end: 4 },
+            span: SpanData { file_id: 0, lo: 3, hi: 4 },
         },
     ),
     Ok(
         Spand {
             data: ColonColon,
-            span: SpanData { file_id: 0, start: 4, end: 6 },
+            span: SpanData { file_id: 0, lo: 4, hi: 6 },
         },
     ),
     Ok(
@@ -36,7 +36,7 @@ expression: "Lexer :: new(0, \"a::b::c C::a::T b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "c",
             ),
-            span: SpanData { file_id: 0, start: 6, end: 7 },
+            span: SpanData { file_id: 0, lo: 6, hi: 7 },
         },
     ),
     Ok(
@@ -44,13 +44,13 @@ expression: "Lexer :: new(0, \"a::b::c C::a::T b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "C",
             ),
-            span: SpanData { file_id: 0, start: 8, end: 9 },
+            span: SpanData { file_id: 0, lo: 8, hi: 9 },
         },
     ),
     Ok(
         Spand {
             data: ColonColon,
-            span: SpanData { file_id: 0, start: 9, end: 11 },
+            span: SpanData { file_id: 0, lo: 9, hi: 11 },
         },
     ),
     Ok(
@@ -58,13 +58,13 @@ expression: "Lexer :: new(0, \"a::b::c C::a::T b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "a",
             ),
-            span: SpanData { file_id: 0, start: 11, end: 12 },
+            span: SpanData { file_id: 0, lo: 11, hi: 12 },
         },
     ),
     Ok(
         Spand {
             data: ColonColon,
-            span: SpanData { file_id: 0, start: 12, end: 14 },
+            span: SpanData { file_id: 0, lo: 12, hi: 14 },
         },
     ),
     Ok(
@@ -72,7 +72,7 @@ expression: "Lexer :: new(0, \"a::b::c C::a::T b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "T",
             ),
-            span: SpanData { file_id: 0, start: 14, end: 15 },
+            span: SpanData { file_id: 0, lo: 14, hi: 15 },
         },
     ),
     Ok(
@@ -80,7 +80,7 @@ expression: "Lexer :: new(0, \"a::b::c C::a::T b\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "b",
             ),
-            span: SpanData { file_id: 0, start: 16, end: 17 },
+            span: SpanData { file_id: 0, lo: 16, hi: 17 },
         },
     ),
 ]

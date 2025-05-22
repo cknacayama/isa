@@ -5,7 +5,7 @@ use std::sync::{LazyLock, Mutex, MutexGuard};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::compiler::types::{TyId, TyKind};
-use crate::intern::{IdxInterner, Interned, InternedIdx, Interner};
+use crate::intern::{Interned, Interner};
 use crate::span::SpanData;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -21,7 +21,7 @@ pub struct TySlice(Interned<'static, [Ty]>);
 pub struct TyQuant(Interned<'static, [TyId]>);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TyPath(InternedIdx<'static, u32, [Symbol]>);
+pub struct TyPath(Interned<'static, [Symbol]>);
 
 impl Debug for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -71,8 +71,8 @@ impl Deref for TyQuant {
 
 impl TyPath {
     #[must_use]
-    pub fn get(self) -> &'static [Symbol] {
-        Env::get(|env| env.ctx.get(self.0))
+    pub const fn interned(self) -> &'static [Symbol] {
+        self.0.interned()
     }
 }
 impl Default for Symbol {
@@ -114,15 +114,13 @@ impl Display for Symbol {
 
 impl Debug for TyPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = Env::get(|e| e.ctx.get(self.0));
-        Debug::fmt(name, f)
+        Debug::fmt(&self.0, f)
     }
 }
 
 impl Display for TyPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = Env::get(|e| e.ctx.get(self.0));
-        write!(f, "{}", name.last().unwrap())
+        write!(f, "{}", self.0.last().unwrap())
     }
 }
 
@@ -136,7 +134,7 @@ struct Env {
 impl Env {
     fn get<T>(f: impl FnOnce(MutexGuard<'_, Self>) -> T) -> T {
         static GLOBAL_DATA: LazyLock<Mutex<Env>> = LazyLock::new(Default::default);
-        f(GLOBAL_DATA.lock().unwrap())
+        GLOBAL_DATA.lock().map(f).unwrap()
     }
 }
 
@@ -174,7 +172,7 @@ impl Ty {
 
     #[must_use]
     pub fn intern_path(name: Vec<Symbol>) -> TyPath {
-        TyPath(Env::get(|mut e| e.ctx.intern_idx(name)))
+        TyPath(Env::get(|mut e| e.ctx.intern(name)))
     }
 
     #[must_use]
@@ -292,11 +290,10 @@ impl SpanInterner {
 
 #[derive(Default)]
 struct GlobalCtx {
-    types:        FxHashSet<&'static TyKind>,
-    slices:       FxHashSet<&'static [Ty]>,
-    quantifiers:  FxHashSet<&'static [TyId]>,
-    name_indexes: FxHashMap<&'static [Symbol], u32>,
-    names:        Vec<&'static [Symbol]>,
+    types:       FxHashSet<&'static TyKind>,
+    slices:      FxHashSet<&'static [Ty]>,
+    quantifiers: FxHashSet<&'static [TyId]>,
+    names:       FxHashSet<&'static [Symbol]>,
 }
 
 static INT: &TyKind = &TyKind::Int;
@@ -349,13 +346,7 @@ impl Interner<'static, [Ty]> for GlobalCtx {
             return Interned::new_unchecked(EMPTY_SLICE);
         }
 
-        if let Some(slice) = self.slices.get(slice.as_slice()) {
-            return Interned::new_unchecked(*slice);
-        }
-
-        let slice = Box::leak(slice.into_boxed_slice());
-        self.slices.insert(slice);
-        Interned::new_unchecked(slice)
+        self.slices.intern(slice)
     }
 }
 
@@ -367,33 +358,15 @@ impl Interner<'static, [TyId]> for GlobalCtx {
             return Interned::new_unchecked(EMPTY_QUANT);
         }
 
-        if let Some(slice) = self.quantifiers.get(data.as_slice()) {
-            return Interned::new_unchecked(slice);
-        }
-
-        let slice = Box::leak(data.into_boxed_slice());
-        self.quantifiers.insert(slice);
-        Interned::new_unchecked(slice)
+        self.quantifiers.intern(data)
     }
 }
 
-impl IdxInterner<'static, u32, [Symbol]> for GlobalCtx {
+impl Interner<'static, [Symbol]> for GlobalCtx {
     type Data = Vec<Symbol>;
 
-    fn intern_idx(&mut self, data: Self::Data) -> InternedIdx<'static, u32, [Symbol]> {
-        if let Some(idx) = self.name_indexes.get(data.as_slice()) {
-            return InternedIdx::new_unchecked(*idx);
-        }
-
-        let name = Box::leak(data.into_boxed_slice());
-        let idx = self.names.len().try_into().unwrap();
-        self.name_indexes.insert(name, idx);
-        self.names.push(name);
-        InternedIdx::new_unchecked(idx)
-    }
-
-    fn get(&self, idx: InternedIdx<'static, u32, [Symbol]>) -> &'static [Symbol] {
-        self.names[idx.index() as usize]
+    fn intern(&mut self, data: Self::Data) -> Interned<'static, [Symbol]> {
+        self.names.intern(data)
     }
 }
 

@@ -9,18 +9,18 @@ Ok(
                 operator: false,
                 name: Ident {
                     ident: "a",
-                    span: SpanData { file_id: 0, start: 4, end: 5 },
+                    span: SpanData { file_id: 0, lo: 4, hi: 5 },
                 },
                 params: [],
                 expr: Expr {
                     kind: Int(
                         10,
                     ),
-                    span: SpanData { file_id: 0, start: 8, end: 10 },
+                    span: SpanData { file_id: 0, lo: 8, hi: 10 },
                     ty: (),
                 },
             },
         ),
-        span: SpanData { file_id: 0, start: 0, end: 10 },
+        span: SpanData { file_id: 0, lo: 0, hi: 10 },
     },
 )

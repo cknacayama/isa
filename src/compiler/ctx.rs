@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::ops::BitOr;
 use std::{fmt, vec};
@@ -238,7 +239,7 @@ pub struct MemberData {
 pub struct ClassData {
     parents:     Box<[Path]>,
     constraints: ClassConstraintSet,
-    signatures:  FxHashMap<Ident, MemberData>,
+    signatures:  FxHashMap<Symbol, MemberData>,
     instances:   FxHashMap<Ty, InstanceData>,
     span:        Span,
 }
@@ -257,7 +258,7 @@ impl ClassData {
 
     pub fn extend_signature(
         &mut self,
-        iter: impl IntoIterator<Item = (Ident, MemberData)>,
+        iter: impl IntoIterator<Item = (Symbol, MemberData)>,
         parents: Box<[Path]>,
         constraints: ClassConstraintSet,
     ) {
@@ -267,7 +268,7 @@ impl ClassData {
     }
 
     #[must_use]
-    pub const fn signatures(&self) -> &FxHashMap<Ident, MemberData> {
+    pub const fn signatures(&self) -> &FxHashMap<Symbol, MemberData> {
         &self.signatures
     }
 
@@ -488,7 +489,7 @@ impl Ctx {
         self.env
             .iter()
             .skip(1)
-            .flat_map(FxHashMap::values)
+            .flat_map(HashMap::values)
             .map(|data| data.ty().free_type_variables())
             .reduce(|mut acc, v| {
                 acc.extend(v);
@@ -662,7 +663,7 @@ impl Ctx {
     #[must_use]
     pub fn get_constructors_for_ty(&self, name: TyPath) -> &[Constructor] {
         self.get_ty_data(&Path::from_vec(
-            TyPath::get(name)
+            TyPath::interned(name)
                 .iter()
                 .map(|sym| Ident::new(*sym, Span::zero()))
                 .collect(),
@@ -990,7 +991,7 @@ impl Ctx {
 
         let mut data = self
             .get_ty_data(&Path::from_vec(
-                TyPath::get(*name)
+                TyPath::interned(*name)
                     .iter()
                     .map(|sym| Ident::new(*sym, Span::zero()))
                     .collect(),

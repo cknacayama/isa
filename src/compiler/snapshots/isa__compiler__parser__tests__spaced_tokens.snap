@@ -7,24 +7,24 @@ Ok(
         kind: Infix {
             op: Ident {
                 ident: "+",
-                span: SpanData { file_id: 0, start: 5, end: 6 },
+                span: SpanData { file_id: 0, lo: 5, hi: 6 },
             },
             lhs: Expr {
                 kind: Int(
                     12,
                 ),
-                span: SpanData { file_id: 0, start: 2, end: 4 },
+                span: SpanData { file_id: 0, lo: 2, hi: 4 },
                 ty: (),
             },
             rhs: Expr {
                 kind: Int(
                     13,
                 ),
-                span: SpanData { file_id: 0, start: 71, end: 73 },
+                span: SpanData { file_id: 0, lo: 71, hi: 73 },
                 ty: (),
             },
         },
-        span: SpanData { file_id: 0, start: 2, end: 73 },
+        span: SpanData { file_id: 0, lo: 2, hi: 73 },
         ty: (),
     },
 )

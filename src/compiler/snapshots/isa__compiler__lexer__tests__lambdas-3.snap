@@ -6,19 +6,19 @@ expression: "Lexer :: new(0, r\"\\_ -> 10 + (\\x -> x) 10\").collect :: < Vec < 
     Ok(
         Spand {
             data: Backslash,
-            span: SpanData { file_id: 0, start: 0, end: 1 },
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
         },
     ),
     Ok(
         Spand {
             data: Underscore,
-            span: SpanData { file_id: 0, start: 1, end: 2 },
+            span: SpanData { file_id: 0, lo: 1, hi: 2 },
         },
     ),
     Ok(
         Spand {
             data: Arrow,
-            span: SpanData { file_id: 0, start: 3, end: 5 },
+            span: SpanData { file_id: 0, lo: 3, hi: 5 },
         },
     ),
     Ok(
@@ -26,7 +26,7 @@ expression: "Lexer :: new(0, r\"\\_ -> 10 + (\\x -> x) 10\").collect :: < Vec < 
             data: Integer(
                 10,
             ),
-            span: SpanData { file_id: 0, start: 6, end: 8 },
+            span: SpanData { file_id: 0, lo: 6, hi: 8 },
         },
     ),
     Ok(
@@ -34,19 +34,19 @@ expression: "Lexer :: new(0, r\"\\_ -> 10 + (\\x -> x) 10\").collect :: < Vec < 
             data: Operator(
                 "+",
             ),
-            span: SpanData { file_id: 0, start: 9, end: 10 },
+            span: SpanData { file_id: 0, lo: 9, hi: 10 },
         },
     ),
     Ok(
         Spand {
             data: LParen,
-            span: SpanData { file_id: 0, start: 11, end: 12 },
+            span: SpanData { file_id: 0, lo: 11, hi: 12 },
         },
     ),
     Ok(
         Spand {
             data: Backslash,
-            span: SpanData { file_id: 0, start: 12, end: 13 },
+            span: SpanData { file_id: 0, lo: 12, hi: 13 },
         },
     ),
     Ok(
@@ -54,13 +54,13 @@ expression: "Lexer :: new(0, r\"\\_ -> 10 + (\\x -> x) 10\").collect :: < Vec < 
             data: Ident(
                 "x",
             ),
-            span: SpanData { file_id: 0, start: 13, end: 14 },
+            span: SpanData { file_id: 0, lo: 13, hi: 14 },
         },
     ),
     Ok(
         Spand {
             data: Arrow,
-            span: SpanData { file_id: 0, start: 15, end: 17 },
+            span: SpanData { file_id: 0, lo: 15, hi: 17 },
         },
     ),
     Ok(
@@ -68,13 +68,13 @@ expression: "Lexer :: new(0, r\"\\_ -> 10 + (\\x -> x) 10\").collect :: < Vec < 
             data: Ident(
                 "x",
             ),
-            span: SpanData { file_id: 0, start: 18, end: 19 },
+            span: SpanData { file_id: 0, lo: 18, hi: 19 },
         },
     ),
     Ok(
         Spand {
             data: RParen,
-            span: SpanData { file_id: 0, start: 19, end: 20 },
+            span: SpanData { file_id: 0, lo: 19, hi: 20 },
         },
     ),
     Ok(
@@ -82,7 +82,7 @@ expression: "Lexer :: new(0, r\"\\_ -> 10 + (\\x -> x) 10\").collect :: < Vec < 
             data: Integer(
                 10,
             ),
-            span: SpanData { file_id: 0, start: 21, end: 23 },
+            span: SpanData { file_id: 0, lo: 21, hi: 23 },
         },
     ),
 ]

@@ -8,7 +8,7 @@ expression: "Lexer :: new(0, r#\"-\"string\"\"#).collect :: < Vec < _ >> ()"
             data: Operator(
                 "-",
             ),
-            span: SpanData { file_id: 0, start: 0, end: 1 },
+            span: SpanData { file_id: 0, lo: 0, hi: 1 },
         },
     ),
     Ok(
@@ -16,7 +16,7 @@ expression: "Lexer :: new(0, r#\"-\"string\"\"#).collect :: < Vec < _ >> ()"
             data: String(
                 "string",
             ),
-            span: SpanData { file_id: 0, start: 1, end: 9 },
+            span: SpanData { file_id: 0, lo: 1, hi: 9 },
         },
     ),
 ]

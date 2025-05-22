@@ -8,7 +8,7 @@ expression: "Lexer :: new(0, \"Some x\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "Some",
             ),
-            span: SpanData { file_id: 0, start: 0, end: 4 },
+            span: SpanData { file_id: 0, lo: 0, hi: 4 },
         },
     ),
     Ok(
@@ -16,7 +16,7 @@ expression: "Lexer :: new(0, \"Some x\").collect :: < Vec < _ >> ()"
             data: Ident(
                 "x",
             ),
-            span: SpanData { file_id: 0, start: 5, end: 6 },
+            span: SpanData { file_id: 0, lo: 5, hi: 6 },
         },
     ),
 ]
