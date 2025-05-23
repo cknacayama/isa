@@ -5,23 +5,23 @@ use std::sync::{LazyLock, Mutex, MutexGuard};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::compiler::types::{TyId, TyKind};
-use crate::intern::{Interned, Interner};
+use crate::intern::{Intern, Internship};
 use crate::span::SpanData;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(u32);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Ty(Interned<'static, TyKind>);
+pub struct Ty(Intern<'static, TyKind>);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TySlice(Interned<'static, [Ty]>);
+pub struct TySlice(Intern<'static, [Ty]>);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TyQuant(Interned<'static, [TyId]>);
+pub struct TyQuant(Intern<'static, [TyId]>);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct TyPath(Interned<'static, [Symbol]>);
+pub struct TyPath(Intern<'static, [Symbol]>);
 
 impl Debug for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -141,7 +141,7 @@ impl Env {
 impl Ty {
     #[must_use]
     pub const fn new_unchecked(ty: &'static TyKind) -> Self {
-        Self(Interned::new_unchecked(ty))
+        Self(Intern::new_unchecked(ty))
     }
 
     #[inline]
@@ -177,32 +177,32 @@ impl Ty {
 
     #[must_use]
     pub const fn int() -> Self {
-        Self(Interned::new_unchecked(INT))
+        Self(Intern::new_unchecked(INT))
     }
 
     #[must_use]
     pub const fn bool() -> Self {
-        Self(Interned::new_unchecked(BOOL))
+        Self(Intern::new_unchecked(BOOL))
     }
 
     #[must_use]
     pub const fn char() -> Self {
-        Self(Interned::new_unchecked(CHAR))
+        Self(Intern::new_unchecked(CHAR))
     }
 
     #[must_use]
     pub const fn real() -> Self {
-        Self(Interned::new_unchecked(REAL))
+        Self(Intern::new_unchecked(REAL))
     }
 
     #[must_use]
     pub const fn empty_slice() -> TySlice {
-        TySlice(Interned::new_unchecked(EMPTY_SLICE))
+        TySlice(Intern::new_unchecked(EMPTY_SLICE))
     }
 
     #[must_use]
     pub const fn empty_quant() -> TyQuant {
-        TyQuant(Interned::new_unchecked(EMPTY_QUANT))
+        TyQuant(Intern::new_unchecked(EMPTY_QUANT))
     }
 }
 
@@ -317,55 +317,55 @@ impl GlobalCtx {
     fn force_insert(&mut self, ty: TyKind) -> Ty {
         let ty = Box::leak(Box::new(ty));
         self.types.insert(ty);
-        Ty(Interned::new_unchecked(ty))
+        Ty(Intern::new_unchecked(ty))
     }
 }
 
-impl Interner<'static, TyKind> for GlobalCtx {
-    type Data = TyKind;
+impl Internship<'static, TyKind> for GlobalCtx {
+    type Insight = TyKind;
 
-    fn intern(&mut self, ty: Self::Data) -> Interned<'static, TyKind> {
+    fn intern(&mut self, ty: Self::Insight) -> Intern<'static, TyKind> {
         if let Some(ty) = Self::try_get_primitive(&ty) {
-            return Interned::new_unchecked(ty);
+            return Intern::new_unchecked(ty);
         }
         if let Some(ty) = self.types.get(&ty) {
-            return Interned::new_unchecked(ty);
+            return Intern::new_unchecked(ty);
         }
 
         let ty = Box::leak(Box::new(ty));
         self.types.insert(ty);
-        Interned::new_unchecked(ty)
+        Intern::new_unchecked(ty)
     }
 }
 
-impl Interner<'static, [Ty]> for GlobalCtx {
-    type Data = Vec<Ty>;
+impl Internship<'static, [Ty]> for GlobalCtx {
+    type Insight = Vec<Ty>;
 
-    fn intern(&mut self, slice: Self::Data) -> Interned<'static, [Ty]> {
+    fn intern(&mut self, slice: Self::Insight) -> Intern<'static, [Ty]> {
         if slice.is_empty() {
-            return Interned::new_unchecked(EMPTY_SLICE);
+            return Intern::new_unchecked(EMPTY_SLICE);
         }
 
         self.slices.intern(slice)
     }
 }
 
-impl Interner<'static, [TyId]> for GlobalCtx {
-    type Data = Vec<TyId>;
+impl Internship<'static, [TyId]> for GlobalCtx {
+    type Insight = Vec<TyId>;
 
-    fn intern(&mut self, data: Self::Data) -> Interned<'static, [TyId]> {
+    fn intern(&mut self, data: Self::Insight) -> Intern<'static, [TyId]> {
         if data.is_empty() {
-            return Interned::new_unchecked(EMPTY_QUANT);
+            return Intern::new_unchecked(EMPTY_QUANT);
         }
 
         self.quantifiers.intern(data)
     }
 }
 
-impl Interner<'static, [Symbol]> for GlobalCtx {
-    type Data = Vec<Symbol>;
+impl Internship<'static, [Symbol]> for GlobalCtx {
+    type Insight = Vec<Symbol>;
 
-    fn intern(&mut self, data: Self::Data) -> Interned<'static, [Symbol]> {
+    fn intern(&mut self, data: Self::Insight) -> Intern<'static, [Symbol]> {
         self.names.intern(data)
     }
 }
